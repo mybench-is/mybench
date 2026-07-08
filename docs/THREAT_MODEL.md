@@ -1,6 +1,6 @@
 # Mybench Threat Model
 
-**Version:** 0.1.1
+**Version:** 0.1.2
 **Status:** Living document. Every feature must be justifiable against this model.
 If a proposed change isn't covered here, work stops and this document is updated first.
 
@@ -79,8 +79,10 @@ commit = SHA-256(nonce || len(m) || m)
 - Length-prefix prevents ambiguity/concatenation games.
 - Session Merkle tree: leaves are item commitments; root published daily.
 - Domain separation: all hashes prefixed with a context string
-  (`mybench:v1:leaf`, `mybench:v1:node`, `mybench:v1:day`) to prevent
-  cross-context replay (leaf presented as root, etc.).
+  (`mybench:v1:leaf`, `mybench:v1:node`, `mybench:v1:session`,
+  `mybench:v1:day`) to prevent cross-context replay (leaf presented as root,
+  etc.). Exact encodings, tree shape, and test vectors: ADR-0002
+  (`../../mybench-ops/decisions/ADR-0002-salted-commitment-scheme.md`).
 
 ### Dictionary-attack analysis
 Unsalted hashes of short/predictable content (common prompts like "fix the
@@ -212,4 +214,6 @@ commitments, roots, and timestamps listed in §3.
 *Changelog: 0.1.0 — initial model (owner-authored seed, adopted 2026-07-08).
 0.1.1 — owner-approved additions per mybench-ops OPEN_QUESTIONS #15: positive
 v0 scope statement (§7) and invariant-#1 amendment-ADR requirement (ADV-5).
-Pending owner text: explicit trust-assumptions section (OPEN_QUESTIONS #16).*
+Pending owner text: explicit trust-assumptions section (OPEN_QUESTIONS #16).
+0.1.2 — §4 domain-tag list gains `mybench:v1:session` (root-finalization
+wrapper) per accepted ADR-0002; mechanism unchanged.*
