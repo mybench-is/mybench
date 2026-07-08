@@ -31,9 +31,16 @@ def session_rows(ledger):
     return {r["session_id"]: r for r in ledger.rows() if r["type"] == "session"}
 
 
-def recomputed_root(session_file):
+def sid(config, f):
+    for w in config.watches:
+        if f.is_relative_to(w.path):
+            return capture.session_id_for(f, w, paths.ensure_session_scope_key())
+    raise AssertionError(f"{f} not under any watch")
+
+
+def recomputed_root(config, session_file):
     items = capture._complete_lines(session_file.read_bytes())
-    known = nonces.load_nonces(session_file.stem)
+    known = nonces.load_nonces(sid(config, session_file))
     leaves = [c.leaf_commitment(k, m) for k, m in zip(known, items)]
     return c.session_root(leaves).hex()
 
@@ -47,9 +54,9 @@ def test_e2e_fixture_dirs_to_verified_ledger(fx, config):
     assert daemon.ledger.verify_chain() == 4  # genesis + one row per session
     rows = session_rows(daemon.ledger)
     for s in fx.sessions:
-        row = rows[s.stem]
+        row = rows[sid(config, s)]
         assert row["item_count"] == len(s.read_bytes().splitlines())
-        assert row["session_root"] == recomputed_root(s)
+        assert row["session_root"] == recomputed_root(config, s)
         assert row["source"] == ("claude-code" if "claude" in s.parts else "codex")
 
 
@@ -57,14 +64,14 @@ def test_append_event_produces_new_row_over_all_items(fx, config):
     daemon = capture.Daemon(config)
     daemon.scan_once()
     target = fx.sessions[0]
-    before = session_rows(daemon.ledger)[target.stem]["item_count"]
+    before = session_rows(daemon.ledger)[sid(config, target)]["item_count"]
     with target.open("ab") as f:
         f.write(json.dumps({"type": "user", "synthetic": "appended-1"}).encode() + b"\n")
         f.write(json.dumps({"type": "user", "synthetic": "appended-2"}).encode() + b"\n")
     assert daemon.scan_once() == 1  # only the grown session gets a row
-    row = session_rows(daemon.ledger)[target.stem]
+    row = session_rows(daemon.ledger)[sid(config, target)]
     assert row["item_count"] == before + 2
-    assert row["session_root"] == recomputed_root(target)
+    assert row["session_root"] == recomputed_root(config, target)
     assert daemon.ledger.verify_chain() == 5
 
 
@@ -129,6 +136,30 @@ def test_bad_session_filename_does_not_stop_the_scan(fx, config):
     daemon = capture.Daemon(config)
     assert daemon.scan_once() == len(fx.sessions)  # bad file skipped, rest captured
     assert daemon.ledger.verify_chain() == 1 + len(fx.sessions)
+
+
+def test_same_stem_in_different_dirs_are_distinct_sessions(fx, config):
+    # MYB-2.7 regression: real Claude Code nests subagent transcripts that can
+    # reuse a stem across files; each file must get its own identity.
+    twin_dir = fx.sessions[0].parent / "subagents"
+    twin_dir.mkdir()
+    twin = twin_dir / fx.sessions[0].name  # same stem, different dir, other content
+    twin.write_bytes(b'{"synthetic": "twin-a"}\n{"synthetic": "twin-b"}\n')
+    daemon = capture.Daemon(config)
+    assert daemon.scan_once() == len(fx.sessions) + 1
+    rows = session_rows(daemon.ledger)
+    assert sid(config, twin) != sid(config, fx.sessions[0])
+    for f in (twin, fx.sessions[0]):
+        assert rows[sid(config, f)]["session_root"] == recomputed_root(config, f)
+
+
+def test_session_ids_are_opaque_and_valid(fx, config):
+    for s in fx.sessions:
+        session_id = sid(config, s)
+        assert len(session_id) <= 64
+        assert nonces.session_nonce_file(session_id)  # passes the opaque-id gate
+        # No readable path component beyond the stem itself leaks into the id.
+        assert s.parent.name not in session_id
 
 
 # --- Leak surface (AC #4) -----------------------------------------------------------

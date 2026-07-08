@@ -17,6 +17,8 @@ content, session ids, or watched paths/filenames (invariant #1).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import time
 from dataclasses import dataclass
@@ -70,6 +72,20 @@ def default_config() -> DaemonConfig:
     )
 
 
+def session_id_for(f: Path, watch: WatchSpec, scope_key: bytes) -> str:
+    """Opaque, per-file-unique session id: truncated stem + keyed path HMAC.
+
+    Real Claude Code layouts nest subagent transcripts that can reuse a stem
+    across many files (found during MYB-2.7); the stem alone would merge them
+    into one nonce namespace. The HMAC suffix over the watch-relative path
+    (ADR-0002 §4 amendment, 2026-07-08) disambiguates every file while
+    keeping readable path components out of the id.
+    """
+    rel = f.relative_to(watch.path).as_posix()
+    tag = hmac.new(scope_key, f"{watch.source}:{rel}".encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{f.stem[:40]}-{tag}"
+
+
 def _complete_lines(data: bytes) -> list[bytes]:
     """Items per ADR-0002 §2: complete raw lines; an unterminated tail is not yet an item."""
     lines = data.split(b"\n")
@@ -92,6 +108,7 @@ class Daemon:
         recovered = self.ledger.recover()
         if recovered:
             log.warning("recovered torn ledger tail (event=torn_tail bytes=%d)", recovered)
+        scope_key = paths.ensure_session_scope_key()
         # Items covered by an existing row, per session. Capture reconciles
         # against THIS, not the nonce store: a crash between nonce writes and
         # the row append leaves nonces without a row, which must produce a
@@ -110,15 +127,18 @@ class Daemon:
             for f in sorted(watch.path.rglob("*.jsonl")):
                 sessions_seen += 1
                 try:
-                    appended += self._capture_file(f, watch.source, covered)
+                    appended += self._capture_file(f, watch, scope_key, covered)
                 except Exception as exc:  # noqa: BLE001 — one bad file must not stop capture
                     # Exception CLASS only: messages may embed paths/ids (leak surface).
                     log.error("capture failed (event=capture_error type=%s)", type(exc).__name__)
         log.info("scan complete: sessions=%d rows_appended=%d", sessions_seen, appended)
         return appended
 
-    def _capture_file(self, f: Path, source: str, covered: dict[str, int]) -> int:
-        session_id = f.stem
+    def _capture_file(
+        self, f: Path, watch: WatchSpec, scope_key: bytes, covered: dict[str, int]
+    ) -> int:
+        source = watch.source
+        session_id = session_id_for(f, watch, scope_key)
         items = _complete_lines(f.read_bytes())
         if not items:
             return 0
