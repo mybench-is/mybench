@@ -1,3 +1,5 @@
 # mybench runtime dependencies (v0 scaffolding — minimal).
 # Real per-phase deps (e.g. an OpenTimestamps client) are added as phases land.
 jsonschema>=4.0
+# Ed25519 device key (ADR-0002 §5) — audited, minimal-surface crypto dep (ADV-3).
+cryptography>=49.0

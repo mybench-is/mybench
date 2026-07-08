@@ -1,29 +1,150 @@
-"""Filesystem locations for mybench.
+"""Filesystem locations for mybench — the single source of truth for the data dir.
 
 Privacy invariant #2: nonces and the ledger live in a dedicated local data
 directory (mode 0700, OUTSIDE all repos), never in any repo, test output, or
-logs. This module is the single source of truth for that path.
+logs. No other module may construct data paths (test-enforced).
+
+Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
+    nonces/   per-session nonce files (0600)      — asset A2
+    ledger/   hash-chained ledger                 — asset A3
+    keys/     device.key (0600) / device.pub      — Ed25519 device identity
 """
 
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+_DIR_MODE = 0o700
+_KEY_MODE = 0o600
+# Permission bits that must NOT be set on data dirs/keys (group/other access).
+_LOOSE_BITS = 0o077
+
+
+class PathsError(RuntimeError):
+    """Base error for data-dir bootstrap failures."""
+
+
+class InsecurePermissionsError(PathsError):
+    """An existing data path is group/other-accessible.
+
+    Deliberately NOT auto-repaired (decided in MYB-2.1): loose permissions on
+    A2/A3 may mean the secrets were already exposed — that event must surface
+    to the owner, not be silently chmod-ed away.
+    """
+
+
+class DataDirInsideRepoError(PathsError):
+    """The resolved data dir sits inside a git worktree (invariant #2)."""
 
 
 def data_dir() -> Path:
     """Return the mybench local data directory (may not exist yet).
 
-    Honors ``XDG_DATA_HOME``, falling back to ``~/.local/share``. Always resolves
-    outside every repo.
+    Honors ``XDG_DATA_HOME``, falling back to ``~/.local/share``.
     """
     base = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
     return Path(base) / "mybench"
 
 
-def ensure_data_dir() -> Path:
-    """Create the data directory with mode 0700 if needed and return it."""
-    d = data_dir()
-    d.mkdir(parents=True, exist_ok=True)
-    os.chmod(d, 0o700)
+def nonces_dir() -> Path:
+    return data_dir() / "nonces"
+
+
+def ledger_dir() -> Path:
+    return data_dir() / "ledger"
+
+
+def keys_dir() -> Path:
+    return data_dir() / "keys"
+
+
+def device_key_path() -> Path:
+    return keys_dir() / "device.key"
+
+
+def device_pub_path() -> Path:
+    return keys_dir() / "device.pub"
+
+
+def _is_worktree_root(p: Path) -> bool:
+    git = p / ".git"
+    # A dir with HEAD (worktree root) or a gitdir-pointer file (linked
+    # worktree / submodule). Bare ".git" dirs without HEAD are junk, not repos.
+    return git.is_file() or (git.is_dir() and (git / "HEAD").exists())
+
+
+def _assert_not_in_repo(d: Path) -> None:
+    for p in (d, *d.parents):
+        if _is_worktree_root(p):
+            raise DataDirInsideRepoError(
+                f"refusing to use data dir {d}: inside git worktree at {p} (invariant #2)"
+            )
+
+
+def _assert_tight(p: Path, allowed_bits: int) -> None:
+    mode = stat.S_IMODE(p.stat().st_mode)
+    if mode & _LOOSE_BITS:
+        raise InsecurePermissionsError(
+            f"{p} has mode {mode:04o} (group/other access); expected {allowed_bits:04o}. "
+            f"Not auto-repairing — verify nothing leaked, then: chmod {allowed_bits:o} {p}"
+        )
+
+
+def _ensure_dir(d: Path) -> Path:
+    existed = d.is_dir()
+    d.mkdir(parents=True, exist_ok=True, mode=_DIR_MODE)
+    if existed:
+        _assert_tight(d, _DIR_MODE)
+    else:
+        os.chmod(d, _DIR_MODE)  # mkdir mode is subject to umask
     return d
+
+
+def ensure_data_dir() -> Path:
+    """Create (or validate) the data dir tree; refuse repos and loose perms."""
+    d = data_dir()
+    _assert_not_in_repo(d)
+    _ensure_dir(d)
+    for sub in (nonces_dir(), ledger_dir(), keys_dir()):
+        _ensure_dir(sub)
+    return d
+
+
+def ensure_device_key() -> tuple[Path, Path]:
+    """Ensure the Ed25519 device keypair exists (ADR-0002 §5); never overwrite.
+
+    Returns (private_key_path, public_key_path). Private key: PKCS#8 PEM,
+    0600. Public key: SubjectPublicKeyInfo PEM, re-derivable from the private
+    key (and re-derived if missing).
+    """
+    ensure_data_dir()
+    key_path, pub_path = device_key_path(), device_pub_path()
+
+    if key_path.exists():
+        _assert_tight(key_path, _KEY_MODE)
+        private = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+        if not isinstance(private, Ed25519PrivateKey):
+            raise PathsError(f"{key_path} is not an Ed25519 private key")
+    else:
+        private = Ed25519PrivateKey.generate()
+        pem = private.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _KEY_MODE)
+        with os.fdopen(fd, "wb") as f:
+            f.write(pem)
+
+    pub_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    if not pub_path.exists() or pub_path.read_bytes() != pub_pem:
+        pub_path.write_bytes(pub_pem)
+    return key_path, pub_path
