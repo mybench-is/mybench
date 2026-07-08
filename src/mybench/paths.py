@@ -13,6 +13,7 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
 from __future__ import annotations
 
 import os
+import secrets
 import stat
 from pathlib import Path
 
@@ -69,6 +70,34 @@ def device_key_path() -> Path:
 
 def device_pub_path() -> Path:
     return keys_dir() / "device.pub"
+
+
+def session_scope_key_path() -> Path:
+    return keys_dir() / "session-scope.key"
+
+
+def ensure_session_scope_key() -> bytes:
+    """Random local key for the keyed session-id path disambiguator.
+
+    ADR-0002 §4 amendment (2026-07-08): session ids may carry a keyed-HMAC
+    suffix over the watch-relative path so files sharing a stem (nested
+    subagent transcripts) get distinct identities; raw path components remain
+    forbidden in ids. The key is a local-only secret: 32 bytes, 0600, never
+    rotated or overwritten (rotation would orphan every nonce file name).
+    """
+    ensure_data_dir()
+    p = session_scope_key_path()
+    if p.exists():
+        _assert_tight(p, _KEY_MODE)
+        key = p.read_bytes()
+        if len(key) != 32:
+            raise PathsError(f"{p} is corrupt: expected 32 bytes, found {len(key)}")
+        return key
+    key = secrets.token_bytes(32)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _KEY_MODE)
+    with os.fdopen(fd, "wb") as f:
+        f.write(key)
+    return key
 
 
 def _is_worktree_root(p: Path) -> bool:

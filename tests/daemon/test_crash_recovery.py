@@ -48,17 +48,24 @@ def daemon_cmd(fx, *extra):
     ]
 
 
-def assert_matches_ground_truth(ledger, fx):
+def sid(config, f):
+    for w in config.watches:
+        if f.is_relative_to(w.path):
+            return capture.session_id_for(f, w, paths.ensure_session_scope_key())
+    raise AssertionError(f"{f} not under any watch")
+
+
+def assert_matches_ground_truth(ledger, fx, config):
     rows = [r for r in ledger.rows() if r["type"] == "session"]
     latest = {}
     for r in rows:
         latest[r["session_id"]] = r
-    assert set(latest) == {s.stem for s in fx.sessions}
+    assert set(latest) == {sid(config, s) for s in fx.sessions}
     for s in fx.sessions:
         items = capture._complete_lines(s.read_bytes())
-        row = latest[s.stem]
+        row = latest[sid(config, s)]
         assert row["item_count"] == len(items)
-        known = nonces.load_nonces(s.stem)
+        known = nonces.load_nonces(sid(config, s))
         assert len(known) == len(items)  # no gaps, no over-commitment
         leaves = [c.leaf_commitment(k, m) for k, m in zip(known, items)]
         assert row["session_root"] == c.session_root(leaves).hex()
@@ -92,7 +99,7 @@ def test_sigkill_exactly_mid_append_then_recover_and_resume(fx, config, tmp_path
     capture.Daemon(config).scan_once()
     ledger = Ledger()
     assert ledger.verify_chain() == 1 + len(fx.sessions)
-    assert_matches_ground_truth(ledger, fx)
+    assert_matches_ground_truth(ledger, fx, config)
 
     # AC #5: quarantine, ledger, and daemon log are all leak-free.
     used = [n for f in paths.nonces_dir().glob("*.jsonl") for n in nonces.load_nonces(f.stem)]
@@ -143,10 +150,10 @@ def test_crash_between_nonces_and_row_produces_row_on_next_scan(fx, config):
     with target.open("ab") as f:
         f.write(b'{"synthetic": "crash-window"}\n')
     items = capture._complete_lines(target.read_bytes())
-    nonces.append_nonce(target.stem, c.generate_nonce())  # crash happened right here
-    assert len(nonces.load_nonces(target.stem)) == len(items)
+    nonces.append_nonce(sid(config, target), c.generate_nonce())  # crash happened right here
+    assert len(nonces.load_nonces(sid(config, target))) == len(items)
     assert daemon.scan_once() == 1  # not silence
-    assert_matches_ground_truth(Ledger(), fx)
+    assert_matches_ground_truth(Ledger(), fx, config)
 
 
 # --- Randomized kill loop (AC #2, #4) -------------------------------------------------
@@ -175,4 +182,4 @@ def test_random_kill_loop_never_corrupts_or_loses_acknowledged_rows(fx, config, 
     capture.Daemon(config).scan_once()
     ledger = Ledger()
     assert ledger.verify_chain() >= acknowledged
-    assert_matches_ground_truth(ledger, fx)
+    assert_matches_ground_truth(ledger, fx, config)
