@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+report.xml
+
+# Local mybench data (nonces/ledger) lives OUTSIDE all repos
+# (~/.local/share/mybench, mode 0700). Nothing from the data directory may ever
+# be committed. See CLAUDE.md privacy invariant #2.

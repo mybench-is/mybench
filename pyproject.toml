@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mybench"
+version = "0.0.0"
+description = "Privacy-preserving developer attestation system"
+requires-python = ">=3.11"
+dependencies = ["jsonschema>=4.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v0/report.schema.json",
+  "title": "Mybench Report",
+  "description": "Versioned activity report derived from the local ledger. Publishable: contains only metrics, Merkle roots, and timestamps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "report_version", "generated_at", "metrics"],
+  "properties": {
+    "schema_version": {
+      "description": "Schema version; bump on breaking changes.",
+      "const": "0"
+    },
+    "report_version": {
+      "description": "Version label of this particular report.",
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "description": "RFC 3339 timestamp when the report was produced.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "metrics": {
+      "description": "Computed metrics, each tagged with its trust tier.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value", "trust_tier"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "value": {"description": "Metric value (number, string, or object)."},
+          "trust_tier": {
+            "description": "PROVEN = cryptographically verifiable; ANCHORED = timing/volume proven, content claimed; JUDGED = reproducible model opinion.",
+            "type": "string",
+            "enum": ["PROVEN", "ANCHORED", "JUDGED"]
+          }
+        }
+      }
+    }
+  }
+}

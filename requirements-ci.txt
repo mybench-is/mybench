@@ -1,0 +1,4 @@
+# Headless CI/test dependencies. Mirrors the machine's split-requirements convention.
+-r requirements.txt
+pytest>=8.0.0
+ruff

@@ -1,0 +1,3 @@
+# mybench runtime dependencies (v0 scaffolding — minimal).
+# Real per-phase deps (e.g. an OpenTimestamps client) are added as phases land.
+jsonschema>=4.0
