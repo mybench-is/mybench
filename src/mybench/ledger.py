@@ -129,6 +129,44 @@ class Ledger:
             )
         return len(rows)
 
+    # -- recovery ---------------------------------------------------------------
+
+    def recover(self) -> int:
+        """Repair a torn trailing record: quarantine its bytes, truncate, re-verify.
+
+        Only the TornTailError case is auto-repaired (the documented MYB-2.4
+        interrupted-append signature). Any other corruption — a tampered or
+        broken row that is NOT the final one — propagates untouched: that is
+        evidence, not a crash artifact. Returns total bytes quarantined.
+        Quarantined bytes go to ``<ledger>.quarantine`` beside the ledger
+        (inside the data dir, 0600 — invariant #2).
+        """
+        quarantined = 0
+        while True:
+            try:
+                self.verify_chain()
+                return quarantined
+            except TornTailError:
+                data = self.path.read_bytes()
+                end = len(data) - 1 if data.endswith(b"\n") else len(data)
+                boundary = data.rfind(b"\n", 0, end) + 1
+                torn = data[boundary:]
+                qfd = os.open(
+                    self.path.with_name(self.path.name + ".quarantine"),
+                    os.O_WRONLY | os.O_APPEND | os.O_CREAT,
+                    _FILE_MODE,
+                )
+                try:
+                    os.write(qfd, torn)
+                    os.fsync(qfd)
+                finally:
+                    os.close(qfd)
+                with self.path.open("r+b") as f:
+                    f.truncate(boundary)
+                    f.flush()
+                    os.fsync(f.fileno())
+                quarantined += len(torn)
+
     # -- writing ---------------------------------------------------------------
 
     def _append_row(self, row: dict) -> dict:
@@ -137,6 +175,16 @@ class Ledger:
         line = json.dumps(row, sort_keys=True, separators=(",", ":")).encode() + b"\n"
         fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, _FILE_MODE)
         try:
+            fault_row = os.environ.get("MYBENCH_FAULT_ROW")
+            if fault_row is not None and row["i"] == int(fault_row):
+                # Test-only fault injection (MYB-2.6): half-write this row,
+                # then die as ungracefully as possible. Inert unless the env
+                # var is set by the crash-recovery harness.
+                import signal
+
+                os.write(fd, line[: max(1, len(line) // 2)])
+                os.fsync(fd)
+                os.kill(os.getpid(), signal.SIGKILL)
             os.write(fd, line)
             os.fsync(fd)
         finally:

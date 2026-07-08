@@ -83,7 +83,25 @@ class Daemon:
         self.ledger = ledger if ledger is not None else Ledger()
 
     def scan_once(self) -> int:
-        """One full pass over all watches; returns the number of rows appended."""
+        """One full pass over all watches; returns the number of rows appended.
+
+        Starts by self-healing a torn ledger tail (MYB-2.6): an append
+        interrupted by an ungraceful death is quarantined + truncated before
+        any new capture work.
+        """
+        recovered = self.ledger.recover()
+        if recovered:
+            log.warning("recovered torn ledger tail (event=torn_tail bytes=%d)", recovered)
+        # Items covered by an existing row, per session. Capture reconciles
+        # against THIS, not the nonce store: a crash between nonce writes and
+        # the row append leaves nonces without a row, which must produce a
+        # row on the next scan — not silence.
+        covered: dict[str, int] = {}
+        for row in self.ledger.rows():
+            if row["type"] == "session":
+                covered[row["session_id"]] = max(
+                    covered.get(row["session_id"], 0), row["item_count"]
+                )
         appended = sessions_seen = 0
         for watch in self.config.watches:
             if not watch.path.is_dir():
@@ -92,14 +110,14 @@ class Daemon:
             for f in sorted(watch.path.rglob("*.jsonl")):
                 sessions_seen += 1
                 try:
-                    appended += self._capture_file(f, watch.source)
+                    appended += self._capture_file(f, watch.source, covered)
                 except Exception as exc:  # noqa: BLE001 — one bad file must not stop capture
                     # Exception CLASS only: messages may embed paths/ids (leak surface).
                     log.error("capture failed (event=capture_error type=%s)", type(exc).__name__)
         log.info("scan complete: sessions=%d rows_appended=%d", sessions_seen, appended)
         return appended
 
-    def _capture_file(self, f: Path, source: str) -> int:
+    def _capture_file(self, f: Path, source: str, covered: dict[str, int]) -> int:
         session_id = f.stem
         items = _complete_lines(f.read_bytes())
         if not items:
@@ -109,7 +127,7 @@ class Daemon:
             # Source shrank below what we committed — never rewrite history.
             log.error("session shrank below committed items (event=source_shrunk); skipping")
             return 0
-        if len(items) == len(known):
+        if len(known) == len(items) and covered.get(session_id, 0) >= len(items):
             return 0
         fresh = [commitments.generate_nonce() for _ in items[len(known) :]]
         for nonce in fresh:
@@ -124,6 +142,7 @@ class Daemon:
             item_count=len(items),
             source=source,
         )
+        covered[session_id] = len(items)
         log.info("session row appended: row_i=%d items=%d new_items=%d",
                  row["i"], len(items), len(fresh))
         return 1
