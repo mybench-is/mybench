@@ -1,6 +1,7 @@
 """MYB-5.2: static report page — determinism, whitelist build, tiers, no JS, leaks."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -68,6 +69,41 @@ def test_free_text_fields_are_escaped():
     page = render_page(report, anchors_url=ANCHORS).decode()
     assert "<script" not in page
     assert "&lt;script&gt;" in page
+
+
+# --- Plain-language descriptions + glossary (MYB-5.5) --------------------------------------
+
+
+def test_every_metric_has_a_rendered_description():
+    from mybench.report.descriptions import METRIC_DESCRIPTIONS
+
+    report = fixed_report()
+    page = render_page(report, anchors_url=ANCHORS).decode()
+    assert page.count('class="desc"') == len(report["metrics"])
+    for metric in report["metrics"]:
+        assert metric["name"] in METRIC_DESCRIPTIONS
+
+
+def test_metric_without_description_fails_the_build():
+    report = fixed_report()
+    report["metrics"][0] = dict(report["metrics"][0], name="mystery_metric")
+    with pytest.raises(PageError, match="no plain-language description"):
+        render_page(report, anchors_url=ANCHORS)
+
+
+def test_intro_and_glossary_explain_the_jargon():
+    page = render_page(fixed_report(), anchors_url=ANCHORS).decode()
+    assert "A session is one working session with a coding agent" in page
+    for term in ("capture event", "anchor", "ledger", "item"):
+        assert f"<strong>{term}</strong>" in page
+
+
+def test_descriptions_map_matches_the_metrics_v0_spec():
+    from mybench.report.descriptions import METRIC_DESCRIPTIONS
+
+    spec = (Path(__file__).parents[2] / "docs" / "metrics-v0.md").read_text()
+    for name in METRIC_DESCRIPTIONS:
+        assert f"`{name}`" in spec, f"{name} described but not in docs/metrics-v0.md"
 
 
 # --- Fully static (AC #5) ---------------------------------------------------------------

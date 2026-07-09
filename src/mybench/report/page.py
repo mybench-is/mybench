@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 
+from mybench.report.descriptions import GLOSSARY, INTRO, METRIC_DESCRIPTIONS
 from mybench.schemas import load_validator
 
 TIER_COLORS = {"PROVEN": "#1a7f37", "ANCHORED": "#9a6700", "JUDGED": "#57606a"}
@@ -33,6 +34,7 @@ th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid #d0d7de;verti
 .badge{display:inline-block;padding:.1rem .5rem;border-radius:.8rem;color:#fff;
 font-size:.75rem;font-weight:600}
 .dist{font-size:.85rem;color:#57606a} .caveat{font-size:.85rem;color:#9a6700}
+.desc{font-size:.85rem;color:#57606a;max-width:28rem}
 code,pre{background:#f6f8fa;border-radius:.3rem} pre{padding:.8rem;overflow-x:auto}
 code{padding:.1rem .3rem} footer{color:#57606a;font-size:.8rem;margin-top:2rem}
 """
@@ -61,12 +63,16 @@ def _value_html(value) -> str:
 
 
 def _metric_row(metric: dict) -> str:
+    if metric["name"] not in METRIC_DESCRIPTIONS:
+        # Whitelist discipline, inverted: nothing ships unexplained (MYB-5.5).
+        raise PageError(f"metric {metric['name']!r} has no plain-language description")
     name = _esc(metric["name"].replace("_", " "))
+    desc = f'<div class="desc">{_esc(METRIC_DESCRIPTIONS[metric["name"]])}</div>'
     caveat = (
         f'<div class="caveat">{_esc(metric["caveat"])}</div>' if "caveat" in metric else ""
     )
     return (
-        f"<tr><td>{name}{caveat}</td>"
+        f"<tr><td>{name}{desc}{caveat}</td>"
         f"<td>{_value_html(metric['value'])}</td>"
         f"<td>{_badge(metric['trust_tier'])}</td></tr>"
     )
@@ -94,6 +100,10 @@ def render_page(report: dict, *, anchors_url: str) -> bytes:
             f"<table><tr><th>repo</th><th>tip commit</th></tr>{tip_rows}</table>"
         )
 
+    glossary_rows = "".join(
+        f"<tr><td><strong>{_esc(term)}</strong></td><td>{_esc(text)}</td></tr>"
+        for term, text in GLOSSARY
+    )
     quickstart = (
         "python -m venv .venv && . .venv/bin/activate\n"
         "pip install -e .   # from the mybench source repo\n"
@@ -106,12 +116,15 @@ def render_page(report: dict, *, anchors_url: str) -> bytes:
 <h1>mybench activity report</h1>
 <p class="sub">report {_esc(report["report_version"])} · schema {_esc(report["schema_version"])}
 · scorer {_esc(report["scorer_version"])} · generated {_esc(report["generated_at"])}</p>
-<p>{_esc(report.get("backfill_note", ""))}</p>
+<p>{_esc(INTRO)}</p>
+<p class="caveat">{_esc(report.get("backfill_note", ""))}</p>
 <h2>Metrics</h2>
 <table><tr><th>metric</th><th>value</th><th>trust tier</th></tr>{metric_rows}</table>
 {tips_html}
 <h2>Trust tiers</h2>
 <table>{legend}</table>
+<h2>Glossary</h2>
+<table>{glossary_rows}</table>
 <h2>Verify this yourself</h2>
 <p>Anchors: <a href="{_esc(anchors_url)}">{_esc(anchors_url)}</a></p>
 <pre>{_esc(quickstart)}</pre>

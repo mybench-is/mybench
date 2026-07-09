@@ -49,6 +49,13 @@ schema-defined granularity, and this document defines that granularity.
 sum counts capture events, not distinct sessions — shipping both under
 precise names beats shipping one subtly-wrong number.)
 
+## Plain-language descriptions (MYB-5.5)
+
+Every metric's public one-line explanation lives in
+`src/mybench/report/descriptions.py`, versioned WITH this document: adding
+or changing a metric updates both, and the page build fails on a metric
+without a description.
+
 ## Required caveats (report fields, not documentation)
 
 - Metrics #2/#3/#4 (capture-time basis): the report carries a
