@@ -120,7 +120,7 @@ MYB-4.4 re-run starts by re-running the grep and diffing this table).
 ### S11 — Git histories of mybench + mybench-ops (accidental data commits)
 - **Risk:** real transcript content, nonces, ledger fragments, or real
   session ids committed at any point in history.
-- **Check:** `git -C <repo> log --all --name-only --format= | sort -u | grep -vE '^(src/|tests/|docs/|ops/|epics/|backlog/|decisions/|reviews/|ideas/|\.mybench/|schemas/|README|CLAUDE|ROADMAP|SETUP_TODO|pyproject|pytest|requirements)'`
+- **Check:** `git -C <repo> log --all --name-only --format= | sort -u | grep -vE '^(src/|tests/|docs/|ops/|epics/|backlog/|decisions/|reviews/|ideas/|\.mybench/|\.github/|\.gitignore|schemas/|README|CLAUDE|ROADMAP|SETUP_TODO|pyproject|pytest|requirements)'`
   (any unexplained path fails); then keyword sweep over all blobs:
   `git -C <repo> grep -I -l -E "MYBENCH-CANARY|BEGIN (OPENSSH|EC|RSA) PRIVATE" $(git -C <repo> rev-list --all) | head` — canaries may
   legitimately appear in test SOURCE files only; private-key markers never.
@@ -133,9 +133,14 @@ MYB-4.4 re-run starts by re-running the grep and diffing this table).
   `git -C /srv/agents/typer/repos/mybench status --porcelain` (suite-wide
   repo-tree guard also runs inside the suite); confirm the only checked-in
   test artifact is synthetic: `head -c 300 tests/scorer/golden_report_v0.json`;
-  CI: none configured yet — when CI lands, its logs join this surface.
+  CI: GitHub Actions runs lint+pytest on every push/PR
+  (`.github/workflows/ci.yml`); its logs are public-adjacent, safe by
+  construction because tests are synthetic-only, XDG-isolated, and the
+  live-OTS network test is env-gated off in CI — verify no workflow step
+  sets MYBENCH_LIVE_OTS or mounts real data:
+  `grep -E "MYBENCH_LIVE_OTS|\.local/share" .github/workflows/*.yml | wc -l`.
 - **Pass:** suite green; worktree clean after run; golden file contains
-  synthetic values only.
+  synthetic values only; workflow grep returns 0.
 
 ### S13 — Shell/session residue (owner machine hygiene)
 - **Risk:** audit/ops commands echoing sensitive values into shell history
