@@ -1,28 +1,28 @@
-"""Skeptic verify CLI (MYB-5.1): zero context, no trust in the owner required.
+"""Skeptic verify CLI v2 — layout v1 (MYB-8.6, ADR-0004).
 
-Input: a public anchors location (local clone path, or a git/https URL that
-gets cloned to a temp dir). Checks, in order:
+Input: a public anchors-log location (local clone path, or a git/https URL
+that gets shallow-cloned to a temp dir). The full trust chain, in order:
 
-1. every artifact is schema-valid and device-signature-verified, all batches
-   signed by the same device key;
-2. anchor-chain continuity: contiguous, non-overlapping row ranges starting
-   at row 0 (no gaps — deleted history would show here, ADV-6);
-3. every artifact has its OTS proof, the proof binds exactly that artifact's
-   root;
-4. attestation status per anchor: "bitcoin-confirmed (height N)" vs
-   "pending (calendar-attested, not yet Bitcoin-confirmed)" — never
-   conflated (OQ #10: pending counts toward PASS, labeled);
-5. online by default: block headers fetched from TWO independent public
-   explorers (blockstream.info, mempool.space); both must agree, and the
-   proof's commitment must equal the header's merkle root. ``--offline`` (or
-   unreachable explorers) degrades honestly to "attested at height N —
-   verify the header independently".
+1. **Whitelist**: the log contains anchors, identity records, checkpoints,
+   the schema spec, and a README — anything else fails (anchors-only rule).
+2. **Identities**: every genesis record is self-certifying — the directory
+   name must equal SHA-256("mybench:v1:identity" || genesis pubkey) — and
+   every handle/device binding must verify against the genesis key.
+3. **Events**: schema + device signature; the signing device key must be
+   BOUND to the identity; the file's path must match its identity/date.
+4. **Coverage/continuity** per identity: row ranges chain from 0 with no
+   gaps or overlaps, in date order — "no anchor that day" is visibly
+   different from "withheld activity", which would show as a range gap.
+5. **Proofs** (two-step write): an absent .ots is reported as
+   "proof not yet published (pending Bitcoin confirmation)" — it counts
+   toward PASS, labeled (OQ #10). A present proof must bind its event's
+   root; online (default), Bitcoin block headers are fetched from TWO
+   independent explorers which must agree; ``--offline`` degrades honestly.
 
-Role separation: this module never reads a ledger, nonce store, or data dir
-— it consumes public artifacts only (test-enforced: runs with no data dir).
-What this CANNOT check: that session roots correspond to any particular
-content (that is what selective disclosure is for), or rows the owner never
-anchored (mybench proves what happened, not that nothing else did).
+Role separation: this module never reads a ledger, nonce store, or data
+dir. What it CANNOT check: that session roots correspond to particular
+content (selective disclosure's job), or activity the owner never anchored
+(mybench proves what happened, not that nothing else did).
 """
 
 from __future__ import annotations
@@ -34,11 +34,21 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from mybench.anchor.batch import AnchorError, verify_batch
+from mybench.anchor.event import EventError, verify_event
 from mybench.anchor.ots import OtsError, proof_info
+from mybench.identity import IdentityError, identity_id_for, verify_record
 
-ARTIFACT_RE = re.compile(r"^anchor-\d{8}-\d{8}\.json$")
+EVENT_RE = re.compile(r"^anchors/([0-9a-f]{64})/(\d{4})/(\d{2})/(\d{2})\.json$")
+PROOF_RE = re.compile(r"^anchors/[0-9a-f]{64}/\d{4}/\d{2}/\d{2}\.json\.ots$")
+RECORD_RE = re.compile(
+    r"^identities/([0-9a-f]{64})/(genesis|handle-\d{4}|device-[0-9a-f]{8})\.json$"
+)
+TOLERATED_RE = re.compile(r"^(README\.md|LICENSE.*|schema/.+\.md|checkpoints/.+\.json)$")
 EXPLORERS = ("https://blockstream.info/api", "https://mempool.space/api")
+
+
+class VerifyFailure(Exception):
+    pass
 
 
 def _fetch_json(url: str, timeout: float = 15.0):
@@ -47,13 +57,11 @@ def _fetch_json(url: str, timeout: float = 15.0):
 
 
 def fetch_merkle_root(height: int, fetch=_fetch_json) -> str | None:
-    """Block merkle root at height, agreed by both explorers; None if unreachable."""
     roots = set()
     for base in EXPLORERS:
         try:
             block_hash = fetch(f"{base}/block-height/{height}").strip()
-            block = json.loads(fetch(f"{base}/block/{block_hash}"))
-            roots.add(block["merkle_root"])
+            roots.add(json.loads(fetch(f"{base}/block/{block_hash}"))["merkle_root"])
         except Exception:  # noqa: BLE001 — explorer down/unreachable
             return None
     if len(roots) != 1:
@@ -61,12 +69,7 @@ def fetch_merkle_root(height: int, fetch=_fetch_json) -> str | None:
     return roots.pop()
 
 
-class VerifyFailure(Exception):
-    pass
-
-
-def _bitcoin_commitments(root: bytes, ots_bytes: bytes) -> list[tuple[int, bytes]]:
-    """(height, commitment msg) pairs for every Bitcoin attestation in the proof."""
+def _bitcoin_commitments(ots_bytes: bytes) -> list[tuple[int, bytes]]:
     import io
 
     from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
@@ -94,85 +97,164 @@ def _obtain(source: str, workdir: Path) -> Path:
     return clone
 
 
+def _load_identities(directory: Path, failures: list[str]) -> dict[str, dict]:
+    """id -> {"pub": hex, "devices": set, "handles": [..]}; failures appended."""
+    identities: dict[str, dict] = {}
+    root = directory / "identities"
+    if not root.is_dir():
+        return identities
+    for id_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        iid = id_dir.name
+        genesis_path = id_dir / "genesis.json"
+        if not genesis_path.is_file():
+            failures.append(f"identities/{iid}: missing genesis record")
+            continue
+        try:
+            genesis = json.loads(genesis_path.read_bytes())
+            verify_record(genesis, genesis["identity_pub"])
+        except (ValueError, KeyError, IdentityError) as exc:
+            failures.append(f"identities/{iid}/genesis.json: {exc}")
+            continue
+        if identity_id_for(bytes.fromhex(genesis["identity_pub"])) != iid:
+            failures.append(
+                f"identities/{iid}: directory name is NOT the genesis-key fingerprint"
+            )
+            continue
+        info = {"pub": genesis["identity_pub"], "devices": set(), "handles": []}
+        for record_path in sorted(id_dir.glob("*.json")):
+            if record_path.name == "genesis.json":
+                continue
+            try:
+                record = json.loads(record_path.read_bytes())
+                verify_record(record, info["pub"])
+            except (ValueError, IdentityError) as exc:
+                failures.append(f"identities/{iid}/{record_path.name}: {exc}")
+                continue
+            if record.get("type") == "device-binding":
+                info["devices"].add(record["device_pub"])
+            elif record.get("type") == "handle-binding":
+                info["handles"].append(record["handle"])
+        identities[iid] = info
+    return identities
+
+
 def verify_anchors(source: str, *, check_bitcoin: bool = True, fetch=_fetch_json) -> dict:
-    """Run all checks; returns {verdict, lines, failures, confirmed, pending}."""
     lines: list[str] = []
     failures: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         directory = _obtain(source, Path(tmp))
-        artifacts = sorted(p for p in directory.iterdir() if ARTIFACT_RE.fullmatch(p.name))
-        if not artifacts:
-            raise VerifyFailure(f"no anchor artifacts found in {source}")
+        rels = sorted(
+            p.relative_to(directory).as_posix()
+            for p in directory.rglob("*")
+            if p.is_file() and ".git" not in p.parts
+        )
+        unknown = [r for r in rels
+                   if not (EVENT_RE.match(r) or PROOF_RE.match(r) or RECORD_RE.match(r)
+                           or TOLERATED_RE.match(r))]
+        if unknown:
+            failures.append(f"unexpected files in an anchors-only log: {unknown}")
 
-        batches, keys = [], set()
-        for artifact in artifacts:
-            try:
-                batch = json.loads(artifact.read_bytes())
-                verify_batch(batch)
-            except (ValueError, AnchorError) as exc:
-                failures.append(f"{artifact.name}: {exc}")
-                continue
-            keys.add(batch["device_pub"])
-            batches.append((artifact, batch))
-        if len(keys) > 1:
-            failures.append(f"batches signed by {len(keys)} different device keys")
-        lines.append(f"{len(batches)} anchor batch(es), schema-valid, device-signed")
-
-        batches.sort(key=lambda ab: ab[1]["row_start"])
-        if batches and batches[0][1]["row_start"] != 0:
-            failures.append("history does not start at row 0 (missing early anchors)")
-        for (_, a), (_, b) in zip(batches, batches[1:]):
-            if b["row_start"] != a["row_end"]:
-                failures.append(
-                    f"gap/overlap between rows {a['row_end']} and {b['row_start']}"
-                )
-        if batches:
+        identities = _load_identities(directory, failures)
+        for iid, info in identities.items():
+            handle = info["handles"][-1] if info["handles"] else "(no handle)"
             lines.append(
-                f"continuity: rows 0..{batches[-1][1]['row_end']} covered with no gaps"
+                f"identity {iid[:12]}… — handle {handle!r}, "
+                f"{len(info['devices'])} bound device(s), genesis self-certifies"
             )
 
-        confirmed = pending = 0
-        for artifact, batch in batches:
-            proof = artifact.with_name(artifact.name[: -len(".json")] + ".root.ots")
-            if not proof.exists():
-                failures.append(f"{artifact.name}: missing OTS proof")
+        events_by_id: dict[str, list[dict]] = {}
+        for rel in rels:
+            m = EVENT_RE.match(rel)
+            if not m:
                 continue
-            root = bytes.fromhex(batch["root"])
+            iid, y, mo, d = m.groups()
             try:
-                info = proof_info(root, proof.read_bytes())
-            except OtsError as exc:
-                failures.append(f"{proof.name}: {exc}")
+                event = json.loads((directory / rel).read_bytes())
+                verify_event(event)
+            except (ValueError, EventError) as exc:
+                failures.append(f"{rel}: {exc}")
                 continue
-            if not info["digest_matches"]:
-                failures.append(f"{proof.name}: proof does not bind this artifact's root")
+            if event["identity_id"] != iid or event["date"] != f"{y}-{mo}-{d}":
+                failures.append(f"{rel}: path does not match event identity/date")
                 continue
-            name = f"rows [{batch['row_start']}, {batch['row_end']})"
-            if info["confirmed"]:
-                confirmed += 1
-                heights = info["bitcoin_heights"]
-                status = f"bitcoin-confirmed (height {', '.join(map(str, heights))})"
-                if check_bitcoin:
-                    status += _check_headers(root, proof.read_bytes(), fetch, failures, proof.name)
-            else:
-                pending += 1
-                status = "pending (calendar-attested, not yet Bitcoin-confirmed)"
-            lines.append(f"{name}: {status}")
+            if iid not in identities:
+                failures.append(f"{rel}: no identity records for this id")
+                continue
+            if event["device_pub"] not in identities[iid]["devices"]:
+                failures.append(f"{rel}: signed by a device key NOT bound to the identity")
+                continue
+            events_by_id.setdefault(iid, []).append(event)
+
+        confirmed = pending = 0
+        for iid, events in sorted(events_by_id.items()):
+            events.sort(key=lambda e: e["date"])
+            expected = 0
+            for event in events:
+                if event["row_start"] != expected:
+                    failures.append(
+                        f"{iid[:12]}… {event['date']}: row_start {event['row_start']} "
+                        f"breaks continuity (expected {expected}) — gap or withheld rows"
+                    )
+                expected = max(expected, event["row_end"])
+                rel, rel_proof = (
+                    f"anchors/{iid}/{event['date'].replace('-', '/')}.json",
+                    f"anchors/{iid}/{event['date'].replace('-', '/')}.json.ots",
+                )
+                name = f"{event['date']}: rows [{event['row_start']}, {event['row_end']})"
+                proof_path = directory / rel_proof
+                if not proof_path.exists():
+                    pending += 1
+                    lines.append(f"  {name} — proof not yet published "
+                                 f"(pending Bitcoin confirmation)")
+                    continue
+                try:
+                    info = proof_info(bytes.fromhex(event["root"]), proof_path.read_bytes())
+                except OtsError as exc:
+                    failures.append(f"{rel_proof}: {exc}")
+                    continue
+                if not info["digest_matches"]:
+                    failures.append(f"{rel_proof}: proof does not bind this event's root")
+                    continue
+                if info["confirmed"]:
+                    confirmed += 1
+                    status = (f"bitcoin-confirmed "
+                              f"(height {', '.join(map(str, info['bitcoin_heights']))})")
+                    if check_bitcoin:
+                        status += _check_headers(proof_path.read_bytes(), fetch,
+                                                 failures, rel_proof)
+                else:
+                    pending += 1
+                    status = "pending (calendar-attested, not yet Bitcoin-confirmed)"
+                lines.append(f"  {name} — {status}")
+            lines.append(
+                f"identity {iid[:12]}…: rows 0..{expected} covered, "
+                f"{len(events)} anchor day(s), no gaps"
+                if not any(iid[:12] in f for f in failures)
+                else f"identity {iid[:12]}…: coverage NOT continuous"
+            )
+
+        if not events_by_id and not failures:
+            raise VerifyFailure(f"no anchor events found in {source}")
+        checkpoints = [r for r in rels if r.startswith("checkpoints/")]
+        if checkpoints:
+            lines.append(f"{len(checkpoints)} checkpoint(s) present "
+                         f"(tree-head verification arrives with the checkpoint story)")
 
     if pending and not failures:
-        lines.append("note: pending proofs upgrade automatically once Bitcoin confirms;"
+        lines.append("note: pending proofs publish automatically once Bitcoin confirms;"
                      " re-run later for full confirmation")
-    verdict = "FAIL" if failures else "PASS"
     return {
-        "verdict": verdict,
+        "verdict": "FAIL" if failures else "PASS",
         "lines": lines,
         "failures": failures,
         "confirmed": confirmed,
         "pending": pending,
+        "identities": len(identities),
     }
 
 
-def _check_headers(root, ots_bytes, fetch, failures, proof_name) -> str:
-    for height, msg in _bitcoin_commitments(root, ots_bytes):
+def _check_headers(ots_bytes, fetch, failures, proof_rel) -> str:
+    for height, msg in _bitcoin_commitments(ots_bytes):
         try:
             merkle_root = fetch_merkle_root(height, fetch)
         except VerifyFailure as exc:
@@ -181,9 +263,8 @@ def _check_headers(root, ots_bytes, fetch, failures, proof_name) -> str:
         if merkle_root is None:
             return " — explorers unreachable; verify the header independently"
         if msg[::-1].hex() != merkle_root and msg.hex() != merkle_root:
-            failures.append(
-                f"{proof_name}: commitment does NOT match block {height} merkle root"
-            )
+            failures.append(f"{proof_rel}: commitment does NOT match block {height} "
+                            f"merkle root")
             return ""
     return ", header cross-checked against 2 explorers"
 
@@ -193,6 +274,7 @@ def render(result: dict) -> str:
     out += [f"  {line}" for line in result["lines"]]
     out += [f"  FAIL: {f}" for f in result["failures"]]
     out.append(
-        f"  proofs: {result['confirmed']} bitcoin-confirmed, {result['pending']} pending"
+        f"  identities: {result['identities']} · proofs: {result['confirmed']} "
+        f"bitcoin-confirmed, {result['pending']} pending"
     )
     return "\n".join(out)
