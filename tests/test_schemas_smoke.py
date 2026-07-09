@@ -1,51 +1,80 @@
-"""Smoke test: the shipped JSON Schema stubs are valid Draft 2020-12 schemas.
+"""Smoke tests: packaged JSON Schemas are valid and enforce their whitelists.
 
-Uses synthetic in-memory instances only (privacy invariant #3) — no real ledger
-or transcript data is read.
+Uses synthetic in-memory instances only (privacy invariant #3).
 """
 
-import json
-from importlib import resources
-from pathlib import Path
-
 import jsonschema
+import pytest
 from jsonschema.validators import Draft202012Validator
 
-SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schemas"
+from mybench.schemas import load_validator
 
 
-def _ledger_schema():
-    # Lives inside the package (mybench/schemas/) so installed code can
-    # validate rows; report.schema.json stays a top-level stub until MYB-4.1.
-    return json.loads(
-        resources.files("mybench.schemas").joinpath("ledger_entry.schema.json").read_text()
-    )
+def _schema(name):
+    return load_validator(name).schema
 
 
-def test_ledger_entry_schema_is_valid():
-    Draft202012Validator.check_schema(_ledger_schema())
+@pytest.mark.parametrize(
+    "name",
+    ["ledger_entry.schema.json", "anchor_batch.schema.json", "report.schema.json"],
+)
+def test_packaged_schemas_are_valid(name):
+    Draft202012Validator.check_schema(_schema(name))
 
 
-def test_report_schema_is_valid():
-    Draft202012Validator.check_schema(json.loads((SCHEMA_DIR / "report.schema.json").read_text()))
+REPORT = {
+    "schema_version": "1",
+    "report_version": "v0",
+    "generated_at": "2026-01-01T00:00:00Z",
+    "scorer_version": "0.1.0",
+    "backfill_note": "history captured by backfill is anchored as of anchor time",
+    "binding_tips": {"synthetic/repo": "a" * 40},
+    "metrics": [
+        {"name": "anchored_span_days", "value": 0, "trust_tier": "PROVEN"},
+        {
+            "name": "session_size_distribution",
+            "value": {"1-10": 2, "11-100": 1, "101-1000": 0, "1000+": 0},
+            "trust_tier": "ANCHORED",
+        },
+        {
+            "name": "items_total",
+            "value": 42,
+            "trust_tier": "ANCHORED",
+            "caveat": "synthetic caveat text",
+        },
+    ],
+}
 
 
 def test_synthetic_report_validates():
-    schema = json.loads((SCHEMA_DIR / "report.schema.json").read_text())
-    instance = {
-        "schema_version": "0",
-        "report_version": "v0",
-        "generated_at": "2020-01-01T00:00:00Z",
-        "metrics": [
-            {"name": "history_length_days", "value": 0, "trust_tier": "ANCHORED"},
-            {"name": "commit_session_binding_coverage", "value": 0.0, "trust_tier": "PROVEN"},
-        ],
-    }
-    jsonschema.validate(instance, schema)
+    jsonschema.validate(REPORT, _schema("report.schema.json"))
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda r: r.update(session_list=["x"]),  # extra top-level field
+        lambda r: r["metrics"][0].update(samples=[1, 2, 3]),  # extra metric field
+        lambda r: r["metrics"][0].update(trust_tier="TEE-VERIFIED"),  # future tier: bump first
+        lambda r: r["metrics"][0].update(name="Hour_Of_Day"),  # name pattern
+        lambda r: r["metrics"][1].update(value=[1, 2, 3]),  # ordered sequence as value
+        lambda r: r.pop("scorer_version"),
+        lambda r: r.pop("metrics"),
+    ],
+    ids=["extra-top", "extra-metric-field", "unknown-tier", "bad-name", "sequence-value",
+         "no-scorer-version", "no-metrics"],
+)
+def test_report_whitelist_rejects(mutate):
+    import copy
+
+    bad = copy.deepcopy(REPORT)
+    mutate(bad)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, _schema("report.schema.json"))
 
 
 def test_synthetic_ledger_rows_validate():
-    schema = _ledger_schema()
+    schema = _schema("ledger_entry.schema.json")
     genesis = {
         "schema_version": "1",
         "i": 0,
@@ -71,7 +100,7 @@ def test_synthetic_ledger_rows_validate():
 
 
 def test_ledger_schema_rejects_content_shaped_fields():
-    schema = _ledger_schema()
+    schema = _schema("ledger_entry.schema.json")
     bad = {
         "schema_version": "1",
         "i": 0,
@@ -81,8 +110,5 @@ def test_ledger_schema_rejects_content_shaped_fields():
         "h": "a" * 64,
         "filename": "leak.py",
     }
-    try:
+    with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(bad, schema)
-    except jsonschema.ValidationError:
-        return
-    raise AssertionError("schema accepted an extra 'filename' field")
