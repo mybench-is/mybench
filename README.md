@@ -19,6 +19,23 @@ roadmap, and decisions live in the sibling repo `../mybench-ops`.
 - `schemas/` — versioned JSON Schemas (`ledger_entry`, `report`).
 - `tests/` — pytest smoke tests (synthetic fixtures only).
 
+## Verify someone's anchors (zero trust required)
+
+```
+python -m venv .venv && . .venv/bin/activate
+pip install -e .
+python -m mybench.verify <anchors repo URL or local clone path>
+```
+
+Checks anchor schema/signatures, chain continuity (no gaps or rewrites),
+and OpenTimestamps proofs. Network use: cloning the anchors repo, plus
+Bitcoin block-header cross-checks against blockstream.info and
+mempool.space (two independent sources must agree). Add `--offline` to skip
+the header check — attested block heights are then printed for independent
+verification via any Bitcoin node or explorer. Proofs newer than a few
+hours may report as "pending (calendar-attested, not yet
+Bitcoin-confirmed)" — re-run later for full confirmation.
+
 ## Develop
 
 ```
