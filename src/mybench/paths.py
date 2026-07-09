@@ -81,6 +81,51 @@ def session_scope_key_path() -> Path:
     return keys_dir() / "session-scope.key"
 
 
+def identity_key_path() -> Path:
+    return keys_dir() / "identity.key"
+
+
+def identity_pub_path() -> Path:
+    return keys_dir() / "identity.pub"
+
+
+def ensure_identity_key() -> tuple[Path, Path]:
+    """Ensure the Ed25519 IDENTITY keypair exists (ADR-0004 §3); never overwrite.
+
+    Distinct from the device key: the identity key signs bindings only
+    (handle→ID, device→ID, succession) and its GENESIS public key's
+    fingerprint is the permanent log namespace ID. After setup and backup it
+    can be held offline — losing it (and its backup) is losing the namespace
+    until the rotation/recovery ADR (MYB-8.11) exists.
+    """
+    ensure_data_dir()
+    key_path, pub_path = identity_key_path(), identity_pub_path()
+
+    if key_path.exists():
+        _assert_tight(key_path, _KEY_MODE)
+        private = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+        if not isinstance(private, Ed25519PrivateKey):
+            raise PathsError(f"{key_path} is not an Ed25519 private key")
+    else:
+        private = Ed25519PrivateKey.generate()
+        pem = private.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _KEY_MODE)
+        with os.fdopen(fd, "wb") as f:
+            f.write(pem)
+
+    pub_pem = private.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    if not pub_path.exists() or pub_path.read_bytes() != pub_pem:
+        pub_path.write_bytes(pub_pem)
+    return key_path, pub_path
+
+
 def ensure_session_scope_key() -> bytes:
     """Random local key for the keyed session-id path disambiguator.
 
