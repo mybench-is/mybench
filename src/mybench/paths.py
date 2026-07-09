@@ -64,6 +64,11 @@ def keys_dir() -> Path:
     return data_dir() / "keys"
 
 
+def anchors_dir() -> Path:
+    """Staging area for anchor artifacts + OTS proofs before publication."""
+    return data_dir() / "anchors"
+
+
 def device_key_path() -> Path:
     return keys_dir() / "device.key"
 
@@ -139,7 +144,7 @@ def ensure_data_dir() -> Path:
     d = data_dir()
     _assert_not_in_repo(d)
     _ensure_dir(d)
-    for sub in (nonces_dir(), ledger_dir(), keys_dir()):
+    for sub in (nonces_dir(), ledger_dir(), keys_dir(), anchors_dir()):
         _ensure_dir(sub)
     return d
 

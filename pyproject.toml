@@ -7,7 +7,7 @@ name = "mybench"
 version = "0.0.0"
 description = "Privacy-preserving developer attestation system"
 requires-python = ">=3.11"
-dependencies = ["jsonschema>=4.0", "cryptography>=49.0"]
+dependencies = ["jsonschema>=4.0", "cryptography>=49.0", "opentimestamps>=0.4"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
