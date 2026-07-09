@@ -94,8 +94,10 @@ MYB-4.4 re-run starts by re-running the grep and diffing this table).
 - **Pass:** single POST call site whose body is the digest; test green.
 
 ### S8 — Anchor staging (`$DD/anchors`)
-- **Check:** `ls $DD/anchors | grep -vE '^anchor-[0-9]{8}-[0-9]{8}\.(json|root\.ots)$' | wc -l` ;
-  `for f in $DD/anchors/anchor-*.json; do $V -c "import json,sys; from mybench.anchor.batch import verify_batch; verify_batch(json.load(open('$f')))" ; done`.
+- **Check (layout v1, ADR-0004):** staged paths match the whitelist:
+  `$V -c "from mybench.anchor.publish import staged_files, gate; fs=staged_files(); gate(fs) if fs else print('staging empty'); print(len(fs), 'staged files pass the gate')"`
+  (the gate IS the check: path whitelist + event signatures + proof binding
+  + secret-corpus scan; archives under anchors/archive* are excluded).
 - **Pass:** zero non-whitelisted filenames; every artifact schema-valid and
   signature-verified.
 

@@ -81,6 +81,44 @@ def session_scope_key_path() -> Path:
     return keys_dir() / "session-scope.key"
 
 
+def commit_signing_key_path() -> Path:
+    return keys_dir() / "log-signing"
+
+
+def commit_signing_pub_path() -> Path:
+    return keys_dir() / "log-signing.pub"
+
+
+def ensure_commit_signing_key() -> tuple[Path, Path]:
+    """SSH Ed25519 keypair that signs anchors-log git commits (ADR-0004 §6).
+
+    The LOG-OPERATOR signature — distinct from user signatures inside anchor
+    files and from the identity key. OpenSSH format because git's SSH
+    signing consumes it directly. Register the .pub on the committing
+    GitHub account for the Verified badge (owner UI step; noted in
+    SETUP_TODO). Never overwritten.
+    """
+    ensure_data_dir()
+    key_path, pub_path = commit_signing_key_path(), commit_signing_pub_path()
+    if key_path.exists():
+        _assert_tight(key_path, _KEY_MODE)
+    else:
+        private = Ed25519PrivateKey.generate()
+        pem = private.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.OpenSSH,
+            serialization.NoEncryption(),
+        )
+        pub = private.public_key().public_bytes(
+            serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH
+        )
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _KEY_MODE)
+        with os.fdopen(fd, "wb") as f:
+            f.write(pem)
+        pub_path.write_bytes(pub + b" mybench-log-signer\n")
+    return key_path, pub_path
+
+
 def identity_key_path() -> Path:
     return keys_dir() / "identity.key"
 

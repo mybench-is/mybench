@@ -103,6 +103,32 @@ def build_event(batch: dict, rows: list[dict], *, date: str) -> dict:
     return event
 
 
+def verify_event(event: dict) -> None:
+    """Schema + device-signature verification (raises EventError)."""
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    validate_event(event)
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(event["device_pub"])).verify(
+            bytes.fromhex(event["sig"]), signed_bytes(event)
+        )
+    except (InvalidSignature, ValueError) as exc:
+        raise EventError("event device signature does not verify") from exc
+
+
+def stage_event(event: dict, proof_bytes: bytes, staging: Path) -> tuple[Path, Path]:
+    """Write an event + its (possibly pending) proof into the staging tree."""
+    rel_event, rel_proof = event_relpaths(event["identity_id"], event["date"])
+    event_path, proof_path = staging / rel_event, staging / rel_proof
+    if event_path.exists():
+        raise EventError(f"{rel_event} already staged — one event per identity per UTC day")
+    event_path.parent.mkdir(parents=True, exist_ok=True)
+    event_path.write_bytes(event_bytes(event))
+    proof_path.write_bytes(proof_bytes)
+    return event_path, proof_path
+
+
 def validate_event(event: dict) -> None:
     errors = sorted(load_validator("anchor_event.schema.json").iter_errors(event), key=str)
     if errors:
