@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v1/anchor_batch.schema.json",
+  "title": "Mybench Anchor Batch",
+  "description": "One publishable anchor batch: the Merkle root over the covered ledger rows' session roots, the covered range, the chain tip, and the device signature. This is a strict whitelist of the ONLY bytes that may leave the machine (threat model §3, privacy invariant #1); additionalProperties:false makes accidental inclusion of anything else structurally impossible.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scheme",
+    "row_start",
+    "row_end",
+    "row_count",
+    "session_count",
+    "root",
+    "chain_tip",
+    "ts",
+    "device_pub",
+    "sig"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Anchor batch schema version; bump on breaking changes.",
+      "const": "1"
+    },
+    "scheme": {
+      "description": "Commitment scheme id (ADR-0002 domain-tag family).",
+      "const": "mybench:v1"
+    },
+    "row_start": {
+      "description": "First covered ledger row index (inclusive).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "row_end": {
+      "description": "One past the last covered ledger row index (exclusive).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "row_count": {
+      "description": "row_end - row_start (redundant on purpose; verified on validate).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "session_count": {
+      "description": "Number of session rows (Merkle leaves) in the covered range.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "root": {
+      "description": "H('mybench:v1:day' || MTH(covered session roots)), lowercase hex (ADR-0002 §3).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "chain_tip": {
+      "description": "h of the last covered ledger row — lets verifiers detect trailing truncation (ADV-6).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ts": {
+      "description": "UTC RFC 3339 timestamp of the NEWEST covered ledger row (ledger-derived so the artifact is deterministic; anchor time itself comes from the OTS proof).",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "device_pub": {
+      "description": "Raw 32-byte Ed25519 device public key, lowercase hex (ADR-0002 §5).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sig": {
+      "description": "Ed25519 signature (hex) over the canonical compact sorted JSON of this object WITHOUT the sig field.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    }
+  }
+}

@@ -20,12 +20,10 @@ import json
 import os
 import stat
 from datetime import UTC, datetime
-from importlib import resources
 from pathlib import Path
 
-import jsonschema
-
 from mybench import paths
+from mybench.schemas import load_validator
 
 DOMAIN_ROW = b"mybench:v1:ledgerrow"
 GENESIS_PREV = "0" * 64
@@ -40,13 +38,6 @@ class LedgerError(RuntimeError):
 
 class TornTailError(LedgerError):
     """Only the final row is unreadable — the signature of an interrupted append."""
-
-
-def _validator() -> jsonschema.Draft202012Validator:
-    schema = json.loads(
-        resources.files("mybench.schemas").joinpath("ledger_entry.schema.json").read_text()
-    )
-    return jsonschema.Draft202012Validator(schema)
 
 
 def _canonical(row: dict) -> bytes:
@@ -66,7 +57,7 @@ def _utc_now() -> str:
 class Ledger:
     def __init__(self, path: Path | None = None):
         self.path = path if path is not None else paths.ledger_dir() / "ledger.jsonl"
-        self._schema = _validator()
+        self._schema = load_validator("ledger_entry.schema.json")
 
     # -- validation ------------------------------------------------------------
 
