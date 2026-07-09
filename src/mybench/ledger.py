@@ -216,3 +216,35 @@ class Ledger:
                 "source": source,
             }
         )
+
+    def append_binding(
+        self, *, commit_hash: str, commit_ts: str, repo_id: str, ts: str | None = None
+    ) -> dict:
+        """Append one commit↔activity binding row (MYB-3.5); genesis-creating like sessions.
+
+        Deliberately narrow: no message, diff, filename, or branch parameter
+        exists, so those leak channels cannot reach the ledger even by bug.
+        """
+        if self.path == paths.ledger_dir() / "ledger.jsonl":
+            paths.ensure_data_dir()
+        ts = ts if ts is not None else _utc_now()
+        existing = self.rows()
+        if not existing:
+            existing = [
+                self._append_row(
+                    {"schema_version": SCHEMA_VERSION, "i": 0, "type": "genesis", "ts": ts,
+                     "prev": GENESIS_PREV}
+                )
+            ]
+        return self._append_row(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "i": existing[-1]["i"] + 1,
+                "type": "binding",
+                "ts": ts,
+                "prev": existing[-1]["h"],
+                "commit_hash": commit_hash,
+                "commit_ts": commit_ts,
+                "repo_id": repo_id,
+            }
+        )
