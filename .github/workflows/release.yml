@@ -40,8 +40,8 @@ jobs:
       - name: Build both distributions
         run: |
           pip install --upgrade build
-          python -m build --outdir dist/
-          python -m build packaging/mybench-verify --outdir dist/
+          python -m build --outdir dist-main/
+          python -m build packaging/mybench-verify --outdir dist-verify/
       - name: Tag/version consistency
         run: |
           python - <<'PY'
@@ -55,10 +55,17 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: dist/
+          name: dist-main
+          path: dist-main/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-verify
+          path: dist-verify/
 
-  publish:
+  # One environment per project: PyPI forbids two PENDING publishers
+  # sharing an identical (repo, workflow, environment) tuple, so each
+  # package gets its own env — and its own approval gate.
+  publish-mybench:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
@@ -67,9 +74,23 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist
-          path: dist/
-      - name: Publish to PyPI (both dists, OIDC)
-        uses: pypa/gh-action-pypi-publish@release/v1
+          name: dist-main
+          path: dist-main/
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          packages-dir: dist-main/
+
+  publish-verify:
+    needs: publish-mybench  # wrapper depends on mybench==X.Y.Z existing
+    runs-on: ubuntu-latest
+    environment: pypi-verify
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-verify
+          path: dist-verify/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-verify/
