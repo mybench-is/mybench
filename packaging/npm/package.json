@@ -1,0 +1,10 @@
+{
+  "name": "mybench",
+  "version": "0.0.1",
+  "description": "Verifiable credentials for agentic engineers. Client under development — see mybench.is",
+  "homepage": "https://mybench.is",
+  "repository": { "type": "git", "url": "git+https://github.com/mybench-is/mybench.git" },
+  "license": "Apache-2.0",
+  "keywords": ["credentials", "attestation", "ai-agents", "transparency-log"],
+  "files": ["README.md"]
+}
