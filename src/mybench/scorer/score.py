@@ -24,10 +24,13 @@ BACKFILL_NOTE = (
     "reflect when rows were appended, not when the underlying work happened."
 )
 
-WEEKLY_BUCKETS = (("0", 0, 0), ("1-5", 1, 5), ("6-15", 6, 15), ("16-40", 16, 40),
-                  ("40+", 41, None))
-SIZE_BUCKETS = (("1-10", 1, 10), ("11-100", 11, 100), ("101-1000", 101, 1000),
-                ("1000+", 1001, None))
+# Labels are zero-padded so canonical sorted-JSON order IS numeric order
+# (handoff fix #4, 2026-07-09): determinism untouched, every consumer sees
+# buckets in order, the page strips padding for display.
+WEEKLY_BUCKETS = (("00", 0, 0), ("01-05", 1, 5), ("06-15", 6, 15), ("16-40", 16, 40),
+                  ("41+", 41, None))
+SIZE_BUCKETS = (("0001-0010", 1, 10), ("0011-0100", 11, 100),
+                ("0101-1000", 101, 1000), ("1001+", 1001, None))
 
 
 class ScoreError(ValueError):
