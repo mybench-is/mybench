@@ -118,7 +118,8 @@ def test_page_has_no_javascript_and_pinned_references_only():
     assert "<script" not in page and "javascript:" not in page
     hrefs = set(re.findall(r'href="([^"]+)"', page))
     canonical = "https://mybench.is/@ckeenan/2026-W28"
-    assert hrefs == {ANCHORS, "report.json", "https://mybench.is", canonical}
+    assert hrefs == {ANCHORS, "report.json", "https://mybench.is",
+                     "https://mybench.is/how-it-works", canonical}
     assert "src=" not in page  # no images/iframes/external fetches (SVG is inline)
 
 

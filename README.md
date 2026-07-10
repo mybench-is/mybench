@@ -19,6 +19,8 @@ roadmap, and decisions live in the sibling repo `../mybench-ops`.
 - `schemas/` — versioned JSON Schemas (`ledger_entry`, `report`).
 - `tests/` — pytest smoke tests (synthetic fixtures only).
 
+How it all fits together: [docs/how-anchoring-works.md](docs/how-anchoring-works.md).
+
 ## Verify someone's anchors (zero trust required)
 
 ```
