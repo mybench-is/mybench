@@ -210,6 +210,7 @@ the report&#x27;s author and reads none of their private data.</p>
 function of the local ledger. No transcript content, prompt text, code, or
 filenames appear on this page or anywhere in the anchors log — only salted
 commitments, Merkle roots, timestamps, and the aggregates above.
+· <a href="{ROOT_URL}/how-it-works">how anchoring works</a>
 · <a href="{ROOT_URL}">{_esc(ROOT_URL.removeprefix("https://"))}</a></footer>
 </body></html>
 """.encode()
