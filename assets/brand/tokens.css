@@ -1,0 +1,15 @@
+:root {
+  --ink: #171A19; --paper: #F2EFE7;
+  --vg-100: #DCEFEA; --vg-300: #7EC8BA; --vg-400: #4FA095;
+  --vg-600: #2E6B62; --vg-800: #1A423C;
+  --accent-display: var(--vg-400);
+  --accent-text: var(--vg-600);
+  --accent-tint: var(--vg-100);
+  --font-evidence: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-ui: Inter, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --accent-text: var(--vg-300); --accent-tint: var(--vg-800); }
+}
+/* Reserved (BRAND §3.4): rank metals and foil hues are NOT tokens here on
+   purpose — they may only ever appear on rank/evidence badge surfaces. */
