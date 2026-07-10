@@ -47,37 +47,39 @@ TIER_LEGEND = (
     ("JUDGED", "reproducible model opinion — not in scope in v0; no metric carries it"),
 )
 
-STAMP_SVG = (
-    '<svg class="stamp" viewBox="0 0 60 68" xmlns="http://www.w3.org/2000/svg" '
-    'fill="none" aria-hidden="true">'
-    '<rect x="8" y="12" width="44" height="44" rx="5" stroke="currentColor" '
-    'stroke-width="2.5"/>'
-    '<line x1="18" y1="5" x2="18" y2="12" stroke="currentColor" stroke-width="2"/>'
-    '<line x1="30" y1="5" x2="30" y2="12" stroke="currentColor" stroke-width="2"/>'
-    '<line x1="42" y1="5" x2="42" y2="12" stroke="currentColor" stroke-width="2"/>'
-    '<line x1="18" y1="56" x2="18" y2="63" stroke="currentColor" stroke-width="2"/>'
-    '<line x1="30" y1="56" x2="30" y2="63" stroke="currentColor" stroke-width="2"/>'
-    '<line x1="42" y1="56" x2="42" y2="63" stroke="currentColor" stroke-width="2"/>'
-    "</svg>"
+STAMP_SVG = (  # outlined-path 3-pin mark — assets/brand/generate_marks.py
+    '<svg class="stamp" aria-hidden="true" viewBox="0 0 60 68" xmlns="http://www.w3.org/2000/svg" fill="none"><rect x="8" y="12" width="44" height="44" rx="5" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="5" x2="18" y2="12" stroke="currentColor" stroke-width="2"/><line x1="18" y1="56" x2="18" y2="63" stroke="currentColor" stroke-width="2"/><line x1="30" y1="5" x2="30" y2="12" stroke="currentColor" stroke-width="2"/><line x1="30" y1="56" x2="30" y2="63" stroke="currentColor" stroke-width="2"/><line x1="42" y1="5" x2="42" y2="12" stroke="currentColor" stroke-width="2"/><line x1="42" y1="56" x2="42" y2="63" stroke="currentColor" stroke-width="2"/><g fill="currentColor" stroke="currentColor" stroke-width="0.4" transform="translate(17.40,39.46) scale(0.02100,-0.02100)"><path d="M30 0V516H149V440H156Q168 476 190.5 502.0Q213 528 254 528Q329 528 346 440H352Q358 458 367.0 474.0Q376 490 389.0 502.0Q402 514 420.0 521.0Q438 528 462 528Q570 528 570 369V0H451V354Q451 390 438.5 404.5Q426 419 406 419Q387 419 373.5 406.5Q360 394 360 368V0H240V354Q240 390 228.5 404.5Q217 419 197 419Q177 419 163.0 406.5Q149 394 149 368V0Z"/><path transform="translate(600,0)" d="M59 740H207V422H214Q233 468 269.0 498.0Q305 528 367 528Q410 528 445.5 512.0Q481 496 506.5 463.0Q532 430 546.5 379.0Q561 328 561 258Q561 188 546.5 137.0Q532 86 506.5 53.0Q481 20 445.5 4.0Q410 -12 367 -12Q305 -12 269.0 17.5Q233 47 214 94H207V0H59ZM303 103Q353 103 380.0 133.5Q407 164 407 218V298Q407 352 380.0 382.5Q353 413 303 413Q264 413 235.5 394.0Q207 375 207 334V182Q207 141 235.5 122.0Q264 103 303 103Z"/></g></svg>'
 )
 
 _CSS = """
-body{font-family:system-ui,sans-serif;max-width:56rem;margin:2rem auto;padding:0 1rem;
-color:#1f2328;line-height:1.5}
-h1{margin-bottom:.2rem} .sub{color:#57606a;font-size:.9rem}
-.stamp{width:2.2rem;height:2.5rem;vertical-align:middle;margin-right:.5rem}
+:root{
+  /* BRAND §3 tokens — no surface references a hex directly below this block */
+  --ink:#171A19; --paper:#F2EFE7;
+  --accent-display:#4FA095; --accent-text:#2E6B62; --accent-tint:#DCEFEA;
+  --rule:#D8D4C8; --muted:#5c615e;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+/* A certificate is a document (BRAND §3.3): paper regardless of app theme. */
+body{font-family:Inter,system-ui,sans-serif;background:var(--paper);color:var(--ink);
+max-width:56rem;margin:2rem auto;padding:0 1rem;line-height:1.5}
+h1{margin-bottom:.2rem} a{color:var(--accent-text)}
+.sub{color:var(--muted);font-size:.9rem;font-family:var(--mono)}
+.stamp{width:2.2rem;height:2.5rem;vertical-align:middle;margin-right:.5rem;
+color:var(--accent-display)}
 table{border-collapse:collapse;width:100%;margin:1rem 0}
-th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid #d0d7de;vertical-align:top}
-.badge{display:inline-block;padding:.1rem .5rem;border-radius:.8rem;color:#fff;
-font-size:.75rem;font-weight:600}
-.dist{font-size:.85rem;color:#57606a} .caveat{font-size:.85rem;color:#9a6700}
-.desc{font-size:.85rem;color:#57606a;max-width:28rem}
+th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--rule);
+vertical-align:top}
+strong,.dist,.badge{font-family:var(--mono)}  /* evidence is monospace (§4) */
+.badge{display:inline-block;padding:.1rem .5rem;border-radius:.8rem;color:var(--paper);
+font-size:.75rem;font-weight:600;letter-spacing:.03em}
+.dist{font-size:.85rem;color:var(--muted)} .caveat{font-size:.85rem;color:#9a6700}
+.desc{font-size:.85rem;color:var(--muted);max-width:28rem}
 .note{font-size:.8rem;color:#9a6700;font-style:italic}
-code,pre{background:#f6f8fa;border-radius:.3rem} pre{padding:.8rem;overflow-x:auto}
-code{padding:.1rem .3rem} footer{color:#57606a;font-size:.8rem;margin-top:2rem}
-details{margin:.5rem 0} summary{cursor:pointer;color:#57606a;font-size:.9rem}
+code,pre{background:var(--accent-tint);border-radius:.3rem;font-family:var(--mono)}
+pre{padding:.8rem;overflow-x:auto} code{padding:.1rem .3rem}
+footer{color:var(--muted);font-size:.8rem;margin-top:2rem}
+details{margin:.5rem 0} summary{cursor:pointer;color:var(--muted);font-size:.9rem}
 """
-
 
 class PageError(ValueError):
     pass
@@ -180,6 +182,7 @@ def render_page(report: dict, *, anchors_url: str = f"{ROOT_URL}/anchors",
 <meta property="og:image" content="{ROOT_URL}/og.png">
 <meta property="og:url" content="{_esc(og_url)}">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg">
 <style>{_CSS}</style></head><body>
 <h1>{STAMP_SVG}mybench activity report</h1>
 <p class="sub">{who}report {_esc(report["report_version"])} · schema {_esc(report["schema_version"])}

@@ -119,7 +119,7 @@ def test_page_has_no_javascript_and_pinned_references_only():
     hrefs = set(re.findall(r'href="([^"]+)"', page))
     canonical = "https://mybench.is/@ckeenan/2026-W28"
     assert hrefs == {ANCHORS, "report.json", "https://mybench.is",
-                     "https://mybench.is/how-it-works", canonical}
+                     "https://mybench.is/how-it-works", "favicon.svg", canonical}
     assert "src=" not in page  # no images/iframes/external fetches (SVG is inline)
 
 
@@ -198,3 +198,26 @@ def test_buckets_render_prettified_but_data_stays_sortable():
     assert "0011-0100" in dist["value"]  # data layer: sortable
     page = render_page(report, anchors_url=ANCHORS).decode()
     assert "11-100" in page and "0011-0100" not in page  # display layer: human
+
+
+# --- MYB-5.6: brand alignment guards --------------------------------------------------
+
+
+def test_brand_tokens_and_no_reserved_hues():
+    page = render_page(fixed_report(), anchors_url=ANCHORS).decode()
+    # Verdigris tokens present; evidence face declared; paper document surface.
+    for token in ("--ink:#171A19", "--paper:#F2EFE7", "--accent-display:#4FA095",
+                  "IBM Plex Mono"):
+        assert token in page
+    # Reserved registers/hues absent (BRAND §3.4/§5.3/§9): foil hues, and no
+    # filled die (the stamp rect must remain stroke-only, fill="none" root).
+    for forbidden in ("#1D9E75", "#7F77DD", "#EF9F27"):
+        assert forbidden.lower() not in page.lower()
+    assert 'fill="none"><rect' in page  # die body is outline register
+
+
+def test_stamp_is_outlined_paths_not_font_render():
+    page = render_page(fixed_report(), anchors_url=ANCHORS).decode()
+    assert '<svg class="stamp"' in page
+    assert "<text" not in page
+    assert page.count("<path") >= 2  # the outlined m and b glyphs
