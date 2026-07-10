@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mybench-verify"
+version = "0.1.0"
+description = "Verify a mybench anchors log: uvx mybench-verify https://mybench.is/anchors"
+requires-python = ">=3.11"
+dependencies = ["mybench==0.1.0"]
+
+[project.urls]
+Homepage = "https://mybench.is"
+
+# The console script deliberately lives ONLY in this wrapper dist (the main
+# mybench dist would collide with it when both are installed). The entry
+# point resolves into the mybench dependency at runtime; this dist ships no
+# code of its own.
+[project.scripts]
+mybench-verify = "mybench.verify.__main__:main"
+
+[tool.setuptools]
+packages = []

@@ -1,0 +1,75 @@
+name: Release
+
+# PyPI Trusted Publishing (OIDC): no API tokens anywhere (ADV-3).
+# Prereq (owner, once): pypi.org -> Publishing -> add pending publishers
+# for BOTH projects (mybench, mybench-verify): repo mybench-is/mybench,
+# workflow release.yml, environment pypi.
+# Release flow: bump versions (pyproject + packaging/mybench-verify, kept
+# in lockstep by tests), tag vX.Y.Z, push the tag.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install and test
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements-ci.txt
+          pip install -e .
+          ruff check .
+          pytest tests/
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build both distributions
+        run: |
+          pip install --upgrade build
+          python -m build --outdir dist/
+          python -m build packaging/mybench-verify --outdir dist/
+      - name: Tag/version consistency
+        run: |
+          python - <<'PY'
+          import os, tomllib
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          for f in ("pyproject.toml", "packaging/mybench-verify/pyproject.toml"):
+              with open(f, "rb") as fh:
+                  v = tomllib.load(fh)["project"]["version"]
+              assert v == tag, f"{f} version {v} != tag {tag}"
+          print("versions match tag", tag)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI (both dists, OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
