@@ -25,9 +25,13 @@ maps to a surface below:
 | `anchor/ots.py` | HTTP POST/GET to calendars; staged artifact + proof files | S7, S8 |
 | `anchor/publish.py` | clone writes; `git push` to anchors repo | S9 |
 | `scorer/__main__.py` | report file (`--out`); git subprocess reads (no writes) | S10 |
+| site repo `functions/api/waitlist.js` | D1 `INSERT` of submitted email (off-machine, Cloudflare) | S14 |
 
 Any future module that adds a write site MUST add a surface here (the
-MYB-4.4 re-run starts by re-running the grep and diffing this table).
+MYB-4.4 re-run starts by re-running the grep and diffing this table). Note S14
+lives outside `src/mybench` — it is the public site's Worker (MYB-5.10), the
+first surface that stores third-party PII, and is audited on the Cloudflare side
+rather than by the `src/mybench` grep.
 
 ## Surfaces
 
@@ -152,6 +156,24 @@ MYB-4.4 re-run starts by re-running the grep and diffing this table).
   `cat` of nonce/key files happened during sittings (search shell history:
   `grep -E "cat .*nonces|cat .*device.key" ~/.bash_history | wc -l`).
 - **Pass:** zero such commands (or documented+rotated if any).
+
+### S14 — Waitlist database (public site, off-machine PII — NEW class)
+- **Risk:** the site's waitlist is the first surface that stores third-party
+  PII (submitted emails). Leaks here are (a) joining an email to any
+  anchor/identity/report/ledger datum, (b) disclosing list membership, (c)
+  storing more than the visitor typed, (d) shipping the address to any
+  third-party service, or (e) an analytics beacon on report pages.
+- **Check:** read the site repo's `functions/api/waitlist.js` and `schema.sql`
+  (staged in `mybench-ops/ops/site/` until the public site repo exists) —
+  confirm the only columns are `email`, `created_at` (date-only), `referrer`
+  (capped, optional); no identity/anchor/report column exists or is joinable.
+  Confirm the endpoint returns the SAME response for new vs. duplicate emails
+  (no membership disclosure) and writes to no external service. Confirm
+  `_headers` sets `default-src 'none'` with no `script-src` and no analytics
+  origin; edge analytics only (ADR-0005 §5, no JS beacon). D1 access is
+  Cloudflare-account-scoped; verify no export/replication to a third party.
+- **Pass:** schema = the three columns above and nothing joinable; identical
+  new/duplicate responses; zero third-party egress; report pages beacon-free.
 
 ## Failure protocol (MYB-4.4)
 
