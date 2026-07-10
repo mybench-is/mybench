@@ -131,8 +131,11 @@ def main(plex_bold, martian_path, plex_regular):
             (OUT / f"wordmark-{reg}-{variant}.svg").write_text(doc + "\n")
             print(f"wordmark-{reg}-{variant}.svg")
 
-    # X avatar 400x400: 2-pin mark, paper on ink, body ~= 55% of canvas
-    png(mark_on_field("mark-2pin", 400, 0.55, 46, PAPER, INK),
+    # X avatar 400x400: 3-pin mark (BRAND §1.1 ladder: timeline render is
+    # 40-48px >= the 33px 3-pin threshold; BRAND wins over SOCIAL's two-pin
+    # note per SOCIAL's own conflict rule — owner ruling 2026-07-10).
+    # Body ~= 55% of canvas keeps every pin inside the 80% circle crop.
+    png(mark_on_field("mark-3pin", 400, 0.55, 44, PAPER, INK),
         OUT / "avatar-400.png", 400, 400)
 
     # Banner 1500x500: hero lockup from x=420, vertically centered; tagline
