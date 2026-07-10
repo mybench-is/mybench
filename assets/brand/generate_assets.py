@@ -56,20 +56,26 @@ class Face:
 
 
 def die_dot(cx_cell_start, cell_w, baseline_y, size, color, pins):
-    """The die at punctuation scale, bottom ON the baseline (never below)."""
+    """The die at punctuation scale — SYMMETRIC pins (BRAND §2.1 amendment,
+    owner 2026-07-10): the die floats so its bottom pins REST ON the
+    baseline; nothing descends below it (the original anti-comma concern
+    survives), and the mark reads as standing on its pins."""
     side = size
     x = cx_cell_start + (cell_w - side) / 2
-    y = baseline_y - side
     r = side * 0.15 if not pins else side * 0.11
     stroke = max(1.4, side * 0.09)
+    plen, pw = side * 0.22, stroke * 0.8
+    y = baseline_y - side - (plen if pins else 0)
     svg = (f'<rect x="{x:.2f}" y="{y:.2f}" width="{side:.2f}" height="{side:.2f}" '
            f'rx="{r:.2f}" stroke="{color}" stroke-width="{stroke:.2f}" fill="none"/>')
-    if pins:  # top pins only ("plugged into the baseline")
-        plen, pw = side * 0.22, stroke * 0.8
+    if pins:
         for fx in (0.3, 0.7):
             px = x + side * fx
             svg += (f'<line x1="{px:.2f}" y1="{y - plen:.2f}" x2="{px:.2f}" '
                     f'y2="{y:.2f}" stroke="{color}" stroke-width="{pw:.2f}"/>')
+            svg += (f'<line x1="{px:.2f}" y1="{y + side:.2f}" x2="{px:.2f}" '
+                    f'y2="{y + side + plen:.2f}" stroke="{color}" '
+                    f'stroke-width="{pw:.2f}"/>')
     return svg
 
 
