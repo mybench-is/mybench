@@ -7,6 +7,7 @@ name = "mybench-verify"
 version = "0.1.0"
 description = "Verify a mybench anchors log: uvx mybench-verify https://mybench.is/anchors"
 requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
 dependencies = ["mybench==0.1.0"]
 
 [project.urls]
