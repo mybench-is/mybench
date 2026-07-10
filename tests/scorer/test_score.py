@@ -78,8 +78,11 @@ def test_golden_values_spot_check():
     assert m["anchored_capture_events"]["value"] == 4
     assert m["anchored_span_days"]["value"] == 31
     assert m["session_size_distribution"]["value"] == {
-        "1-10": 0, "11-100": 2, "101-1000": 0, "1000+": 1
+        "0001-0010": 0, "0011-0100": 2, "0101-1000": 0, "1001+": 1
     }
+    # Sortable-label rule (handoff #4): canonical key order IS numeric order.
+    assert list(m["session_size_distribution"]["value"]) == sorted(
+        m["session_size_distribution"]["value"])
     assert m["binding_coverage"]["value"] == {"synthetic/repo": 0.5}
     assert report["binding_tips"] == {"synthetic/repo": "b" * 40}
     assert m["binding_coverage"]["trust_tier"] == "PROVEN"
@@ -182,7 +185,7 @@ def test_iso_year_boundary_weeks():
                               allow_synthetic=True))
     dist = next(m for m in report["metrics"]
                 if m["name"] == "sessions_per_week_distribution")["value"]
-    assert dist == {"0": 0, "1-5": 2, "6-15": 0, "16-40": 0, "40+": 0}
+    assert dist == {"00": 0, "01-05": 2, "06-15": 0, "16-40": 0, "41+": 0}
 
 
 # --- Leak scan (AC #5) ---------------------------------------------------------------------

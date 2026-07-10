@@ -22,9 +22,15 @@ roadmap, and decisions live in the sibling repo `../mybench-ops`.
 ## Verify someone's anchors (zero trust required)
 
 ```
+uvx mybench-verify https://mybench.is/anchors
+```
+
+Or without uv:
+
+```
 python -m venv .venv && . .venv/bin/activate
-pip install -e .
-python -m mybench.verify <anchors repo URL or local clone path>
+pip install mybench
+python -m mybench.verify https://mybench.is/anchors
 ```
 
 Checks anchor schema/signatures, chain continuity (no gaps or rewrites),

@@ -25,7 +25,9 @@ schema-defined granularity, and this document defines that granularity.
   compact separators, trailing newline), metrics sorted by `name`,
   distribution objects keyed by bucket label with fixed label sets.
 - Every bucket edge in this document is versioned: changing one is a
-  schema_version event, not a tweak.
+  schema_version event, not a tweak. Bucket LABELS are zero-padded so
+  canonical sorted-JSON order is numeric order (2026-07-09 pre-publication
+  fix, handoff #4); display layers strip the padding.
 - "Latest row per session" = the session row with the highest `i` for each
   `session_id`; item counts always come from latest rows (growth rows
   supersede, never add).
@@ -40,8 +42,8 @@ schema-defined granularity, and this document defines that granularity.
 | 4 | `sessions_total` | integer | ANCHORED | Count of distinct `session_id` among session rows. Distinctness is a ledger-metadata fact, not anchor-verifiable (a session may grow across batches). |
 | 5 | `anchored_capture_events` | integer | **PROVEN** | Sum of `session_count` over published anchor batches. The verifiable companion to #4: counts capture events, deliberately NOT deduplicated (a grown session anchors more than once). |
 | 6 | `items_total` | integer | ANCHORED | Sum of `item_count` over latest rows. Item counts live only in ledger rows, not anchor artifacts. |
-| 7 | `sessions_per_week_distribution` | object | ANCHORED | Histogram over weekly session counts: for each ISO week in [first, last] row ts, count sessions (by latest-row week of first appearance); publish the distribution of those weekly counts in buckets `0 / 1-5 / 6-15 / 16-40 / 40+`. A distribution over weeks — NOT a week-keyed time series. |
-| 8 | `session_size_distribution` | object | ANCHORED | Latest-row `item_count` per session, bucketed `1-10 / 11-100 / 101-1000 / 1000+`. The coarse-histogram disclosure decision made concrete. |
+| 7 | `sessions_per_week_distribution` | object | ANCHORED | Histogram over weekly session counts: for each ISO week in [first, last] row ts, count sessions (by latest-row week of first appearance); publish the distribution of those weekly counts in buckets `00 / 01-05 / 06-15 / 16-40 / 41+`. A distribution over weeks — NOT a week-keyed time series. |
+| 8 | `session_size_distribution` | object | ANCHORED | Latest-row `item_count` per session, bucketed `0001-0010 / 0011-0100 / 0101-1000 / 1001+`. The coarse-histogram disclosure decision made concrete. |
 | 9 | `source_breakdown` | object | ANCHORED | Distinct sessions per `source` (`claude-code` / `codex` / `synthetic`; synthetic must be zero in a real report — schema-checked by the scorer). |
 | 10 | `binding_coverage` | object | **PROVEN** | Per enrolled repo (opt-in naming): bound commits (binding rows whose `commit_hash` ∈ repo history since enrollment) ÷ commits since enrollment, at the pinned tip recorded alongside. Binding rows are chain-tip-anchored; the denominator is publicly recomputable. |
 
