@@ -120,19 +120,57 @@ def run(cwd: Path | None = None) -> int:
     return 0
 
 
+def _derive_enroll_commit(top: Path) -> str:
+    """The real enrollment point anchoring reconcile's ``enroll_commit..HEAD`` window.
+
+    Not simply "HEAD now": a repo whose marker was committed in the past (the
+    dogfooded mybench repo, live for a while) genuinely enrolled back then, so
+    stamping "now" would mislabel its live history as pre-enrollment and make
+    :func:`reconcile` miss the merge/squash commits ``post-commit`` never caught.
+
+    - Marker TRACKED in git → the true enrollment is the commit that FIRST
+      added it (``git log --diff-filter=A``); anchor at that commit's parent so
+      the window includes the marker commit and everything after, matching the
+      scorer's ``marker_added~1..HEAD`` convention. Marker added in the root
+      commit (no parent) → ``""`` (no pre-history; bind all of HEAD).
+    - Marker UNTRACKED (local-only, e.g. ``.git/info/exclude``) → they really
+      enrolled now, so ``enroll_commit = HEAD``.
+    - Unborn HEAD (no commits) → ``""``.
+    """
+    try:
+        head = _git(top, "rev-parse", "HEAD")
+    except subprocess.CalledProcessError:
+        return ""  # unborn HEAD: no commits yet
+    marker = MARKER_RELPATH.as_posix()
+    try:
+        _git(top, "ls-files", "--error-unmatch", marker)
+    except subprocess.CalledProcessError:
+        return head  # untracked marker: enrolling now, all of HEAD is pre-enrollment
+    adds = _git(top, "log", "--diff-filter=A", "--format=%H", "--", marker).splitlines()
+    if not adds:
+        return head  # staged but not yet committed — treat as enrolling now
+    marker_add = adds[-1]  # git log is newest-first; the last line is the first add
+    try:
+        return _git(top, "rev-parse", f"{marker_add}~1")
+    except subprocess.CalledProcessError:
+        return ""  # marker added in the root commit: no pre-history, bind all
+
+
 def enroll(repo: str | Path) -> dict:
     """Opt this repo into commit-binding and stamp its enrollment point (MYB-3.7).
 
     Installs the ``post-commit`` hook (reusing :func:`install`), ensures the
     ``.mybench/commit-binding-enabled`` marker exists, then records the
-    enrollment point — HEAD at the moment of opt-in — in the data dir
-    (``enrollments/<repo_id>.json``, mode 0600), NEVER in the repo or the
-    ledger (invariant #2).
+    enrollment point in the data dir (``enrollments/<repo_id>.json``, mode
+    0600), NEVER in the repo or the ledger (invariant #2). The point is the
+    repo's REAL enrollment, not "HEAD now" — see :func:`_derive_enroll_commit`:
+    a tracked marker anchors at the marker-add commit's parent; an untracked
+    (local-only) marker anchors at current HEAD; an unborn HEAD records ``""``.
 
     First enrollment wins: if a record already exists it is returned unchanged,
-    so a re-run never moves the point (idempotent). An unborn HEAD (no commits
-    yet) records ``enroll_commit=""``; :func:`reconcile` then binds all of HEAD
-    once commits exist, since there is no pre-enrollment history to exclude.
+    so a re-run never moves the point (idempotent). ``enroll_commit=""`` means
+    :func:`reconcile` binds all of HEAD, since there is no pre-enrollment
+    history to exclude.
 
     Returns the enrollment record dict.
     """
@@ -146,10 +184,7 @@ def enroll(repo: str | Path) -> dict:
     path = paths.enrollment_path(repo_id)
     if path.exists():
         return json.loads(path.read_text())  # first enrollment wins — never re-stamp
-    try:
-        enroll_commit = _git(top, "rev-parse", "HEAD")
-    except subprocess.CalledProcessError:
-        enroll_commit = ""  # unborn HEAD: no commits yet
+    enroll_commit = _derive_enroll_commit(top)
     record = {
         "repo_id": repo_id,
         "enroll_commit": enroll_commit,

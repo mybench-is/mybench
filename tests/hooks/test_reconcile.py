@@ -100,6 +100,49 @@ def test_enroll_is_idempotent_and_never_moves_the_point(repo):
     assert rec2["enroll_commit"] == first_head
 
 
+# --- enrollment point: tracked vs untracked marker ------------------------------------
+
+
+def test_enroll_tracked_marker_anchors_at_marker_commit_parent(repo):
+    """A repo whose marker was committed in the past (dogfooded mybench) genuinely
+    enrolled back then — anchor at the marker-add commit's parent so its live
+    history (merge/squash commits post-commit missed) is swept, not mislabeled."""
+    commit(repo, filename="pre0.txt")
+    pre1 = commit(repo, filename="pre1.txt")  # this is marker_add~1
+
+    # Commit the marker itself — now it is TRACKED history.
+    (repo / ".mybench").mkdir(exist_ok=True)
+    (repo / ".mybench" / "commit-binding-enabled").touch()
+    git(repo, "add", ".mybench/commit-binding-enabled")
+    git(repo, "commit", "-q", "-m", "enable commit-binding")
+    marker_add = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    after1 = commit(repo, filename="after1.txt")
+    after2 = commit(repo, filename="after2.txt")
+
+    record = binding.enroll(str(repo))
+    assert record["enroll_commit"] == pre1  # == marker_add~1
+
+    (repo / ".git" / "hooks" / "post-commit").unlink()  # drive reconcile deterministically
+    assert binding.reconcile(repo) == 3
+    assert bound_hashes(repo) == {marker_add, after1, after2}  # marker commit + everything after
+
+
+def test_enroll_untracked_marker_anchors_at_head(repo):
+    """A local-only marker (never git-added, e.g. in .git/info/exclude — typer/
+    typer-curriculum) means the repo really is enrolling now: bind from HEAD on."""
+    head = commit(repo, filename="base.txt")
+    record = binding.enroll(str(repo))  # enroll touches the marker; it stays untracked
+    assert record["enroll_commit"] == head
+
+    (repo / ".git" / "hooks" / "post-commit").unlink()
+    assert binding.reconcile(repo) == 0  # nothing after enrollment yet
+
+    later = commit(repo, filename="later.txt")
+    assert binding.reconcile(repo) == 1
+    assert bound_hashes(repo) == {later}
+
+
 # --- reconcile(): SINCE-ENROLLMENT window only ----------------------------------------
 
 
