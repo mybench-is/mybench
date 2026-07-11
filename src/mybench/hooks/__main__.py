@@ -1,11 +1,12 @@
-"""CLI: ``python -m mybench.hooks install <repo>`` / ``… run`` (post-commit entry)."""
+"""CLI: ``python -m mybench.hooks install <repo>`` / ``… run`` / ``… reconcile [repo]``."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from mybench.hooks.binding import HookError, install, run
+from mybench.hooks.binding import HookError, install, reconcile, run
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -14,10 +15,19 @@ def main(argv: list[str] | None = None) -> int:
     p_install = sub.add_parser("install", help="install the opt-in post-commit hook into ONE repo")
     p_install.add_argument("repo", help="path to the repo worktree top level (never global)")
     sub.add_parser("run", help="post-commit entry point (called by the installed hook)")
+    p_reconcile = sub.add_parser(
+        "reconcile", help="bind HEAD-reachable commits missed by post-commit (rebase/merge/squash)"
+    )
+    p_reconcile.add_argument(
+        "repo", nargs="?", default=None, help="repo worktree (default: current directory)"
+    )
     args = parser.parse_args(argv)
 
     if args.command == "run":
         return run()
+    if args.command == "reconcile":
+        reconcile(Path(args.repo) if args.repo else None)
+        return 0
     try:
         hook_path = install(args.repo)
     except HookError as exc:

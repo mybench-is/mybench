@@ -89,6 +89,11 @@ def _log_error(exc: Exception) -> None:
         pass
 
 
+def _committer_ts(repo: Path, commit_hash: str) -> str:
+    committer_iso = _git(repo, "show", "-s", "--format=%cI", commit_hash)
+    return datetime.fromisoformat(committer_iso).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def run(cwd: Path | None = None) -> int:
     """Post-commit entry point. Always returns 0 — a hook must never block a commit."""
     try:
@@ -97,13 +102,76 @@ def run(cwd: Path | None = None) -> int:
         if not (top / MARKER_RELPATH).is_file():
             return 0  # belt-and-braces: the shell shim already checked
         commit_hash = _git(cwd, "rev-parse", "HEAD")
-        committer_iso = _git(cwd, "show", "-s", "--format=%cI", "HEAD")
-        commit_ts = (
-            datetime.fromisoformat(committer_iso).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        )
         Ledger().append_binding(
-            commit_hash=commit_hash, commit_ts=commit_ts, repo_id=repo_identity(top)
+            commit_hash=commit_hash,
+            commit_ts=_committer_ts(cwd, commit_hash),
+            repo_id=repo_identity(top),
         )
     except Exception as exc:  # noqa: BLE001 — never block the commit
         _log_error(exc)
     return 0
+
+
+def reconcile(cwd: Path | None = None) -> int:
+    """Bind every HEAD-reachable commit in an enrolled repo that lacks a binding row (MYB-3.7).
+
+    A catch-up sweep for the commit-creation paths the ``post-commit`` hook can
+    never see: ``git rebase`` (post-rewrite), merge commits (post-merge),
+    commits authored on another machine/clone, and — the practical case —
+    GitHub's server-side squash/rebase-merge, where the mainline commit is a
+    brand-new hash that was never local until it is pulled. ``post-commit`` is
+    thus a prompt-binding optimization on top of a sweep that guarantees
+    completeness. Meant to run from the capture scan; safe to call anywhere.
+
+    Walks ``git rev-list HEAD`` and appends one binding row per commit not
+    already bound, deduping against existing ``binding`` rows by
+    ``(repo_id, commit_hash)``. Idempotent: a re-run finds everything already
+    bound and appends nothing. Returns the number of rows appended.
+
+    OWNER DECISION (flagged in the PR, not silently made here): the ledger
+    records no "enrollment point", so this binds ALL of HEAD's history as
+    backfill, not only commits authored after opt-in. That mirrors the repo's
+    existing IMPORTED/backfill honesty, but "all history vs since enrollment"
+    is a judgment call for review.
+
+    Never raises for a repo it cannot process — empty/unborn HEAD, shallow,
+    detached, or no marker all return 0 without touching the ledger. (A
+    shallow clone binds only the commits it actually has, which is correct.)
+    """
+    try:
+        cwd = cwd if cwd is not None else Path.cwd()
+        top = Path(_git(cwd, "rev-parse", "--show-toplevel"))
+    except Exception:  # noqa: BLE001 — not a git worktree (or git unavailable)
+        return 0
+    if not (top / MARKER_RELPATH).is_file():
+        return 0  # strictly opt-in, exactly like the hook — no marker, no sweep
+    try:
+        rev_out = _git(top, "rev-list", "HEAD")
+    except Exception:  # noqa: BLE001 — unborn/empty HEAD, or an otherwise unreadable repo
+        return 0
+    commits = rev_out.split()
+    if not commits:
+        return 0
+    repo_id = repo_identity(top)
+    ledger = Ledger()
+    try:
+        bound = {
+            row["commit_hash"]
+            for row in ledger.rows()
+            if row["type"] == "binding" and row["repo_id"] == repo_id
+        }
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger is not ours to repair here
+        _log_error(exc)
+        return 0
+    appended = 0
+    for commit_hash in commits:
+        if commit_hash in bound:
+            continue
+        ledger.append_binding(
+            commit_hash=commit_hash,
+            commit_ts=_committer_ts(top, commit_hash),
+            repo_id=repo_id,
+        )
+        bound.add(commit_hash)  # guard against a hash appearing twice in rev-list output
+        appended += 1
+    return appended
