@@ -37,7 +37,10 @@ def _repo_facts(path: Path) -> dict:
     # Commits since enrollment, INCLUDING the marker commit itself (it was bound).
     rev_range = f"{marker_added}~1..HEAD" if has_parent else "HEAD"
     commits = git("rev-list", rev_range).splitlines()
-    return {"tip": git("rev-parse", "HEAD"), "commits": commits}
+    # --enrolled-repo is opt-in per repo and its NAME is published, so a repo
+    # reaching here is public+named — flag it so the scorer's MYB-6.11
+    # fail-closed guard emits PROVEN binding_coverage + a raw tip for it.
+    return {"tip": git("rev-parse", "HEAD"), "commits": commits, "public": True}
 
 
 def main(argv: list[str] | None = None) -> int:

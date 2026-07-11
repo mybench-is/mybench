@@ -51,7 +51,11 @@ FIXED_BATCHES = [
     {"ts": "2026-01-02T00:00:00Z", "session_count": 2},
     {"ts": "2026-02-02T00:00:00Z", "session_count": 2},
 ]
-FIXED_ENROLLED = {"synthetic/repo": {"tip": "b" * 40, "commits": ["a" * 40, "f" * 40]}}
+# public: True is the MYB-6.11 public+named flag; it gates PROVEN coverage /
+# a raw tip but is NOT written to the report, so golden bytes are unaffected.
+FIXED_ENROLLED = {
+    "synthetic/repo": {"tip": "b" * 40, "commits": ["a" * 40, "f" * 40], "public": True}
+}
 
 
 def fixed_report_bytes():
@@ -174,7 +178,7 @@ def test_synthetic_guard_and_empty_ledger():
         score([GENESIS], [], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True)
     with pytest.raises(ScoreError, match="no commits"):
         score(FIXED_ROWS, [], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True,
-              enrolled={"r": {"tip": "b" * 40, "commits": []}})
+              enrolled={"r": {"tip": "b" * 40, "commits": [], "public": True}})
 
 
 def test_iso_year_boundary_weeks():
@@ -186,6 +190,41 @@ def test_iso_year_boundary_weeks():
     dist = next(m for m in report["metrics"]
                 if m["name"] == "sessions_per_week_distribution")["value"]
     assert dist == {"00": 0, "01-05": 2, "06-15": 0, "16-40": 0, "41+": 0}
+
+
+# --- MYB-6.11 fail-closed binding guard --------------------------------------------------
+
+
+def test_enrolled_without_public_flag_raises():
+    """An enrolled entry missing public+named is refused, never downgraded/leaked."""
+    for facts in (
+        {"tip": "b" * 40, "commits": ["a" * 40]},            # flag absent
+        {"tip": "b" * 40, "commits": ["a" * 40], "public": False},
+        {"tip": "b" * 40, "commits": ["a" * 40], "public": "true"},  # not `is True`
+    ):
+        with pytest.raises(ScoreError, match="public"):
+            score(FIXED_ROWS, FIXED_BATCHES, generated_at="2026-07-09T00:00:00Z",
+                  allow_synthetic=True, enrolled={"private/repo": facts})
+
+
+def test_one_unflagged_entry_fails_the_whole_report():
+    """Fail-closed: a single unverifiable repo rejects the entire report."""
+    enrolled = {
+        "synthetic/repo": {"tip": "b" * 40, "commits": ["a" * 40], "public": True},
+        "private/repo": {"tip": "c" * 40, "commits": ["a" * 40]},
+    }
+    with pytest.raises(ScoreError, match="public"):
+        score(FIXED_ROWS, FIXED_BATCHES, generated_at="2026-07-09T00:00:00Z",
+              allow_synthetic=True, enrolled=enrolled)
+
+
+def test_public_flag_output_is_byte_identical_to_golden():
+    """The guard rejects invalid input only; valid output is unchanged."""
+    assert fixed_report_bytes() == GOLDEN.read_bytes()
+    # public: True is a gate, not a payload — it must not appear in the report.
+    assert b'"public"' not in fixed_report_bytes()
+    # Determinism preserved with the flagged entry.
+    assert fixed_report_bytes() == fixed_report_bytes()
 
 
 # --- Leak scan (AC #5) ---------------------------------------------------------------------
