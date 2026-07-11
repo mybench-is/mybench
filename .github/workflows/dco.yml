@@ -1,0 +1,68 @@
+# Enforces the Developer Certificate of Origin (DCO) sign-off on every commit
+# in a pull request. CONTRIBUTING.md requires all contributions to be signed
+# off (`git commit -s`, i.e. a "Signed-off-by:" trailer certifying
+# https://developercertificate.org/). This gate automates the manual check
+# called for by SETUP_TODO #8 ("Do not MERGE external PRs until a DCO check is
+# automated"). It fails the PR if any non-merge commit lacks the trailer.
+#
+# Supply-chain note: uses only the first-party actions/checkout plus a shell
+# script — no third-party marketplace actions, matching the repo's deliberate
+# avoidance of external CI dependencies.
+
+name: DCO
+
+on:
+  pull_request:
+
+jobs:
+  dco-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the base..head commit range is reachable locally.
+          fetch-depth: 0
+      - name: Verify Signed-off-by on every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          echo "Checking commits in range ${BASE_SHA}..${HEAD_SHA}"
+
+          # Enumerate the PR's own commits (those not already in the base
+          # branch). Merge commits are skipped: they are typically created by
+          # GitHub / by merging the base branch and legitimately carry no
+          # sign-off, matching conventional DCO tooling behaviour.
+          commits="$(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}")"
+
+          if [ -z "${commits}" ]; then
+            echo "No non-merge commits to check."
+            exit 0
+          fi
+
+          failed=0
+          for sha in ${commits}; do
+            msg="$(git show -s --format=%B "${sha}")"
+            if printf '%s\n' "${msg}" | grep -qiE '^Signed-off-by: .+ <.+>'; then
+              echo "  ok    ${sha}  $(git show -s --format=%s "${sha}")"
+            else
+              echo "  MISS  ${sha}  $(git show -s --format=%s "${sha}")"
+              failed=1
+            fi
+          done
+
+          if [ "${failed}" -ne 0 ]; then
+            echo ""
+            echo "One or more commits are missing a 'Signed-off-by:' trailer."
+            echo "mybench requires a DCO sign-off on every commit (see"
+            echo "CONTRIBUTING.md). Amend the offending commits, e.g.:"
+            echo "    git commit --amend -s        # for the latest commit"
+            echo "    git rebase --signoff <base>  # to sign off a whole branch"
+            echo "then force-push the branch."
+            exit 1
+          fi
+
+          echo ""
+          echo "All commits carry a DCO sign-off."
