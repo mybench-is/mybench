@@ -13,12 +13,20 @@ the ledger (they are never even read). Hook failures never block or dirty a
 commit: every error is swallowed to ``<data-dir>/hooks.log`` (exception
 class only — messages can embed paths), or silently if the data dir itself
 is unavailable.
+
+:func:`enroll` (MYB-3.7) stamps an *enrollment point* — HEAD at opt-in — in
+the data dir (never the repo or the ledger; invariant #2), and :func:`reconcile`
+sweeps the SINCE-ENROLLMENT (LIVE) window: it binds every commit after the
+enrollment point that the ``post-commit`` hook missed (rebase, merge, or a
+GitHub server-side squash-merge born as a new hash). Pre-enrollment history
+is backfill/IMPORTED and is NOT swept.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import subprocess
 import sys
@@ -112,8 +120,49 @@ def run(cwd: Path | None = None) -> int:
     return 0
 
 
+def enroll(repo: str | Path) -> dict:
+    """Opt this repo into commit-binding and stamp its enrollment point (MYB-3.7).
+
+    Installs the ``post-commit`` hook (reusing :func:`install`), ensures the
+    ``.mybench/commit-binding-enabled`` marker exists, then records the
+    enrollment point — HEAD at the moment of opt-in — in the data dir
+    (``enrollments/<repo_id>.json``, mode 0600), NEVER in the repo or the
+    ledger (invariant #2).
+
+    First enrollment wins: if a record already exists it is returned unchanged,
+    so a re-run never moves the point (idempotent). An unborn HEAD (no commits
+    yet) records ``enroll_commit=""``; :func:`reconcile` then binds all of HEAD
+    once commits exist, since there is no pre-enrollment history to exclude.
+
+    Returns the enrollment record dict.
+    """
+    top = Path(repo).resolve()
+    install(str(top))  # validates the worktree top level; refuses foreign/global hooks
+    marker = top / MARKER_RELPATH
+    marker.parent.mkdir(exist_ok=True)
+    marker.touch()
+    repo_id = repo_identity(top)
+    paths.ensure_data_dir()
+    path = paths.enrollment_path(repo_id)
+    if path.exists():
+        return json.loads(path.read_text())  # first enrollment wins — never re-stamp
+    try:
+        enroll_commit = _git(top, "rev-parse", "HEAD")
+    except subprocess.CalledProcessError:
+        enroll_commit = ""  # unborn HEAD: no commits yet
+    record = {
+        "repo_id": repo_id,
+        "enroll_commit": enroll_commit,
+        "enroll_ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(record, f)
+    return record
+
+
 def reconcile(cwd: Path | None = None) -> int:
-    """Bind every HEAD-reachable commit in an enrolled repo that lacks a binding row (MYB-3.7).
+    """Bind the SINCE-ENROLLMENT (LIVE) commits an enrolled repo has not bound (MYB-3.7).
 
     A catch-up sweep for the commit-creation paths the ``post-commit`` hook can
     never see: ``git rebase`` (post-rewrite), merge commits (post-merge),
@@ -121,22 +170,26 @@ def reconcile(cwd: Path | None = None) -> int:
     GitHub's server-side squash/rebase-merge, where the mainline commit is a
     brand-new hash that was never local until it is pulled. ``post-commit`` is
     thus a prompt-binding optimization on top of a sweep that guarantees
-    completeness. Meant to run from the capture scan; safe to call anywhere.
+    completeness for everything since enrollment. Meant to run from the capture
+    scan; safe to call anywhere.
 
-    Walks ``git rev-list HEAD`` and appends one binding row per commit not
+    Only commits AFTER the enrollment point are swept: with a non-empty
+    ``enroll_commit`` the window is ``git rev-list <enroll_commit>..HEAD``; a
+    repo enrolled at its very start (``enroll_commit=""``) has no pre-history,
+    so the window is all of ``HEAD``. Pre-enrollment history is backfill/
+    IMPORTED and is deliberately NOT swept (a future explicit IMPORTED-tagged
+    backfill is out of scope). Appends one binding row per in-window commit not
     already bound, deduping against existing ``binding`` rows by
-    ``(repo_id, commit_hash)``. Idempotent: a re-run finds everything already
-    bound and appends nothing. Returns the number of rows appended.
+    ``(repo_id, commit_hash)``. Idempotent: a re-run appends nothing. Returns
+    the number of rows appended.
 
-    OWNER DECISION (flagged in the PR, not silently made here): the ledger
-    records no "enrollment point", so this binds ALL of HEAD's history as
-    backfill, not only commits authored after opt-in. That mirrors the repo's
-    existing IMPORTED/backfill honesty, but "all history vs since enrollment"
-    is a judgment call for review.
-
-    Never raises for a repo it cannot process — empty/unborn HEAD, shallow,
-    detached, or no marker all return 0 without touching the ledger. (A
-    shallow clone binds only the commits it actually has, which is correct.)
+    Never raises for a repo it cannot process. No enrollment record → no-op
+    (enrollment must be stamped first; it does NOT backfill all-history as a
+    fallback). Unborn/empty HEAD, shallow, no marker, or a non-repo all return
+    0 without touching the ledger. A detached HEAD is swept normally (only the
+    in-window commits reachable from it). If ``enroll_commit`` is no longer a
+    valid ref (e.g. rebased away), the range errors — that is logged and
+    returns 0 rather than falling back to binding everything.
     """
     try:
         cwd = cwd if cwd is not None else Path.cwd()
@@ -145,14 +198,21 @@ def reconcile(cwd: Path | None = None) -> int:
         return 0
     if not (top / MARKER_RELPATH).is_file():
         return 0  # strictly opt-in, exactly like the hook — no marker, no sweep
+    repo_id = repo_identity(top)
+    enroll_path = paths.enrollment_path(repo_id)
+    if not enroll_path.exists():
+        return 0  # not stamped: enrollment must be recorded before any sweep
     try:
-        rev_out = _git(top, "rev-list", "HEAD")
-    except Exception:  # noqa: BLE001 — unborn/empty HEAD, or an otherwise unreadable repo
+        record = json.loads(enroll_path.read_text())
+        enroll_commit = record.get("enroll_commit", "")
+        rev_range = f"{enroll_commit}..HEAD" if enroll_commit else "HEAD"
+        rev_out = _git(top, "rev-list", rev_range)
+    except Exception as exc:  # noqa: BLE001 — unborn HEAD, rebased-away enroll point, bad record
+        _log_error(exc)
         return 0
     commits = rev_out.split()
     if not commits:
         return 0
-    repo_id = repo_identity(top)
     ledger = Ledger()
     try:
         bound = {

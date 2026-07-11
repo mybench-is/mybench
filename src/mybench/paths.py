@@ -69,6 +69,21 @@ def anchors_dir() -> Path:
     return data_dir() / "anchors"
 
 
+def enrollments_dir() -> Path:
+    """Per-repo commit-binding enrollment records (MYB-3.7).
+
+    The enrollment point (HEAD at opt-in) is local-only state, so it lives
+    here in the 0700 data dir — never in a repo, never in the ledger
+    (invariant #2). Keyed by the opaque HMAC repo id, so the file name leaks
+    no path either.
+    """
+    return data_dir() / "enrollments"
+
+
+def enrollment_path(repo_id: str) -> Path:
+    return enrollments_dir() / f"{repo_id}.json"
+
+
 def device_key_path() -> Path:
     return keys_dir() / "device.key"
 
@@ -227,7 +242,7 @@ def ensure_data_dir() -> Path:
     d = data_dir()
     _assert_not_in_repo(d)
     _ensure_dir(d)
-    for sub in (nonces_dir(), ledger_dir(), keys_dir(), anchors_dir()):
+    for sub in (nonces_dir(), ledger_dir(), keys_dir(), anchors_dir(), enrollments_dir()):
         _ensure_dir(sub)
     return d
 
