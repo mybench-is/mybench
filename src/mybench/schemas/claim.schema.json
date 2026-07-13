@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v1/claim.schema.json",
+  "title": "Mybench Assessment Claim",
+  "description": "One signed assessment claim (MYB-10.1, handoff §3). Strict whitelist like every mybench artifact (additionalProperties:false): a claim carries registry identifiers, commitments, bands, and version identifiers — content fields are structurally impossible (privacy invariant #1). Claims stay local until the THREAT_MODEL §3 revision opens a publish gate (invariant #4, MYB-16.2). Patterns use [0-9] (never \\d — Unicode digits) and every patterned field is length-pinned because jsonschema matches with re.search, where '$' accepts a trailing newline. The 'no floats' rule cannot be expressed here for the free-form output object; mybench.claims.canonical enforces it on every serialization, and validate_claim runs both checks plus ordering rules the schema cannot express (real-instant timestamps; sorted-unique corpus_commitment arrays).",
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "hex128": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$",
+      "minLength": 128,
+      "maxLength": 128
+    },
+    "timestamp": {
+      "description": "Exactly RFC 3339 UTC whole seconds, no fractional part — one canonical encoding per instant (byte-identity rule).",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "minLength": 20,
+      "maxLength": 20
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "claim_type",
+    "registry_id",
+    "registry_version",
+    "scorer",
+    "inputs",
+    "output",
+    "derivation_class",
+    "execution_env",
+    "attestation_evidence",
+    "signed_at",
+    "signer",
+    "signature"
+  ],
+  "properties": {
+    "claim_type": {
+      "description": "Claim family (handoff §3).",
+      "enum": ["metric", "descriptor", "linkage", "absence", "wellformed"]
+    },
+    "registry_id": {
+      "description": "Descriptor registry entry this claim instantiates (namespace.name). A claim without a registry entry is invalid — the registry (MYB-10.2) is the source of truth for shape, bands, and disclosure.",
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
+      "maxLength": 128
+    },
+    "registry_version": {
+      "description": "Semver of the registry entry the output conforms to; any output-shape change bumps it (handoff §4 rule 6).",
+      "$ref": "#/$defs/semver"
+    },
+    "scorer": {
+      "description": "The code that computed this claim. Behavior changes bump version (load-bearing, like judge versioning).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "measurement"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+$",
+          "maxLength": 128
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "measurement": {
+          "description": "null locally; enclave code measurement when attested.",
+          "type": ["null", "string"],
+          "maxLength": 256
+        }
+      }
+    },
+    "inputs": {
+      "description": "Content-addressed evidence the scorer consumed (handoff §4 rule 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["corpus_commitment", "evidence_window"],
+      "properties": {
+        "corpus_commitment": {
+          "description": "Merkle root(s) over the normalized evidence, lowercase hex. The array form must be sorted ascending and duplicate-free (validate_claim enforces order; uniqueItems here) so identical evidence has exactly one byte representation.",
+          "oneOf": [
+            {"$ref": "#/$defs/hex64"},
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/hex64"}
+            }
+          ]
+        },
+        "evidence_window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start", "end"],
+          "properties": {
+            "start": {"$ref": "#/$defs/timestamp"},
+            "end": {"$ref": "#/$defs/timestamp"}
+          }
+        },
+        "anchor_refs": {
+          "description": "Optional OTS anchor ids relied upon. When present: non-empty, sorted, duplicate-free — 'no anchors' has exactly one representation (key omitted).",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256}
+        }
+      }
+    },
+    "output": {
+      "description": "Descriptor-specific payload; bands, not raw values, where §8 requires. Shape is governed by the registry entry (registry_id@registry_version), not by this schema; never empty. No floats — enforced by the canonical serializer.",
+      "type": "object",
+      "minProperties": 1
+    },
+    "derivation_class": {
+      "description": "measured = deterministic count/presence/ratio; characterization = taxonomy/archetype assignment, renders at judge-tier styling with confidence (handoff §5).",
+      "enum": ["measured", "characterization"]
+    },
+    "execution_env": {
+      "description": "Where the scorer ran. Tier presentation for these values is owner-gated (OQ #30) — never mapped to tier names in code.",
+      "enum": ["local-unattested", "tee-attested"]
+    },
+    "attestation_evidence": {
+      "description": "MYB-7.18 composite attestation-evidence list; local-unattested claims carry the zero-element case so attested evidence appends later without migration. items:false is deliberate v0 policy: no evidence-item shape is whitelisted yet, so tee-attested claims are structurally unproducible until MYB-7.18 supplies the composite schema — a free-form object here would be a content-smuggling hole in the invariant-#1 whitelist.",
+      "type": "array",
+      "items": false
+    },
+    "signed_at": {
+      "description": "Runner-supplied input timestamp (UTC RFC 3339); scorers never read the clock (handoff §4 rule 2).",
+      "$ref": "#/$defs/timestamp"
+    },
+    "signer": {
+      "description": "The verifying key, embedded like anchor batches embed device_pub. kind is SELF-CERTIFIED: it must be bound to a trusted key set (device-binding records / local device key) before any device-tier presentation — see verify_claim. kind=dev is clearly non-production: its claims verify only up to the self-run tier.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pub"],
+      "properties": {
+        "kind": {"enum": ["device", "dev"]},
+        "pub": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "signature": {
+      "description": "Ed25519 signature (hex) over the canonical compact sorted JSON of this object WITHOUT the signature field.",
+      "$ref": "#/$defs/hex128"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"execution_env": {"const": "local-unattested"}}},
+      "then": {
+        "properties": {
+          "attestation_evidence": {"maxItems": 0},
+          "scorer": {"properties": {"measurement": {"type": "null"}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"execution_env": {"const": "tee-attested"}}},
+      "then": {
+        "properties": {
+          "attestation_evidence": {"minItems": 1},
+          "scorer": {"properties": {"measurement": {"type": "string", "minLength": 1}}}
+        }
+      }
+    }
+  ]
+}
