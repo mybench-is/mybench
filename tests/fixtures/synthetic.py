@@ -139,9 +139,13 @@ def generate_fixtures(
     claude_dir = dest / "claude" / "projects" / "-synthetic-project"
     codex_dir = dest / "codex" / "sessions"
     claude_dir.mkdir(parents=True, exist_ok=True)
-    codex_dir.mkdir(parents=True, exist_ok=True)
     for _ in range(claude_sessions):
         _claude_session(rng, claude_dir / f"{_uuid(rng)}.jsonl", fx)
     for i in range(codex_sessions):
-        _codex_session(rng, codex_dir / f"rollout-2026-01-01T00-00-0{i}.jsonl", fx)
+        # Mirror the real rollout layout (current as of 2026-07-13):
+        # sessions/YYYY/MM/DD/rollout-*.jsonl (MYB-12.2). Fixed synthetic
+        # dates keep output deterministic.
+        day_dir = codex_dir / "2026" / "01" / f"{i + 1:02d}"
+        day_dir.mkdir(parents=True, exist_ok=True)
+        _codex_session(rng, day_dir / f"rollout-2026-01-{i + 1:02d}T00-00-00.jsonl", fx)
     return fx
