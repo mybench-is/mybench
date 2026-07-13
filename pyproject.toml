@@ -14,7 +14,7 @@ dependencies = ["jsonschema>=4.0", "cryptography>=49.0", "opentimestamps>=0.4"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-mybench = ["schemas/*.json"]
+mybench = ["schemas/*.json", "registry/*.json"]
 
 [tool.ruff]
 line-length = 100
