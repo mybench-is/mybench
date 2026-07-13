@@ -32,6 +32,18 @@ log = logging.getLogger("mybench.daemon")
 # Formats wired in v0 — exactly those the MYB-2.2 fixtures cover. All current
 # formats are line-delimited, so extraction is shared; a new format plugs in
 # here with its own extractor (OPEN_QUESTIONS #6).
+#
+# Record boundaries (ADR-0002 §2 — adapters define them per tool):
+#   claude-code: one complete JSONL line = one item, exact raw bytes;
+#     ~/.claude/projects/<project>/…, subagent files nest arbitrarily deep.
+#   codex: same per-JSONL-line boundary, verified against the rollout format
+#     current as of 2026-07-13 (sessions/YYYY/MM/DD/rollout-*.jsonl, one JSON
+#     object per line). The nested date layout needs no special handling:
+#     session_id_for HMACs the watch-relative path, so equal stems on
+#     different dates stay distinct sessions (MYB-12.2).
+# Validity of the bytes is deliberately irrelevant: capture is content-opaque
+# and never parses items, so an unknown or binary line is still exactly one
+# committed record — malformed input cannot crash or skip capture.
 SOURCES = ("claude-code", "codex", "synthetic")
 
 
@@ -57,8 +69,25 @@ class DaemonConfig:
                 raise ConfigError(f"unknown source {w.source!r}; wired formats: {SOURCES}")
 
 
+def production_watches(home: Path) -> tuple[WatchSpec, ...]:
+    """Real transcript locations for a production machine (OQ #6: both formats).
+
+    Claude Code is unconditional (a missing dir surfaces loudly per-scan as
+    ``missing_dir`` rather than being silently dropped here); the Codex dir is
+    exists-guarded because not every machine runs Codex (MYB-12.2). Pure and
+    testable against a tmp ``home`` — the pytest guard lives in
+    :func:`default_config`, which is the only caller that touches the real
+    home directory.
+    """
+    watches = [WatchSpec(home / ".claude" / "projects", "claude-code")]
+    codex = home / ".codex" / "sessions"
+    if codex.is_dir():
+        watches.append(WatchSpec(codex, "codex"))
+    return tuple(watches)
+
+
 def default_config() -> DaemonConfig:
-    """The real Claude Code transcript location — owner runs only.
+    """The real transcript locations — owner runs only.
 
     Refuses under pytest: tests must pass explicit tmp fixture dirs and can
     never fall back to real transcript paths (MYB-2.5 AC #3, invariant #3).
@@ -67,9 +96,7 @@ def default_config() -> DaemonConfig:
 
     if "PYTEST_CURRENT_TEST" in os.environ:
         raise ConfigError("default_config() is forbidden in test mode — pass explicit fixture dirs")
-    return DaemonConfig(
-        watches=(WatchSpec(Path.home() / ".claude" / "projects", "claude-code"),)
-    )
+    return DaemonConfig(watches=production_watches(Path.home()))
 
 
 def session_id_for(f: Path, watch: WatchSpec, scope_key: bytes) -> str:

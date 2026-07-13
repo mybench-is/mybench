@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 import pytest
 
@@ -9,7 +10,7 @@ from mybench import commitments as c
 from mybench import nonces, paths
 from mybench.daemon import capture
 from mybench.ledger import Ledger
-from tests.fixtures import assert_no_canaries, generate_fixtures
+from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 
 
 @pytest.fixture
@@ -158,8 +159,74 @@ def test_session_ids_are_opaque_and_valid(fx, config):
         session_id = sid(config, s)
         assert len(session_id) <= 64
         assert nonces.session_nonce_file(session_id)  # passes the opaque-id gate
-        # No readable path component beyond the stem itself leaks into the id.
-        assert s.parent.name not in session_id
+        # Exactly truncated stem + keyed 16-hex tag: structurally nothing else
+        # (no directory component, however short) can appear in the id.
+        assert re.fullmatch(re.escape(s.stem[:40]) + r"-[0-9a-f]{16}", session_id)
+
+
+# --- Codex production wiring (MYB-12.2) ----------------------------------------
+
+
+def test_production_watches_codex_exists_guard(tmp_path):
+    # Without a Codex install: Claude Code only (its dir is NOT exists-guarded —
+    # a missing dir must surface per-scan as missing_dir, never vanish here).
+    watches = capture.production_watches(tmp_path)
+    assert [(w.path, w.source) for w in watches] == [
+        (tmp_path / ".claude" / "projects", "claude-code")
+    ]
+    # With ~/.codex/sessions present, the Codex watch appears.
+    (tmp_path / ".codex" / "sessions").mkdir(parents=True)
+    watches = capture.production_watches(tmp_path)
+    assert [(w.path, w.source) for w in watches] == [
+        (tmp_path / ".claude" / "projects", "claude-code"),
+        (tmp_path / ".codex" / "sessions", "codex"),
+    ]
+
+
+def test_codex_nested_dates_same_stem_are_distinct_sessions(fx, config):
+    # Real rollout layout nests sessions/YYYY/MM/DD; the same filename on two
+    # dates must be two sessions (path-HMAC id), like the subagent-twin case.
+    original = next(s for s in fx.sessions if "codex" in s.parts)
+    other_day = original.parent.parent / "09"
+    other_day.mkdir()
+    twin = other_day / original.name
+    twin.write_bytes(b'{"synthetic": "other-day-a"}\n{"synthetic": "other-day-b"}\n')
+    daemon = capture.Daemon(config)
+    assert daemon.scan_once() == len(fx.sessions) + 1
+    rows = session_rows(daemon.ledger)
+    assert sid(config, twin) != sid(config, original)
+    for f in (twin, original):
+        assert rows[sid(config, f)]["session_root"] == recomputed_root(config, f)
+
+
+def test_binary_line_is_committed_opaquely_without_crash(fx, config):
+    # Capture never parses items: an unknown/binary line is still exactly one
+    # committed record (ADR-0002 §2 exact-raw-bytes), never a crash or a skip.
+    target = next(s for s in fx.sessions if "codex" in s.parts)
+    daemon = capture.Daemon(config)
+    daemon.scan_once()
+    before = session_rows(daemon.ledger)[sid(config, target)]["item_count"]
+    with target.open("ab") as f:
+        f.write(b"\x00\xff\xfe not json at all \x80\n")
+    assert daemon.scan_once() == 1
+    row = session_rows(daemon.ledger)[sid(config, target)]
+    assert row["item_count"] == before + 1
+    assert row["session_root"] == recomputed_root(config, target)
+    assert daemon.ledger.verify_chain() == 1 + len(fx.sessions) + 1
+
+
+def test_unreadable_entry_is_counted_and_skipped(fx, config, caplog):
+    # A *.jsonl path that cannot be read as a file (here: a directory) takes
+    # the capture_error path — class-only log line — and the scan continues.
+    trap = next(s for s in fx.sessions if "codex" in s.parts).parent / "trap.jsonl"
+    trap.mkdir()
+    daemon = capture.Daemon(config)
+    with caplog.at_level(logging.ERROR, logger="mybench.daemon"):
+        assert daemon.scan_once() == len(fx.sessions)  # every real session captured
+    errors = [r for r in caplog.records if "capture_error" in r.getMessage()]
+    assert len(errors) == 1
+    assert "trap" not in errors[0].getMessage()  # class only, never the path
+    assert daemon.ledger.verify_chain() == 1 + len(fx.sessions)
 
 
 # --- Leak surface (AC #4) -----------------------------------------------------------
@@ -196,3 +263,10 @@ def test_ledger_and_daemon_logs_pass_leak_scan(fx, config, tmp_path):
         [daemon.ledger.path, logfile], fx.all_canaries() + used_nonces
     )
     assert scanned == 2
+
+    # Companion firing test (never-vacuous rule): the same scan on the same
+    # surface DOES catch a planted canary in the daemon log.
+    with logfile.open("a") as f:
+        f.write(fx.content_canaries[0])
+    with pytest.raises(CanaryLeakError):
+        assert_no_canaries([logfile], fx.all_canaries())
