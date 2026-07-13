@@ -132,14 +132,14 @@ def test_scorers_read_bands_and_min_support_from_the_registry(registry):
 
 
 def test_internal_feature_only_is_structurally_non_renderable(registry):
+    # Handoff §7.1: never on ANY disclosure surface — not even named in the
+    # excluded list; only an aggregate count admits such entries exist.
     assert "transcript.domain_vocabulary" not in registry.renderable_ids()
     for preset in (EMPLOYER_SAFE, "full"):
         manifest = registry.disclosure_manifest(preset)
-        assert "transcript.domain_vocabulary" not in manifest["included"]
-        reason = next(
-            x["reason"] for x in manifest["excluded"] if x["id"] == "transcript.domain_vocabulary"
-        )
-        assert "internal-feature-only" in reason
+        named = set(manifest["included"]) | {x["id"] for x in manifest["excluded"]}
+        assert "transcript.domain_vocabulary" not in named
+        assert manifest["internal_feature_only_count"] == 1
 
 
 def test_renderability_gate_fires_when_flag_flips():
@@ -177,8 +177,9 @@ def test_employer_safe_manifest_is_r0_actives_only(registry):
 
 
 def test_manifest_is_deterministic_and_carries_rejected_section(registry):
-    a = registry.disclosure_manifest("full")
-    b = registry.disclosure_manifest("full")
+    # Two INDEPENDENT parse->validate->derive runs, not two calls on one object.
+    a = Registry(packaged_doc()).disclosure_manifest("full")
+    b = Registry(packaged_doc()).disclosure_manifest("full")
     assert a == b
     assert a["registry_digest"] == registry.digest()
     topics = " ".join(r["topic"] for r in a["rejected"])
@@ -233,6 +234,170 @@ def test_bridge_rejects_version_class_reserved_and_shape_mismatches(registry):
         )
     with pytest.raises(RegistryError, match="does not conform"):
         registry.check_claim(tool_mix_claim(output={"read_share_band": "most of the time"}))
+
+
+# --- Review regressions (2026-07-13 pre-PR review) -----------------------------------
+
+
+def test_ref_bearing_output_schema_rejected_at_load():
+    # $ref resolution is a score-time dependency (and a network call on old
+    # jsonschema) — banned outright so check_claim can never encounter one.
+    def add_ref(doc):
+        entry_by_id(doc, "transcript.tool_mix")["output_schema"] = {
+            "$ref": "https://mybench-evil.invalid/schema.json",
+            "properties": {},
+        }
+
+    with pytest.raises(RegistryError, match="may not use"):
+        Registry(mutated(add_ref))
+
+
+def test_banned_framings_match_word_boundaries_not_substrings():
+    # 'unique' must NOT trip the 'IQ' ban...
+    def unique_title(doc):
+        entry_by_id(doc, "transcript.tool_mix")["title"] = "Unique tool technique mix"
+
+    Registry(mutated(unique_title))  # loads fine
+    # ...while dotted initialisms and hyphenated variants MUST trip it.
+    for bad in ("Cognitive I.Q. proxy band", "Reasoning-ability band"):
+        def trait_title(doc, bad=bad):
+            entry_by_id(doc, "transcript.tool_mix")["title"] = bad
+
+        with pytest.raises(RegistryError, match="banned framing"):
+            Registry(mutated(trait_title))
+
+
+def test_banned_framings_checked_in_notes_and_risk_notes():
+    def sneak_into_note(doc):
+        entry_by_id(doc, "repo.stack_fingerprint")["risk_note"] = "basically a developer score"
+
+    with pytest.raises(RegistryError, match="banned framing"):
+        Registry(mutated(sneak_into_note))
+
+
+def test_trailing_newline_ids_and_versions_rejected():
+    # jsonschema patterns run under re.search; the loader fullmatch closes it.
+    def newline_id(doc):
+        e = copy.deepcopy(entry_by_id(doc, "transcript.tool_mix"))
+        e["id"] = "transcript.tool_mix\n"  # near-duplicate of an existing id
+        doc["entries"].append(e)
+
+    with pytest.raises(RegistryError, match="not exactly"):
+        Registry(mutated(newline_id))
+    with pytest.raises(RegistryError, match="not exactly"):
+        Registry(mutated(lambda d: d.__setitem__("registry_version", "0.1.0\n")))
+
+
+def test_registry_is_immune_to_caller_and_result_mutation(registry):
+    digest = registry.digest()
+    stolen = registry.entry("transcript.tool_mix")
+    stolen["presets"].append(EMPLOYER_SAFE)  # mutate the returned copy
+    stolen["band_definitions"][0]["bands"].append("always")
+    assert registry.entry("transcript.tool_mix")["band_definitions"][0]["bands"][-1] != "always"
+    assert registry.digest() == digest
+    doc = packaged_doc()
+    r = Registry(doc)
+    doc["entries"][0]["title"] = "Developer IQ band"  # mutate the source doc post-load
+    assert r.entry(doc["entries"][0]["id"])["title"] != "Developer IQ band"
+
+
+def test_unknown_preset_is_an_error_not_an_empty_manifest(registry):
+    with pytest.raises(RegistryError, match="unknown preset"):
+        registry.disclosure_manifest("employer_safe")  # typo'd
+    with pytest.raises(RegistryError, match="unknown preset"):
+        registry.preset_ids("everything")
+
+
+def test_active_output_schema_must_be_a_closed_whitelist():
+    def open_schema(doc):
+        entry_by_id(doc, "transcript.tool_mix")["output_schema"].pop("additionalProperties")
+
+    with pytest.raises(RegistryError, match="closed whitelist"):
+        Registry(mutated(open_schema))
+
+
+def test_band_definitions_and_output_enums_cannot_drift():
+    def drift_enum(doc):
+        e = entry_by_id(doc, "transcript.tool_mix")
+        e["output_schema"]["properties"]["read_share_band"]["enum"] = ["low", "high"]
+
+    with pytest.raises(RegistryError, match="disagrees with the output_schema enum"):
+        Registry(mutated(drift_enum))
+
+    def orphan_band(doc):
+        e = entry_by_id(doc, "transcript.tool_mix")
+        e["band_definitions"].append({"field": "phantom_band", "bands": ["a", "b"]})
+
+    with pytest.raises(RegistryError, match="matches no enum output property"):
+        Registry(mutated(orphan_band))
+
+    def unbanded_enum(doc):
+        e = entry_by_id(doc, "transcript.tool_mix")
+        e["band_definitions"] = e["band_definitions"][1:]  # drop read_share_band
+
+    with pytest.raises(RegistryError, match="has no band_definitions entry"):
+        Registry(mutated(unbanded_enum))
+
+
+def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
+    f = tmp_path / "dup.json"
+    f.write_bytes(
+        _packaged_registry_bytes().replace(
+            b'"registry_version": "0.1.0"',
+            b'"registry_version": "0.1.0", "registry_version": "0.1.0"',
+            1,
+        )
+    )
+    with pytest.raises(RegistryError, match="duplicate JSON key"):
+        Registry.load(f)
+
+
+def test_wave_zero_is_exactly_the_fingerprint_namespace():
+    def wave_zero_elsewhere(doc):
+        entry_by_id(doc, "transcript.skill_authoring")["wave"] = 0
+
+    with pytest.raises(RegistryError, match="fingerprint"):
+        Registry(mutated(wave_zero_elsewhere))
+    def fingerprint_wave_two(doc):
+        entry_by_id(doc, "fingerprint.workflow_map")["wave"] = 2
+
+    with pytest.raises(RegistryError, match="fingerprint"):
+        Registry(mutated(fingerprint_wave_two))
+
+
+def test_packaged_load_is_cached_and_path_load_is_fresh(tmp_path, registry):
+    assert Registry.load() is registry  # lru-cached packaged instance
+    f = tmp_path / "copy.json"
+    f.write_bytes(_packaged_registry_bytes())
+    assert Registry.load(f) is not registry
+
+
+def test_domain_mix_is_r1_per_the_handoff(registry):
+    # §8.3 names "domain mix + location" as its R1 example.
+    e = registry.entry("repo.domain_mix")
+    assert e["inference_risk"] == "R1"
+    assert "risk_note" in e
+    assert EMPLOYER_SAFE not in e["presets"]
+
+
+def test_bridge_rejects_free_text_in_slug_arrays(registry):
+    # harnesses entries are slug-patterned: prose/content strings can't ride.
+    with pytest.raises(RegistryError, match="does not conform"):
+        registry.check_claim(
+            tool_mix_claim(
+                registry_id="transcript.orchestrators",
+                output={
+                    "harnesses": ["totally normal prose with spaces in it"],
+                    "version_currency_band": "older",
+                },
+            )
+        )
+    registry.check_claim(
+        tool_mix_claim(
+            registry_id="transcript.orchestrators",
+            output={"harnesses": ["claude-code", "codex"], "version_currency_band": "older"},
+        )
+    )
 
 
 # --- Leak surface -------------------------------------------------------------------

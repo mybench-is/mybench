@@ -66,6 +66,16 @@
       },
       "band_definitions": [
         {
+          "field": "share_bands",
+          "bands": [
+            "0-24%",
+            "25-49%",
+            "50-74%",
+            "75-100%"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        },
+        {
           "field": "sessions_checked_band",
           "bands": [
             "1-9",
@@ -74,34 +84,6 @@
             "1000+"
           ],
           "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
-        },
-        {
-          "field": "wellformed_share_band",
-          "bands": [
-            "0-24%",
-            "25-49%",
-            "50-74%",
-            "75-100%"
-          ],
-          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
-        },
-        {
-          "field": "timestamp_monotonic_share_band",
-          "bands": [
-            "0-24%",
-            "25-49%",
-            "50-74%",
-            "75-100%"
-          ]
-        },
-        {
-          "field": "tool_pairing_intact_share_band",
-          "bands": [
-            "0-24%",
-            "25-49%",
-            "50-74%",
-            "75-100%"
-          ]
         }
       ],
       "min_support": {
@@ -175,7 +157,7 @@
       },
       "band_definitions": [
         {
-          "field": "read_share_band",
+          "field": "share_bands",
           "bands": [
             "0-9%",
             "10-39%",
@@ -183,33 +165,6 @@
             "70-100%"
           ],
           "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
-        },
-        {
-          "field": "write_share_band",
-          "bands": [
-            "0-9%",
-            "10-39%",
-            "40-69%",
-            "70-100%"
-          ]
-        },
-        {
-          "field": "execute_share_band",
-          "bands": [
-            "0-9%",
-            "10-39%",
-            "40-69%",
-            "70-100%"
-          ]
-        },
-        {
-          "field": "browse_share_band",
-          "bands": [
-            "0-9%",
-            "10-39%",
-            "40-69%",
-            "70-100%"
-          ]
         }
       ],
       "min_support": {
@@ -292,7 +247,7 @@
         "employer-safe",
         "full"
       ],
-      "neutrality_note": "neutral framing: 'delegating'/'interactive' styles; intervention counts are workflow shape, never an error or deficit measure"
+      "neutrality_note": "neutral framing: 'delegating'/'interactive' styles; NEVER 'correction rate' or any deficit framing"
     },
     {
       "id": "transcript.verification_ratio",
@@ -366,11 +321,9 @@
           "harnesses": {
             "type": "array",
             "minItems": 1,
-            "maxItems": 10,
             "uniqueItems": true,
             "items": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9._+-]{0,63}$",
               "maxLength": 64
             }
           },
@@ -577,7 +530,6 @@
             "type": "array",
             "minItems": 1,
             "maxItems": 10,
-            "uniqueItems": true,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -588,7 +540,6 @@
               "properties": {
                 "name": {
                   "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}$",
                   "maxLength": 32
                 },
                 "share_band": {
@@ -726,7 +677,6 @@
             "uniqueItems": true,
             "items": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}$",
               "maxLength": 32
             }
           },
@@ -881,7 +831,7 @@
       },
       "band_definitions": [
         {
-          "field": "test_density_band",
+          "field": "density_bands",
           "bands": [
             "none",
             "sparse",
@@ -889,15 +839,6 @@
             "dense"
           ],
           "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
-        },
-        {
-          "field": "docs_density_band",
-          "bands": [
-            "none",
-            "sparse",
-            "moderate",
-            "dense"
-          ]
         }
       ],
       "min_support": {
@@ -951,14 +892,14 @@
       },
       "band_definitions": [],
       "min_support": {},
-      "inference_risk": "R1",
+      "inference_risk": "R0",
       "disclosure": "public",
       "presets": [
+        "employer-safe",
         "full"
       ],
       "neutrality_note": "coarse category mix with confidence; judge-tier pill; never a specialization rank",
-      "notes": "Trails at low priority per MYB-10.13 reframe (no roadmap \u00a76 consumer)",
-      "risk_note": "domain mix combines with location and other disclosures toward identification \u2014 the handoff \u00a78.3 R1 example"
+      "notes": "Trails at low priority per MYB-10.13 reframe (no roadmap \u00a76 consumer)"
     },
     {
       "id": "xstream.linkage",
