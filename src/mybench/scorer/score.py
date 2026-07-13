@@ -105,9 +105,12 @@ def score(
     """Compute the v0 report; returns canonical report bytes.
 
     ``enrolled`` (optional): per opted-in repo name, ``{"tip": <commit hash>,
-    "commits": [<hashes since enrollment>]}`` — gathered by the caller so
-    this function stays pure. ``allow_synthetic`` permits fixture ledgers in
-    tests; a real report must never contain synthetic-source sessions.
+    "commits": [<hashes since enrollment>], "public": True}`` — gathered by the
+    caller so this function stays pure. ``public: True`` marks the repo as
+    public+named; every entry must carry it or the report is refused
+    (MYB-6.11 fail-closed guard, see below). ``allow_synthetic`` permits
+    fixture ledgers in tests; a real report must never contain
+    synthetic-source sessions.
     """
     latest = _latest_session_rows(rows)
     if not latest:
@@ -177,6 +180,21 @@ def score(
         coverage = {}
         tips = {}
         for repo, facts in sorted(enrolled.items()):
+            # MYB-6.11 fail-closed guard: PROVEN binding_coverage and a RAW
+            # commit tip are only sound for a public, named repo — PROVEN means
+            # "verifiable from public artifacts alone" (false for a private
+            # repo, whose commits aren't public) and a raw private tip is a
+            # deanonymization oracle (anyone holding the repo can hash-compare).
+            # Require the caller to explicitly flag each entry public+named; if
+            # any entry lacks it, refuse the whole report rather than silently
+            # downgrade or leak. Superseded by MYB-6.10 (the metric split +
+            # HMAC pseudonyms + salted-commitment tips), which absorbs this.
+            if facts.get("public") is not True:
+                raise ScoreError(
+                    f"enrolled repo {repo!r} is not marked public+named — "
+                    "refusing to emit PROVEN binding_coverage / raw tip "
+                    "(fail-closed; MYB-6.11, superseded by MYB-6.10)"
+                )
             if not facts["commits"]:
                 raise ScoreError(f"enrolled repo {repo!r} supplied no commits")
             hits = sum(1 for c in facts["commits"] if c in bound)

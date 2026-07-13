@@ -51,7 +51,11 @@ FIXED_BATCHES = [
     {"ts": "2026-01-02T00:00:00Z", "session_count": 2},
     {"ts": "2026-02-02T00:00:00Z", "session_count": 2},
 ]
-FIXED_ENROLLED = {"synthetic/repo": {"tip": "b" * 40, "commits": ["a" * 40, "f" * 40]}}
+# public: True is the MYB-6.11 public+named flag; it gates PROVEN coverage /
+# a raw tip but is NOT written to the report, so golden bytes are unaffected.
+FIXED_ENROLLED = {
+    "synthetic/repo": {"tip": "b" * 40, "commits": ["a" * 40, "f" * 40], "public": True}
+}
 
 
 def fixed_report_bytes():
@@ -174,7 +178,7 @@ def test_synthetic_guard_and_empty_ledger():
         score([GENESIS], [], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True)
     with pytest.raises(ScoreError, match="no commits"):
         score(FIXED_ROWS, [], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True,
-              enrolled={"r": {"tip": "b" * 40, "commits": []}})
+              enrolled={"r": {"tip": "b" * 40, "commits": [], "public": True}})
 
 
 def test_iso_year_boundary_weeks():
@@ -186,6 +190,41 @@ def test_iso_year_boundary_weeks():
     dist = next(m for m in report["metrics"]
                 if m["name"] == "sessions_per_week_distribution")["value"]
     assert dist == {"00": 0, "01-05": 2, "06-15": 0, "16-40": 0, "41+": 0}
+
+
+# --- MYB-6.11 fail-closed binding guard --------------------------------------------------
+
+
+def test_enrolled_without_public_flag_raises():
+    """An enrolled entry missing public+named is refused, never downgraded/leaked."""
+    for facts in (
+        {"tip": "b" * 40, "commits": ["a" * 40]},            # flag absent
+        {"tip": "b" * 40, "commits": ["a" * 40], "public": False},
+        {"tip": "b" * 40, "commits": ["a" * 40], "public": "true"},  # not `is True`
+    ):
+        with pytest.raises(ScoreError, match="public"):
+            score(FIXED_ROWS, FIXED_BATCHES, generated_at="2026-07-09T00:00:00Z",
+                  allow_synthetic=True, enrolled={"private/repo": facts})
+
+
+def test_one_unflagged_entry_fails_the_whole_report():
+    """Fail-closed: a single unverifiable repo rejects the entire report."""
+    enrolled = {
+        "synthetic/repo": {"tip": "b" * 40, "commits": ["a" * 40], "public": True},
+        "private/repo": {"tip": "c" * 40, "commits": ["a" * 40]},
+    }
+    with pytest.raises(ScoreError, match="public"):
+        score(FIXED_ROWS, FIXED_BATCHES, generated_at="2026-07-09T00:00:00Z",
+              allow_synthetic=True, enrolled=enrolled)
+
+
+def test_public_flag_output_is_byte_identical_to_golden():
+    """The guard rejects invalid input only; valid output is unchanged."""
+    assert fixed_report_bytes() == GOLDEN.read_bytes()
+    # public: True is a gate, not a payload — it must not appear in the report.
+    assert b'"public"' not in fixed_report_bytes()
+    # Determinism preserved with the flagged entry.
+    assert fixed_report_bytes() == fixed_report_bytes()
 
 
 # --- Leak scan (AC #5) ---------------------------------------------------------------------
@@ -219,11 +258,12 @@ def test_cli_refuses_synthetic_ledger(tmp_path, capsys):
     assert "synthetic" in capsys.readouterr().err
 
 
-def test_cli_end_to_end_with_enrolled_repo(tmp_path, capsys):
+def _enrolled_fixture_repo(tmp_path):
+    """One synthetic repo with the live hook + marker and one bound commit,
+    plus a session row so the ledger is scoreable."""
     import mybench.commitments as c
     from mybench.hooks import binding
     from mybench.ledger import Ledger
-    from mybench.scorer.__main__ import main
 
     Ledger().append_session(session_id="real-1", session_root=c.generate_nonce(),
                             item_count=7, source="claude-code", ts="2026-07-01T00:00:00Z")
@@ -239,12 +279,44 @@ def test_cli_end_to_end_with_enrolled_repo(tmp_path, capsys):
     (repo / "f.txt").write_text("synthetic\n")
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "enroll"], check=True)
+    return repo
 
+
+def test_cli_end_to_end_with_enrolled_repo(tmp_path, capsys):
+    from mybench.scorer.__main__ import main
+
+    repo = _enrolled_fixture_repo(tmp_path)
     out = tmp_path / "report.json"
     rc = main(["--generated-at", "2026-07-09T00:00:00Z",
-               "--enrolled-repo", f"synthetic-name={repo}", "--out", str(out)])
+               "--enrolled-repo", f"synthetic-name={repo}",
+               "--public", "synthetic-name", "--out", str(out)])
     assert rc == 0, capsys.readouterr().err
     report = json.loads(out.read_bytes())
     load_validator("report.schema.json").validate(report)
     cov = next(m for m in report["metrics"] if m["name"] == "binding_coverage")
     assert cov["value"] == {"synthetic-name": 1.0}
+
+
+def test_cli_refuses_enrolled_repo_not_asserted_public(tmp_path, capsys):
+    """MYB-6.11 end to end: enrollment alone must not imply the public+named
+    assertion — without --public NAME the guard refuses the whole report."""
+    from mybench.scorer.__main__ import main
+
+    repo = _enrolled_fixture_repo(tmp_path)
+    out = tmp_path / "report.json"
+    rc = main(["--generated-at", "2026-07-09T00:00:00Z",
+               "--enrolled-repo", f"synthetic-name={repo}", "--out", str(out)])
+    assert rc == 1
+    assert "public" in capsys.readouterr().err
+    assert not out.exists()  # refused, never written
+
+
+def test_cli_rejects_public_flag_for_unknown_repo(tmp_path, capsys):
+    from mybench.scorer.__main__ import main
+
+    repo = _enrolled_fixture_repo(tmp_path)
+    rc = main(["--generated-at", "2026-07-09T00:00:00Z",
+               "--enrolled-repo", f"synthetic-name={repo}",
+               "--public", "synthetic-name", "--public", "typo-name"])
+    assert rc == 1
+    assert "typo-name" in capsys.readouterr().err
