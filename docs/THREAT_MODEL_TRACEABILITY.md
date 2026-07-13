@@ -12,6 +12,10 @@ every feature must trace to the threat model. Epics live in
 | MYB-3 Phase 2 — anchoring + commit binding | §2 A5; §3 published-artifacts list; ADV-1 (trailer correlation, opt-in control); ADV-2 (backdating defeat); ADV-6 (gap visibility) | Daily root cadence per §3/§4 |
 | MYB-4 Phase 3 — scorer + privacy self-audit | §2 A7; ADV-3 (supply chain, no-network, nonce isolation); §6 (tier labels); §8 rows 5–6 | §8 matrix must exist before Phase 3 completes |
 | MYB-5 Phase 4 — report + publish | §2 A6; §3 report whitelist; §6 (one tier per metric); ADV-1 (report-granularity residual); ADV-6 (verification claims) | Verify CLI is the PROVEN-tier checker |
+| MYB-10.1 claim envelope + signing (partial MYB-10 row) | §2 A2/A7 (local artifacts over owner data, whitelist schema); §3 (claims are NOT in the published list — local-only until the §3 revision); ADV-3 (no-network/no-clock scorer discipline); ADV-6 (signed, canonical, byte-reproducible artifacts) | Claims carry commitments/bands/ids only (additionalProperties:false; content structurally impossible); publish gate = owner §3 revision (MYB-16.2, invariant #4). Full MYB-6..16 row sweep = MYB-16.7 |
 
 Gaps flagged (not filled): explicit trust-assumptions section pending owner
-text — `mybench-ops/backlog/OPEN_QUESTIONS.md` #16.
+text — `mybench-ops/backlog/OPEN_QUESTIONS.md` #16. Table rows for epics
+MYB-6..MYB-16 pending the reconciliation-filed refresh (MYB-16.7); the
+MYB-10.1 row above was added with that feature rather than waiting
+(invariant #4: trace before build).

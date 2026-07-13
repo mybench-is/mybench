@@ -11,7 +11,11 @@ byte-compare gate and, later, local-vs-enclave byte-identity.
 Same convention as anchor batches and identity records
 (``json.dumps(sort_keys=True, separators=(",", ":"))``): non-ASCII text is
 escaped (``ensure_ascii``), which keeps the byte stream ASCII-safe and
-deterministic while remaining valid UTF-8. The signature covers the
+deterministic while remaining valid UTF-8. This is deliberately the
+repo-wide convention, NOT RFC 8785/JCS (which emits raw UTF-8 and sorts by
+UTF-16 code units) — under ADR-0012 the enclave port runs this same code,
+so the convention travels with the artifact; any change is an ADR-level
+break of every golden fixture and signature. The signature covers the
 canonical bytes of the claim *without* its ``signature`` field.
 """
 
@@ -36,7 +40,15 @@ def check_canonical_value(obj: object, path: str = "$") -> None:
         raise CanonicalError(
             f"float at {path}: use integers, fixed-precision decimal strings, or band labels"
         )
-    if obj is None or isinstance(obj, (bool, int, str)):
+    if isinstance(obj, str):
+        try:
+            obj.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            # Unpaired surrogates survive json.dumps as lone \udXXX escapes,
+            # which strict RFC 8259 decoders reject — poison for byte-identity.
+            raise CanonicalError(f"non-UTF-8-encodable string at {path}") from exc
+        return
+    if obj is None or isinstance(obj, (bool, int)):
         return
     if isinstance(obj, dict):
         for key, value in obj.items():

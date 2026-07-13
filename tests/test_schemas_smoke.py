@@ -14,10 +14,21 @@ def _schema(name):
     return load_validator(name).schema
 
 
-@pytest.mark.parametrize(
-    "name",
-    ["ledger_entry.schema.json", "anchor_batch.schema.json", "report.schema.json"],
-)
+def _all_packaged_schemas():
+    # Glob, not an enumeration: a schema added without metaschema coverage
+    # would silently widen its whitelist at validation time (MYB-10.1 review).
+    from importlib import resources
+
+    names = sorted(
+        r.name
+        for r in resources.files("mybench.schemas").iterdir()
+        if r.name.endswith(".schema.json")
+    )
+    assert names, "no packaged schemas found"
+    return names
+
+
+@pytest.mark.parametrize("name", _all_packaged_schemas())
 def test_packaged_schemas_are_valid(name):
     Draft202012Validator.check_schema(_schema(name))
 

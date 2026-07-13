@@ -181,6 +181,21 @@ def ensure_identity_key() -> tuple[Path, Path]:
     return key_path, pub_path
 
 
+def load_device_key() -> Ed25519PrivateKey:
+    """Ensure + load the device private key in one step (MYB-10.1).
+
+    The one shared loader for signers — ensure_device_key already parses and
+    type-checks the PEM; per-call-site reloads (anchor batch/event, claims)
+    should converge here so key-format changes (MYB-8.11 rotation ADR) have
+    one seam.
+    """
+    key_path, _ = ensure_device_key()
+    private = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+    if not isinstance(private, Ed25519PrivateKey):
+        raise PathsError(f"{key_path} is not an Ed25519 private key")
+    return private
+
+
 def ensure_session_scope_key() -> bytes:
     """Random local key for the keyed session-id path disambiguator.
 
