@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v1/claim.schema.json",
+  "title": "Mybench Assessment Claim",
+  "description": "One signed assessment claim (MYB-10.1, handoff §3). Strict whitelist like every mybench artifact (additionalProperties:false): a claim carries registry identifiers, commitments, bands, and version identifiers — content fields are structurally impossible (privacy invariant #1). Claims stay local until the THREAT_MODEL §3 revision opens a publish gate (invariant #4, MYB-16.2). The 'no floats' rule cannot be expressed here for the free-form output object; mybench.claims.canonical enforces it on every serialization, and validate_claim runs both checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "claim_type",
+    "registry_id",
+    "registry_version",
+    "scorer",
+    "inputs",
+    "output",
+    "derivation_class",
+    "execution_env",
+    "attestation_evidence",
+    "signed_at",
+    "signer",
+    "signature"
+  ],
+  "properties": {
+    "claim_type": {
+      "description": "Claim family (handoff §3).",
+      "enum": ["metric", "descriptor", "linkage", "absence", "wellformed"]
+    },
+    "registry_id": {
+      "description": "Descriptor registry entry this claim instantiates (namespace.name). A claim without a registry entry is invalid — the registry (MYB-10.2) is the source of truth for shape, bands, and disclosure.",
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$"
+    },
+    "registry_version": {
+      "description": "Semver of the registry entry the output conforms to; any output-shape change bumps it (handoff §4 rule 6).",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "scorer": {
+      "description": "The code that computed this claim. Behavior changes bump version (load-bearing, like judge versioning).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "measurement"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "measurement": {
+          "description": "null locally; enclave code measurement when attested.",
+          "type": ["null", "string"]
+        }
+      }
+    },
+    "inputs": {
+      "description": "Content-addressed evidence the scorer consumed (handoff §4 rule 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["corpus_commitment", "evidence_window"],
+      "properties": {
+        "corpus_commitment": {
+          "description": "Merkle root(s) over the normalized evidence, lowercase hex.",
+          "oneOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            }
+          ]
+        },
+        "evidence_window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start", "end"],
+          "properties": {
+            "start": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+            }
+          }
+        },
+        "anchor_refs": {
+          "description": "Optional OTS anchor ids relied upon.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "output": {
+      "description": "Descriptor-specific payload; bands, not raw values, where §8 requires. Shape is governed by the registry entry (registry_id@registry_version), not by this schema. No floats — enforced by the canonical serializer.",
+      "type": "object"
+    },
+    "derivation_class": {
+      "description": "measured = deterministic count/presence/ratio; characterization = taxonomy/archetype assignment, renders at judge-tier styling with confidence (handoff §5).",
+      "enum": ["measured", "characterization"]
+    },
+    "execution_env": {
+      "description": "Where the scorer ran. Tier presentation for these values is owner-gated (OQ #30) — never mapped to tier names in code.",
+      "enum": ["local-unattested", "tee-attested"]
+    },
+    "attestation_evidence": {
+      "description": "MYB-7.18 composite attestation-evidence list; local-unattested claims carry the zero-element case so attested evidence appends later without migration.",
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "signed_at": {
+      "description": "Runner-supplied input timestamp (UTC RFC 3339); scorers never read the clock (handoff §4 rule 2).",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "signer": {
+      "description": "The verifying key, embedded like anchor batches embed device_pub. kind=dev is clearly non-production: its claims verify only up to the self-run tier.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pub"],
+      "properties": {
+        "kind": {"enum": ["device", "dev"]},
+        "pub": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "signature": {
+      "description": "Ed25519 signature (hex) over the canonical compact sorted JSON of this object WITHOUT the signature field.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"execution_env": {"const": "local-unattested"}}},
+      "then": {
+        "properties": {
+          "attestation_evidence": {"maxItems": 0},
+          "scorer": {"properties": {"measurement": {"type": "null"}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"execution_env": {"const": "tee-attested"}}},
+      "then": {
+        "properties": {
+          "attestation_evidence": {"minItems": 1},
+          "scorer": {"properties": {"measurement": {"type": "string", "minLength": 1}}}
+        }
+      }
+    }
+  ]
+}
