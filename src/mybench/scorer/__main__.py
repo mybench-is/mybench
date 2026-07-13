@@ -1,7 +1,7 @@
 """CLI wrapper for the pure scorer: gathers inputs, validates, writes.
 
     python -m mybench.scorer --generated-at 2026-07-09T00:00:00Z \
-        [--enrolled-repo NAME=PATH]... [--out report.json]
+        [--enrolled-repo NAME=PATH --public NAME]... [--out report.json]
 
 All impurity (ledger/anchor reads, git queries, clock-free by design —
 generated_at is required) lives here; mybench/scorer/score.py stays pure.
@@ -37,10 +37,7 @@ def _repo_facts(path: Path) -> dict:
     # Commits since enrollment, INCLUDING the marker commit itself (it was bound).
     rev_range = f"{marker_added}~1..HEAD" if has_parent else "HEAD"
     commits = git("rev-list", rev_range).splitlines()
-    # --enrolled-repo is opt-in per repo and its NAME is published, so a repo
-    # reaching here is public+named — flag it so the scorer's MYB-6.11
-    # fail-closed guard emits PROVEN binding_coverage + a raw tip for it.
-    return {"tip": git("rev-parse", "HEAD"), "commits": commits, "public": True}
+    return {"tip": git("rev-parse", "HEAD"), "commits": commits}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -52,7 +49,17 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=[],
         metavar="NAME=PATH",
-        help="opted-in repo for binding_coverage (name is published — opt-in per repo)",
+        help="opted-in repo for binding_coverage; scores only when also asserted "
+        "with --public NAME (MYB-6.11 fail-closed guard)",
+    )
+    parser.add_argument(
+        "--public",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="assert this --enrolled-repo NAME is a PUBLIC, named repo: publishes "
+        "its name and raw tip and emits PROVEN binding_coverage. One per repo — "
+        "publicness is a per-repo human assertion, never implied by enrollment",
     )
     parser.add_argument("--out", help="write report here (default: stdout)")
     args = parser.parse_args(argv)
@@ -65,6 +72,15 @@ def main(argv: list[str] | None = None) -> int:
     for spec in args.enrolled_repo:
         name, _, path = spec.partition("=")
         enrolled[name] = _repo_facts(Path(path))
+    unknown = sorted(set(args.public) - set(enrolled))
+    if unknown:
+        print(f"error: --public names no --enrolled-repo entry: {', '.join(unknown)}",
+              file=sys.stderr)
+        return 1
+    # MYB-6.11: the public+named assertion is typed per repo, never inferred —
+    # an entry without it makes score() refuse the whole report (fail-closed).
+    for name in args.public:
+        enrolled[name]["public"] = True
     try:
         report_bytes = score(
             rows,

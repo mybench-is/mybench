@@ -258,11 +258,12 @@ def test_cli_refuses_synthetic_ledger(tmp_path, capsys):
     assert "synthetic" in capsys.readouterr().err
 
 
-def test_cli_end_to_end_with_enrolled_repo(tmp_path, capsys):
+def _enrolled_fixture_repo(tmp_path):
+    """One synthetic repo with the live hook + marker and one bound commit,
+    plus a session row so the ledger is scoreable."""
     import mybench.commitments as c
     from mybench.hooks import binding
     from mybench.ledger import Ledger
-    from mybench.scorer.__main__ import main
 
     Ledger().append_session(session_id="real-1", session_root=c.generate_nonce(),
                             item_count=7, source="claude-code", ts="2026-07-01T00:00:00Z")
@@ -278,12 +279,44 @@ def test_cli_end_to_end_with_enrolled_repo(tmp_path, capsys):
     (repo / "f.txt").write_text("synthetic\n")
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "enroll"], check=True)
+    return repo
 
+
+def test_cli_end_to_end_with_enrolled_repo(tmp_path, capsys):
+    from mybench.scorer.__main__ import main
+
+    repo = _enrolled_fixture_repo(tmp_path)
     out = tmp_path / "report.json"
     rc = main(["--generated-at", "2026-07-09T00:00:00Z",
-               "--enrolled-repo", f"synthetic-name={repo}", "--out", str(out)])
+               "--enrolled-repo", f"synthetic-name={repo}",
+               "--public", "synthetic-name", "--out", str(out)])
     assert rc == 0, capsys.readouterr().err
     report = json.loads(out.read_bytes())
     load_validator("report.schema.json").validate(report)
     cov = next(m for m in report["metrics"] if m["name"] == "binding_coverage")
     assert cov["value"] == {"synthetic-name": 1.0}
+
+
+def test_cli_refuses_enrolled_repo_not_asserted_public(tmp_path, capsys):
+    """MYB-6.11 end to end: enrollment alone must not imply the public+named
+    assertion — without --public NAME the guard refuses the whole report."""
+    from mybench.scorer.__main__ import main
+
+    repo = _enrolled_fixture_repo(tmp_path)
+    out = tmp_path / "report.json"
+    rc = main(["--generated-at", "2026-07-09T00:00:00Z",
+               "--enrolled-repo", f"synthetic-name={repo}", "--out", str(out)])
+    assert rc == 1
+    assert "public" in capsys.readouterr().err
+    assert not out.exists()  # refused, never written
+
+
+def test_cli_rejects_public_flag_for_unknown_repo(tmp_path, capsys):
+    from mybench.scorer.__main__ import main
+
+    repo = _enrolled_fixture_repo(tmp_path)
+    rc = main(["--generated-at", "2026-07-09T00:00:00Z",
+               "--enrolled-repo", f"synthetic-name={repo}",
+               "--public", "synthetic-name", "--public", "typo-name"])
+    assert rc == 1
+    assert "typo-name" in capsys.readouterr().err
