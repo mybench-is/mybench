@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from mybench.hooks.binding import HookError, enroll, install, reconcile, run
+from mybench.paths import PathsError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,12 +40,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         return run()
     if args.command == "reconcile":
-        reconcile(Path(args.repo) if args.repo else None)
+        try:
+            n = reconcile(Path(args.repo) if args.repo else None)
+        except PathsError as exc:  # data-dir integrity: surfaced, not a traceback
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"bound {n} previously-missed commit(s)")
         return 0
     if args.command == "enroll":
         try:
             record = enroll(args.repo, at=args.at)
-        except HookError as exc:
+        except (HookError, PathsError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         print(

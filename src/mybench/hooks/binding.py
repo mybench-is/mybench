@@ -83,12 +83,12 @@ def repo_identity(top: Path) -> str:
     return hmac.new(key, b"repo:" + os.fsencode(top.resolve()), hashlib.sha256).hexdigest()[:16]
 
 
-def _log_error(exc: Exception) -> None:
+def _log_error(exc: Exception, context: str = "post-commit") -> None:
     try:
         paths.ensure_data_dir()
         line = (
             f"{datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')} "
-            f"post-commit error type={type(exc).__name__}\n"
+            f"{context} error type={type(exc).__name__}\n"
         )
         fd = os.open(paths.data_dir() / "hooks.log", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -248,13 +248,21 @@ def reconcile(cwd: Path | None = None) -> int:
     ``(repo_id, commit_hash)``. Idempotent: a re-run appends nothing. Returns
     the number of rows appended.
 
-    Never raises for a repo it cannot process. No enrollment record → no-op
-    (enrollment must be stamped first; it does NOT backfill all-history as a
-    fallback). Unborn/empty HEAD, shallow, no marker, or a non-repo all return
-    0 without touching the ledger. A detached HEAD is swept normally (only the
-    in-window commits reachable from it). If ``enroll_commit`` is no longer a
-    valid ref (e.g. rebased away), the range errors — that is logged and
-    returns 0 rather than falling back to binding everything.
+    REPO-level conditions never raise: no enrollment record → no-op (enrollment
+    must be stamped first; it does NOT backfill all-history as a fallback);
+    unborn/empty HEAD, no marker, a non-repo, or a shallow boundary that cuts
+    off the window all return 0 without touching the ledger. A detached HEAD is
+    swept normally (only the in-window commits reachable from it). If
+    ``enroll_commit`` is no longer a valid ref (e.g. rebased away), the range
+    errors — that is logged and returns 0 rather than falling back to binding
+    everything. A mid-sweep failure logs and returns the partial count; the
+    idempotent re-run resumes where it left off.
+
+    Data-dir INTEGRITY failures are different and DO propagate
+    (:class:`~mybench.paths.PathsError`: insecure permissions, data dir inside
+    a repo): MYB-2.1 requires those to surface to the owner, not be masked as
+    a quiet "0 bound". Contrast :func:`run`, which must never block a commit
+    and swallows everything.
     """
     try:
         cwd = cwd if cwd is not None else Path.cwd()
@@ -263,7 +271,7 @@ def reconcile(cwd: Path | None = None) -> int:
         return 0
     if not (top / MARKER_RELPATH).is_file():
         return 0  # strictly opt-in, exactly like the hook — no marker, no sweep
-    repo_id = repo_identity(top)
+    repo_id = repo_identity(top)  # PathsError propagates: integrity failures must surface
     enroll_path = paths.enrollment_path(repo_id)
     if not enroll_path.exists():
         return 0  # not stamped: enrollment must be recorded before any sweep
@@ -273,7 +281,7 @@ def reconcile(cwd: Path | None = None) -> int:
         rev_range = f"{enroll_commit}..HEAD" if enroll_commit else "HEAD"
         rev_out = _git(top, "rev-list", rev_range)
     except Exception as exc:  # noqa: BLE001 — unborn HEAD, rebased-away enroll point, bad record
-        _log_error(exc)
+        _log_error(exc, context="reconcile")
         return 0
     commits = rev_out.split()
     if not commits:
@@ -285,18 +293,25 @@ def reconcile(cwd: Path | None = None) -> int:
             for row in ledger.rows()
             if row["type"] == "binding" and row["repo_id"] == repo_id
         }
+    except paths.PathsError:
+        raise  # loose-perms ledger: surface it, never mask as "nothing to bind"
     except Exception as exc:  # noqa: BLE001 — an unreadable ledger is not ours to repair here
-        _log_error(exc)
+        _log_error(exc, context="reconcile")
         return 0
     appended = 0
-    for commit_hash in commits:
-        if commit_hash in bound:
-            continue
-        ledger.append_binding(
-            commit_hash=commit_hash,
-            commit_ts=_committer_ts(top, commit_hash),
-            repo_id=repo_id,
-        )
-        bound.add(commit_hash)  # guard against a hash appearing twice in rev-list output
-        appended += 1
+    try:
+        for commit_hash in commits:
+            if commit_hash in bound:
+                continue
+            ledger.append_binding(
+                commit_hash=commit_hash,
+                commit_ts=_committer_ts(top, commit_hash),
+                repo_id=repo_id,
+            )
+            bound.add(commit_hash)  # guard against a hash appearing twice in rev-list output
+            appended += 1
+    except paths.PathsError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — partial sweep; idempotent re-run resumes
+        _log_error(exc, context="reconcile")
     return appended

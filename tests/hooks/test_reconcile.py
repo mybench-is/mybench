@@ -13,6 +13,7 @@ touch the real data dir (invariant #2/#3).
 """
 
 import json
+import os
 import subprocess
 
 import pytest
@@ -288,6 +289,7 @@ def test_reconcile_noop_when_enroll_point_is_an_invalid_ref(repo):
     assert not Ledger().path.exists()
     log = paths.data_dir() / "hooks.log"
     assert log.exists()  # logged via _log_error, exception class only
+    assert "reconcile error" in log.read_text()  # attributed to the sweep, not the hook
     assert "0000000000" not in log.read_text()  # ...and no ref/hash leaked into the log
 
 
@@ -301,6 +303,7 @@ def test_enroll_and_reconcile_cli(repo, capsys):
     (repo / ".git" / "hooks" / "post-commit").unlink()  # isolate reconcile from the live hook
     made = {commit(repo, filename=f"f{i}.txt") for i in range(2)}
     assert hooks_cli(["reconcile", str(repo)]) == 0
+    assert "bound 2 previously-missed commit(s)" in capsys.readouterr().out
     assert bound_hashes(repo) == made
 
 
@@ -360,3 +363,107 @@ def test_enroll_at_cli(repo, capsys):
     assert hooks_cli(["enroll", str(repo), "--at", "HEAD"]) == 1  # conflicts with c1
     err = capsys.readouterr().err
     assert err.startswith("error:") and "first enrollment wins" in err
+
+
+# --- raise posture: repo-level errors no-op, data-dir integrity errors surface ---------
+
+
+def test_integrity_errors_surface_from_reconcile_but_never_from_run(repo):
+    """MYB-2.1: loose perms on A2/A3 must reach the owner, not be masked as a
+    quiet '0 bound' — except in the post-commit hook, which never blocks a
+    commit and swallows everything to hooks.log."""
+    commit(repo, filename="a.txt")
+    enroll_disarmed(repo)
+    commit(repo, filename="b.txt")
+    os.chmod(paths.session_scope_key_path(), 0o644)
+
+    assert binding.run(repo) == 0  # hook posture: swallowed
+    with pytest.raises(paths.InsecurePermissionsError):
+        binding.reconcile(repo)  # sweep posture: surfaced
+
+
+def test_loose_ledger_perms_surface_from_reconcile(repo):
+    commit(repo, filename="base.txt")
+    enroll_disarmed(repo)
+    commit(repo, filename="a.txt")
+    assert binding.reconcile(repo) == 1  # ledger now exists
+    os.chmod(Ledger().path, 0o644)
+    commit(repo, filename="b.txt")
+    with pytest.raises(paths.InsecurePermissionsError):
+        binding.reconcile(repo)
+
+
+def test_reconcile_cli_reports_integrity_errors_cleanly(repo, capsys):
+    commit(repo, filename="a.txt")
+    binding.enroll(str(repo))
+    os.chmod(paths.session_scope_key_path(), 0o644)
+    assert hooks_cli(["reconcile", str(repo)]) == 1  # clean error, not a traceback
+    err = capsys.readouterr().err
+    assert err.startswith("error:") and "chmod" in err
+
+
+def test_mid_sweep_failure_logs_and_returns_partial_count(repo, monkeypatch):
+    commit(repo, filename="base.txt")
+    enroll_disarmed(repo)
+    c1 = commit(repo, filename="a.txt")
+    c2 = commit(repo, filename="b.txt")
+
+    real = binding._committer_ts
+    calls = []
+
+    def flaky(top, commit_hash):
+        calls.append(commit_hash)
+        if len(calls) == 2:
+            raise RuntimeError("synthetic mid-sweep failure")
+        return real(top, commit_hash)
+
+    monkeypatch.setattr(binding, "_committer_ts", flaky)
+    assert binding.reconcile(repo) == 1  # partial count, no crash
+    assert len(bound_hashes(repo)) == 1
+    assert "reconcile error type=RuntimeError" in (paths.data_dir() / "hooks.log").read_text()
+
+    monkeypatch.setattr(binding, "_committer_ts", real)
+    assert binding.reconcile(repo) == 1  # idempotent re-run completes the gap
+    assert bound_hashes(repo) == {c1, c2}
+
+
+# --- shallow clones (AC #2) --------------------------------------------------------------
+
+
+def test_reconcile_sweeps_normally_inside_a_shallow_clone(repo, tmp_path):
+    for i in range(3):
+        commit(repo, filename=f"pre{i}.txt")
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{repo}", str(shallow)],
+        check=True, capture_output=True,
+    )
+    git(shallow, "config", "user.email", "synthetic@example.invalid")
+    git(shallow, "config", "user.name", "Synthetic Committer")
+
+    record = binding.enroll(str(shallow))  # untracked marker → HEAD (the shallow tip)
+    (shallow / ".git" / "hooks" / "post-commit").unlink()
+    assert record["enroll_commit"] == git(shallow, "rev-parse", "HEAD").stdout.strip()
+
+    later = commit(shallow, filename="later.txt")
+    assert binding.reconcile(shallow) == 1
+    assert bound_hashes(shallow) == {later}
+
+
+def test_reconcile_noop_when_enroll_point_is_beyond_the_shallow_boundary(repo, tmp_path):
+    first = commit(repo, filename="pre0.txt")
+    commit(repo, filename="pre1.txt")
+    commit(repo, filename="pre2.txt")
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{repo}", str(shallow)],
+        check=True, capture_output=True,
+    )
+    record = binding.enroll(str(shallow))
+    # Point the record at a commit the shallow clone does not have.
+    bad = dict(record, enroll_commit=first)
+    paths.enrollment_path(record["repo_id"]).write_text(json.dumps(bad))
+
+    assert binding.reconcile(shallow) == 0  # range errors → logged no-op, no crash
+    assert not Ledger().path.exists()
+    assert "reconcile error" in (paths.data_dir() / "hooks.log").read_text()
