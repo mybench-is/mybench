@@ -5,9 +5,11 @@ directory (mode 0700, OUTSIDE all repos), never in any repo, test output, or
 logs. No other module may construct data paths (test-enforced).
 
 Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
-    nonces/   per-session nonce files (0600)      — asset A2
-    ledger/   hash-chained ledger                 — asset A3
-    keys/     device.key (0600) / device.pub      — Ed25519 device identity
+    nonces/       per-session nonce files (0600)      — asset A2
+    ledger/       hash-chained ledger                 — asset A3
+    keys/         device.key (0600) / device.pub      — Ed25519 device identity
+    anchors/      staged anchor artifacts + OTS proofs pre-publication
+    enrollments/  per-repo commit-binding enrollment records (MYB-3.7)
 """
 
 from __future__ import annotations
@@ -67,6 +69,21 @@ def keys_dir() -> Path:
 def anchors_dir() -> Path:
     """Staging area for anchor artifacts + OTS proofs before publication."""
     return data_dir() / "anchors"
+
+
+def enrollments_dir() -> Path:
+    """Per-repo commit-binding enrollment records (MYB-3.7).
+
+    The enrollment point (HEAD at opt-in) is local-only state, so it lives
+    here in the 0700 data dir — never in a repo, never in the ledger
+    (invariant #2). Keyed by the opaque HMAC repo id, so the file name leaks
+    no path either.
+    """
+    return data_dir() / "enrollments"
+
+
+def enrollment_path(repo_id: str) -> Path:
+    return enrollments_dir() / f"{repo_id}.json"
 
 
 def device_key_path() -> Path:
@@ -227,7 +244,7 @@ def ensure_data_dir() -> Path:
     d = data_dir()
     _assert_not_in_repo(d)
     _ensure_dir(d)
-    for sub in (nonces_dir(), ledger_dir(), keys_dir(), anchors_dir()):
+    for sub in (nonces_dir(), ledger_dir(), keys_dir(), anchors_dir(), enrollments_dir()):
         _ensure_dir(sub)
     return d
 

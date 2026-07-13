@@ -1,11 +1,13 @@
-"""CLI: ``python -m mybench.hooks install <repo>`` / ``… run`` (post-commit entry)."""
+"""CLI: ``python -m mybench.hooks install|enroll <repo>`` / ``… run`` / ``… reconcile [repo]``."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from mybench.hooks.binding import HookError, install, run
+from mybench.hooks.binding import HookError, enroll, install, reconcile, run
+from mybench.paths import PathsError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -13,11 +15,49 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     p_install = sub.add_parser("install", help="install the opt-in post-commit hook into ONE repo")
     p_install.add_argument("repo", help="path to the repo worktree top level (never global)")
+    p_enroll = sub.add_parser(
+        "enroll", help="install + activate + stamp the enrollment point (HEAD at opt-in) for ONE repo"
+    )
+    p_enroll.add_argument("repo", help="path to the repo worktree top level (never global)")
+    p_enroll.add_argument(
+        "--at",
+        metavar="COMMIT",
+        default=None,
+        help="owner override: stamp the enrollment point at this revision (HEAD at the "
+        "TRUE opt-in date) instead of deriving it — for repos enrolled before record-"
+        "stamping existed; must be an ancestor of HEAD, refused if a record already "
+        "exists with a different point",
+    )
     sub.add_parser("run", help="post-commit entry point (called by the installed hook)")
+    p_reconcile = sub.add_parser(
+        "reconcile", help="bind since-enrollment commits missed by post-commit (rebase/merge/squash)"
+    )
+    p_reconcile.add_argument(
+        "repo", nargs="?", default=None, help="repo worktree (default: current directory)"
+    )
     args = parser.parse_args(argv)
 
     if args.command == "run":
         return run()
+    if args.command == "reconcile":
+        try:
+            n = reconcile(Path(args.repo) if args.repo else None)
+        except PathsError as exc:  # data-dir integrity: surfaced, not a traceback
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"bound {n} previously-missed commit(s)")
+        return 0
+    if args.command == "enroll":
+        try:
+            record = enroll(args.repo, at=args.at)
+        except (HookError, PathsError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(
+            f"enrolled {args.repo}\n"
+            f"  enrollment point: {record['enroll_commit'] or '(unborn HEAD — binds from first commit)'}"
+        )
+        return 0
     try:
         hook_path = install(args.repo)
     except HookError as exc:
