@@ -156,7 +156,7 @@ def _derive_enroll_commit(top: Path) -> str:
         return ""  # marker added in the root commit: no pre-history, bind all
 
 
-def enroll(repo: str | Path) -> dict:
+def enroll(repo: str | Path, at: str | None = None) -> dict:
     """Opt this repo into commit-binding and stamp its enrollment point (MYB-3.7).
 
     Installs the ``post-commit`` hook (reusing :func:`install`), ensures the
@@ -167,8 +167,18 @@ def enroll(repo: str | Path) -> dict:
     a tracked marker anchors at the marker-add commit's parent; an untracked
     (local-only) marker anchors at current HEAD; an unborn HEAD records ``""``.
 
+    ``at`` (owner override) stamps the point at that revision instead of
+    deriving it — for a repo whose true opt-in predates record-stamping (an
+    untracked-marker repo enrolled before this code existed: derivation would
+    say "now" and permanently exclude the already-missed squash/merge commits
+    from the sweep window). The revision must resolve to a commit that is an
+    ancestor of (or equal to) HEAD. The record is local-only state, so a
+    backdated point fabricates nothing: binding rows still carry their real
+    append timestamps.
+
     First enrollment wins: if a record already exists it is returned unchanged,
-    so a re-run never moves the point (idempotent). ``enroll_commit=""`` means
+    so a re-run never moves the point (idempotent) — and a conflicting ``at``
+    raises rather than being silently ignored. ``enroll_commit=""`` means
     :func:`reconcile` binds all of HEAD, since there is no pre-enrollment
     history to exclude.
 
@@ -179,12 +189,32 @@ def enroll(repo: str | Path) -> dict:
     marker = top / MARKER_RELPATH
     marker.parent.mkdir(exist_ok=True)
     marker.touch()
+    at_commit = None
+    if at is not None:
+        try:
+            at_commit = _git(top, "rev-parse", "--verify", f"{at}^{{commit}}")
+        except subprocess.CalledProcessError as exc:
+            raise HookError(f"--at {at!r} does not resolve to a commit in {top}") from exc
+        try:
+            _git(top, "merge-base", "--is-ancestor", at_commit, "HEAD")
+        except subprocess.CalledProcessError as exc:
+            raise HookError(
+                f"--at {at!r} is not an ancestor of HEAD in {top} — the sweep window "
+                "enroll_commit..HEAD would not contain the history it claims to cover"
+            ) from exc
     repo_id = repo_identity(top)
     paths.ensure_data_dir()
     path = paths.enrollment_path(repo_id)
     if path.exists():
-        return json.loads(path.read_text())  # first enrollment wins — never re-stamp
-    enroll_commit = _derive_enroll_commit(top)
+        record = json.loads(path.read_text())  # first enrollment wins — never re-stamp
+        if at_commit is not None and record["enroll_commit"] != at_commit:
+            raise HookError(
+                "enrollment record already exists with a different point — first "
+                "enrollment wins; refusing to move it (delete the record only if "
+                "you are deliberately re-anchoring this repo)"
+            )
+        return record
+    enroll_commit = at_commit if at_commit is not None else _derive_enroll_commit(top)
     record = {
         "repo_id": repo_id,
         "enroll_commit": enroll_commit,

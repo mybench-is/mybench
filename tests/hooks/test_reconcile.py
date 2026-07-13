@@ -302,3 +302,61 @@ def test_enroll_and_reconcile_cli(repo, capsys):
     made = {commit(repo, filename=f"f{i}.txt") for i in range(2)}
     assert hooks_cli(["reconcile", str(repo)]) == 0
     assert bound_hashes(repo) == made
+
+
+# --- enroll --at: owner override for pre-record real enrollments ------------------------
+
+
+def test_enroll_at_backdates_the_point_and_widens_the_sweep(repo):
+    """A repo that truly opted in before record-stamping existed (untracked-marker
+    real repos): --at anchors the window at the historical HEAD so the commits
+    post-commit already missed are swept instead of mislabeled pre-enrollment."""
+    c1 = commit(repo, filename="at-enroll.txt")
+    c2 = commit(repo, filename="missed-by-hook.txt")  # landed before stamping
+
+    record = binding.enroll(str(repo), at=c1)
+    assert record["enroll_commit"] == c1  # not HEAD (= c2), the derived value
+
+    (repo / ".git" / "hooks" / "post-commit").unlink()
+    c3 = commit(repo, filename="after-stamp.txt")
+    assert binding.reconcile(repo) == 2
+    assert bound_hashes(repo) == {c2, c3}  # the backdated gap + new work; c1 excluded
+
+
+def test_enroll_at_conflict_refused_matching_at_idempotent(repo):
+    commit(repo, filename="a.txt")
+    head = commit(repo, filename="b.txt")
+    rec = binding.enroll(str(repo))  # untracked marker: point == HEAD
+    assert rec["enroll_commit"] == head
+
+    with pytest.raises(binding.HookError, match="first enrollment wins"):
+        binding.enroll(str(repo), at="HEAD~1")  # would move the point — refused
+    assert binding.enroll(str(repo), at=head) == rec  # same point: idempotent no-op
+    assert json.loads(paths.enrollment_path(rec["repo_id"]).read_text()) == rec
+
+
+def test_enroll_at_rejects_junk_and_non_ancestors(repo):
+    c1 = commit(repo, filename="base.txt")
+    git(repo, "checkout", "-q", "-b", "feature")
+    f1 = commit(repo, filename="feature.txt")
+    git(repo, "checkout", "-q", "master")
+    commit(repo, filename="main.txt")
+
+    with pytest.raises(binding.HookError, match="does not resolve"):
+        binding.enroll(str(repo), at="0" * 40)
+    with pytest.raises(binding.HookError, match="not an ancestor"):
+        binding.enroll(str(repo), at=f1)  # reachable ref, but not in HEAD's history
+    repo_id = binding.repo_identity(repo.resolve())
+    assert not paths.enrollment_path(repo_id).exists()  # nothing stamped by refusals
+
+    assert binding.enroll(str(repo), at=c1)["enroll_commit"] == c1  # ancestor: accepted
+
+
+def test_enroll_at_cli(repo, capsys):
+    c1 = commit(repo, filename="a.txt")
+    commit(repo, filename="b.txt")
+    assert hooks_cli(["enroll", str(repo), "--at", c1]) == 0
+    assert c1 in capsys.readouterr().out
+    assert hooks_cli(["enroll", str(repo), "--at", "HEAD"]) == 1  # conflicts with c1
+    err = capsys.readouterr().err
+    assert err.startswith("error:") and "first enrollment wins" in err

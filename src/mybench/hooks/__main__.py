@@ -18,6 +18,15 @@ def main(argv: list[str] | None = None) -> int:
         "enroll", help="install + activate + stamp the enrollment point (HEAD at opt-in) for ONE repo"
     )
     p_enroll.add_argument("repo", help="path to the repo worktree top level (never global)")
+    p_enroll.add_argument(
+        "--at",
+        metavar="COMMIT",
+        default=None,
+        help="owner override: stamp the enrollment point at this revision (HEAD at the "
+        "TRUE opt-in date) instead of deriving it — for repos enrolled before record-"
+        "stamping existed; must be an ancestor of HEAD, refused if a record already "
+        "exists with a different point",
+    )
     sub.add_parser("run", help="post-commit entry point (called by the installed hook)")
     p_reconcile = sub.add_parser(
         "reconcile", help="bind since-enrollment commits missed by post-commit (rebase/merge/squash)"
@@ -34,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "enroll":
         try:
-            record = enroll(args.repo)
+            record = enroll(args.repo, at=args.at)
         except HookError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
