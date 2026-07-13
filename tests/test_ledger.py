@@ -188,3 +188,47 @@ def test_ledger_from_canary_fixtures_passes_leak_scan(tmp_path):
         )
     assert led.verify_chain() == len(fx.sessions) + 1
     assert assert_no_canaries([led.path], fx.all_canaries() + used_nonces) == 1
+
+
+# --- Concurrent writers (MYB-3.7) -------------------------------------------------
+
+
+def test_concurrent_writers_never_fork_the_chain(tmp_path):
+    """Two writer processes append in parallel; the ``<ledger>.lock`` writer lock
+    makes each read-tip→append atomic, so the result is one linear chain (the
+    genesis race included). Without it, interleaved writers produce duplicate
+    ``i``/``prev`` rows — a fork ``verify_chain`` rejects and ``recover`` cannot
+    repair — which is routine once the reconciliation sweep runs alongside the
+    live post-commit hook."""
+    import os
+    import subprocess
+    import sys
+
+    per_writer = 15
+    writer = (
+        "import os, sys, time\n"
+        "from mybench.ledger import Ledger\n"
+        "go = sys.argv[1]\n"
+        "offset = int(sys.argv[2])\n"
+        f"n = {per_writer}\n"
+        "while not os.path.exists(go):\n"
+        "    time.sleep(0.001)\n"
+        "led = Ledger()\n"
+        "for i in range(n):\n"
+        "    led.append_binding(commit_hash=format(offset + i, '040x'),\n"
+        f"                       commit_ts={TS!r}, repo_id='ab' * 8)\n"
+    )
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
+    go = tmp_path / "go"
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-c", writer, str(go), str(w * 4096)],
+            env=env, stderr=subprocess.PIPE,
+        )
+        for w in (1, 2)
+    ]
+    go.touch()  # both writers start (and race the genesis row) together
+    for p in procs:
+        _, err = p.communicate(timeout=120)
+        assert p.returncode == 0, err.decode()
+    assert Ledger().verify_chain() == 2 * per_writer + 1  # genesis + every row, linear

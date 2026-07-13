@@ -11,14 +11,23 @@ reported as :class:`TornTailError`, distinct from corruption elsewhere.
 Rows are metadata only. The schema (``schemas/ledger_entry.schema.json``,
 version "1", ``additionalProperties: false``) is enforced on write AND read,
 making content/filename fields structurally impossible (invariant #1).
+
+Writers serialize on ``<ledger>.lock`` (MYB-3.7): the read-tip → append pair
+must be atomic, or two concurrent writers (capture daemon, post-commit hooks,
+the reconciliation sweep) fork the chain with duplicate ``i``/``prev`` — a
+state ``verify_chain`` rejects and ``recover`` cannot repair. The lock is held
+per append, never across a whole sweep, so a post-commit hook waits at most
+one append.
 """
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import stat
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -120,6 +129,26 @@ class Ledger:
             )
         return len(rows)
 
+    # -- write serialization ------------------------------------------------------
+
+    @contextmanager
+    def _writer_lock(self):
+        """Exclusive advisory lock for one read-tip→append (or repair) section.
+
+        Blocking on purpose: contention lasts one append (~ms incl. fsync), so
+        even the post-commit hook just waits its turn instead of skipping.
+        """
+        fd = os.open(
+            self.path.with_name(self.path.name + ".lock"),
+            os.O_WRONLY | os.O_CREAT,
+            _FILE_MODE,
+        )
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)  # closing the fd releases the lock
+
     # -- recovery ---------------------------------------------------------------
 
     def recover(self) -> int:
@@ -133,30 +162,33 @@ class Ledger:
         (inside the data dir, 0600 — invariant #2).
         """
         quarantined = 0
-        while True:
-            try:
-                self.verify_chain()
-                return quarantined
-            except TornTailError:
-                data = self.path.read_bytes()
-                end = len(data) - 1 if data.endswith(b"\n") else len(data)
-                boundary = data.rfind(b"\n", 0, end) + 1
-                torn = data[boundary:]
-                qfd = os.open(
-                    self.path.with_name(self.path.name + ".quarantine"),
-                    os.O_WRONLY | os.O_APPEND | os.O_CREAT,
-                    _FILE_MODE,
-                )
+        if not self.path.exists():
+            return 0  # no ledger yet: nothing to repair, and no dir to put a lock in
+        with self._writer_lock():
+            while True:
                 try:
-                    os.write(qfd, torn)
-                    os.fsync(qfd)
-                finally:
-                    os.close(qfd)
-                with self.path.open("r+b") as f:
-                    f.truncate(boundary)
-                    f.flush()
-                    os.fsync(f.fileno())
-                quarantined += len(torn)
+                    self.verify_chain()
+                    return quarantined
+                except TornTailError:
+                    data = self.path.read_bytes()
+                    end = len(data) - 1 if data.endswith(b"\n") else len(data)
+                    boundary = data.rfind(b"\n", 0, end) + 1
+                    torn = data[boundary:]
+                    qfd = os.open(
+                        self.path.with_name(self.path.name + ".quarantine"),
+                        os.O_WRONLY | os.O_APPEND | os.O_CREAT,
+                        _FILE_MODE,
+                    )
+                    try:
+                        os.write(qfd, torn)
+                        os.fsync(qfd)
+                    finally:
+                        os.close(qfd)
+                    with self.path.open("r+b") as f:
+                        f.truncate(boundary)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    quarantined += len(torn)
 
     # -- writing ---------------------------------------------------------------
 
@@ -195,27 +227,28 @@ class Ledger:
         if self.path == paths.ledger_dir() / "ledger.jsonl":
             paths.ensure_data_dir()
         ts = ts if ts is not None else _utc_now()
-        existing = self.rows()
-        if not existing:
-            existing = [
-                self._append_row(
-                    {"schema_version": SCHEMA_VERSION, "i": 0, "type": "genesis", "ts": ts,
-                     "prev": GENESIS_PREV}
-                )
-            ]
-        return self._append_row(
-            {
-                "schema_version": SCHEMA_VERSION,
-                "i": existing[-1]["i"] + 1,
-                "type": "session",
-                "ts": ts,
-                "prev": existing[-1]["h"],
-                "session_id": session_id,
-                "session_root": session_root.hex(),
-                "item_count": item_count,
-                "source": source,
-            }
-        )
+        with self._writer_lock():
+            existing = self.rows()
+            if not existing:
+                existing = [
+                    self._append_row(
+                        {"schema_version": SCHEMA_VERSION, "i": 0, "type": "genesis", "ts": ts,
+                         "prev": GENESIS_PREV}
+                    )
+                ]
+            return self._append_row(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "i": existing[-1]["i"] + 1,
+                    "type": "session",
+                    "ts": ts,
+                    "prev": existing[-1]["h"],
+                    "session_id": session_id,
+                    "session_root": session_root.hex(),
+                    "item_count": item_count,
+                    "source": source,
+                }
+            )
 
     def append_binding(
         self, *, commit_hash: str, commit_ts: str, repo_id: str, ts: str | None = None
@@ -228,23 +261,24 @@ class Ledger:
         if self.path == paths.ledger_dir() / "ledger.jsonl":
             paths.ensure_data_dir()
         ts = ts if ts is not None else _utc_now()
-        existing = self.rows()
-        if not existing:
-            existing = [
-                self._append_row(
-                    {"schema_version": SCHEMA_VERSION, "i": 0, "type": "genesis", "ts": ts,
-                     "prev": GENESIS_PREV}
-                )
-            ]
-        return self._append_row(
-            {
-                "schema_version": SCHEMA_VERSION,
-                "i": existing[-1]["i"] + 1,
-                "type": "binding",
-                "ts": ts,
-                "prev": existing[-1]["h"],
-                "commit_hash": commit_hash,
-                "commit_ts": commit_ts,
-                "repo_id": repo_id,
-            }
-        )
+        with self._writer_lock():
+            existing = self.rows()
+            if not existing:
+                existing = [
+                    self._append_row(
+                        {"schema_version": SCHEMA_VERSION, "i": 0, "type": "genesis", "ts": ts,
+                         "prev": GENESIS_PREV}
+                    )
+                ]
+            return self._append_row(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "i": existing[-1]["i"] + 1,
+                    "type": "binding",
+                    "ts": ts,
+                    "prev": existing[-1]["h"],
+                    "commit_hash": commit_hash,
+                    "commit_ts": commit_ts,
+                    "repo_id": repo_id,
+                }
+            )
