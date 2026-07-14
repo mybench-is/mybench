@@ -1,0 +1,1575 @@
+{
+  "registry_version": "0.1.0",
+  "format_status": "provisional-json-pending-OQ-31",
+  "entries": [
+    {
+      "id": "transcript.wellformed",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Transcript well-formedness",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessions_checked_band",
+          "splice_artifacts_found",
+          "timestamp_monotonic_share_band",
+          "tool_pairing_intact_share_band",
+          "wellformed_share_band"
+        ],
+        "properties": {
+          "sessions_checked_band": {
+            "type": "string",
+            "enum": [
+              "1-9",
+              "10-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "wellformed_share_band": {
+            "type": "string",
+            "enum": [
+              "0-24%",
+              "25-49%",
+              "50-74%",
+              "75-100%"
+            ]
+          },
+          "timestamp_monotonic_share_band": {
+            "type": "string",
+            "enum": [
+              "0-24%",
+              "25-49%",
+              "50-74%",
+              "75-100%"
+            ]
+          },
+          "tool_pairing_intact_share_band": {
+            "type": "string",
+            "enum": [
+              "0-24%",
+              "25-49%",
+              "50-74%",
+              "75-100%"
+            ]
+          },
+          "splice_artifacts_found": {
+            "type": "boolean"
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "sessions_checked_band",
+          "bands": [
+            "1-9",
+            "10-99",
+            "100-999",
+            "1000+"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        },
+        {
+          "field": "wellformed_share_band",
+          "bands": [
+            "0-24%",
+            "25-49%",
+            "50-74%",
+            "75-100%"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        },
+        {
+          "field": "timestamp_monotonic_share_band",
+          "bands": [
+            "0-24%",
+            "25-49%",
+            "50-74%",
+            "75-100%"
+          ]
+        },
+        {
+          "field": "tool_pairing_intact_share_band",
+          "bands": [
+            "0-24%",
+            "25-49%",
+            "50-74%",
+            "75-100%"
+          ]
+        }
+      ],
+      "min_support": {
+        "sessions": 5
+      },
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "foundation integrity check; describes evidence quality, never the person"
+    },
+    {
+      "id": "transcript.tool_mix",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Tool mix",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "browse_share_band",
+          "execute_share_band",
+          "read_share_band",
+          "write_share_band"
+        ],
+        "properties": {
+          "read_share_band": {
+            "type": "string",
+            "enum": [
+              "0-9%",
+              "10-39%",
+              "40-69%",
+              "70-100%"
+            ]
+          },
+          "write_share_band": {
+            "type": "string",
+            "enum": [
+              "0-9%",
+              "10-39%",
+              "40-69%",
+              "70-100%"
+            ]
+          },
+          "execute_share_band": {
+            "type": "string",
+            "enum": [
+              "0-9%",
+              "10-39%",
+              "40-69%",
+              "70-100%"
+            ]
+          },
+          "browse_share_band": {
+            "type": "string",
+            "enum": [
+              "0-9%",
+              "10-39%",
+              "40-69%",
+              "70-100%"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "read_share_band",
+          "bands": [
+            "0-9%",
+            "10-39%",
+            "40-69%",
+            "70-100%"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        },
+        {
+          "field": "write_share_band",
+          "bands": [
+            "0-9%",
+            "10-39%",
+            "40-69%",
+            "70-100%"
+          ]
+        },
+        {
+          "field": "execute_share_band",
+          "bands": [
+            "0-9%",
+            "10-39%",
+            "40-69%",
+            "70-100%"
+          ]
+        },
+        {
+          "field": "browse_share_band",
+          "bands": [
+            "0-9%",
+            "10-39%",
+            "40-69%",
+            "70-100%"
+          ]
+        }
+      ],
+      "min_support": {
+        "sessions": 20
+      },
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "shape without content; characterizes workflow composition, does not grade it"
+    },
+    {
+      "id": "transcript.autonomy_band",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Autonomy band",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "interventions_per_1k_band",
+          "median_run_band"
+        ],
+        "properties": {
+          "median_run_band": {
+            "type": "string",
+            "enum": [
+              "1-4",
+              "5-19",
+              "20-99",
+              "100+"
+            ]
+          },
+          "interventions_per_1k_band": {
+            "type": "string",
+            "enum": [
+              "0-9",
+              "10-49",
+              "50-199",
+              "200+"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "median_run_band",
+          "bands": [
+            "1-4",
+            "5-19",
+            "20-99",
+            "100+"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change (agent actions per uninterrupted run)"
+        },
+        {
+          "field": "interventions_per_1k_band",
+          "bands": [
+            "0-9",
+            "10-49",
+            "50-199",
+            "200+"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        }
+      ],
+      "min_support": {
+        "sessions": 20
+      },
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "neutral framing: 'delegating'/'interactive' styles; intervention counts are workflow shape, never an error or deficit measure"
+    },
+    {
+      "id": "transcript.verification_ratio",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Verification ratio (session-local)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sessions_with_test_events_band"
+        ],
+        "properties": {
+          "sessions_with_test_events_band": {
+            "type": "string",
+            "enum": [
+              "0-24%",
+              "25-49%",
+              "50-74%",
+              "75-100%"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "sessions_with_test_events_band",
+          "bands": [
+            "0-24%",
+            "25-49%",
+            "50-74%",
+            "75-100%"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change; commit-linked strong form is Wave 2 (MYB-10.10 track)"
+        }
+      ],
+      "min_support": {
+        "sessions": 20
+      },
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "measures test-run presence in the workflow, not code quality"
+    },
+    {
+      "id": "transcript.orchestrators",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Orchestrator inventory",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "harnesses",
+          "version_currency_band"
+        ],
+        "properties": {
+          "harnesses": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._+-]{0,63}$",
+              "maxLength": 64
+            }
+          },
+          "version_currency_band": {
+            "type": "string",
+            "enum": [
+              "within-one-minor",
+              "within-one-major",
+              "older"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "version_currency_band",
+          "bands": [
+            "within-one-minor",
+            "within-one-major",
+            "older"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change; currency lookup is an input snapshot, never a network call at score time"
+        }
+      ],
+      "min_support": {
+        "sessions": 10
+      },
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "harness names are operational metadata, never trust anchors (ADR-0009 / standing rule 4)",
+      "risk_note": "a named-harness inventory can combine with other disclosures to narrow employer or team identity"
+    },
+    {
+      "id": "transcript.mcp_breadth",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "MCP category breadth",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "category_breadth_band"
+        ],
+        "properties": {
+          "category_breadth_band": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1-2",
+              "3-5",
+              "6+"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "category_breadth_band",
+          "bands": [
+            "0",
+            "1-2",
+            "3-5",
+            "6+"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change; recurrence-weighted \u2014 raw install counts are spam-gameable"
+        }
+      ],
+      "min_support": {
+        "sessions": 20
+      },
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "breadth of recurring tool categories; not a proficiency claim",
+      "risk_note": "niche MCP servers can combine with stack and scale disclosures to near-identify an employer"
+    },
+    {
+      "id": "transcript.skill_authoring",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Skill/hook authoring",
+      "inputs": [
+        "normalized-session-events",
+        "orchestration-file-structure"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "authoring vs installed distinction is heuristic; characterizes practice, never ranks",
+      "notes": "Milestone-A consumer: roadmap \u00a76 Orchestration topology via MYB-10.12(a)"
+    },
+    {
+      "id": "transcript.model_routing",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Model routing profile",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "model/provider names are operational metadata, never trust anchors (ADR-0009)",
+      "notes": "Milestone-A consumer: roadmap \u00a76 Model role profile + Workflow map (MYB-10.12(a), needs MYB-10.4/12.5 metadata)",
+      "risk_note": "provider/routing profile can combine to narrow employer identity"
+    },
+    {
+      "id": "transcript.tenure",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Anchored tenure",
+      "inputs": [
+        "anchor-log",
+        "anchor-latency-records"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "date-only granularity per anchor schema v2 discipline; a duration, not a rank",
+      "notes": "'provably practicing agentic development since {date}'; feeds roadmap \u00a76 Workflow summary evidence period (MYB-10.12(a); MYB-9.3 confirms latency inputs)"
+    },
+    {
+      "id": "transcript.work_shape",
+      "version": "0.1.0",
+      "class": "characterization",
+      "status": "reserved",
+      "wave": 3,
+      "title": "Workflow archetype",
+      "inputs": [
+        "normalized-session-events",
+        "measured-descriptor-claims"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "describes styles, not rank (roadmap Stage 2 \u00a79 gallery rule); renders at judge-tier styling with confidence; archetype taxonomy ratified at MYB-10.17",
+      "notes": "Promoted by the reconciliation to the roadmap \u00a76 Workflow summary headline ('primary observed workflow pattern', MYB-10.13); rule-based over measured features, never fuzzy"
+    },
+    {
+      "id": "repo.language_mix",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Language mix",
+      "inputs": [
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "languages"
+        ],
+        "properties": {
+          "languages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "share_band"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}$",
+                  "maxLength": 32
+                },
+                "share_band": {
+                  "type": "string",
+                  "enum": [
+                    "0-9%",
+                    "10-39%",
+                    "40-69%",
+                    "70-100%"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": [
+            "0-9%",
+            "10-39%",
+            "40-69%",
+            "70-100%"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        }
+      ],
+      "min_support": {
+        "repos": 1,
+        "commits": 50
+      },
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "GitHub-parity composition, private-inclusive; composition is not competence"
+    },
+    {
+      "id": "repo.activity_heatmap",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Activity heatmap (coarse)",
+      "inputs": [
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "active_days_band",
+          "weekday_weekend_split_band"
+        ],
+        "properties": {
+          "active_days_band": {
+            "type": "string",
+            "enum": [
+              "1-29",
+              "30-89",
+              "90-179",
+              "180+"
+            ]
+          },
+          "weekday_weekend_split_band": {
+            "type": "string",
+            "enum": [
+              "weekday-heavy",
+              "balanced",
+              "weekend-heavy"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "active_days_band",
+          "bands": [
+            "1-29",
+            "30-89",
+            "90-179",
+            "180+"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        },
+        {
+          "field": "weekday_weekend_split_band",
+          "bands": [
+            "weekday-heavy",
+            "balanced",
+            "weekend-heavy"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change; no hour-of-day anywhere (metrics-v0 exclusion)"
+        }
+      ],
+      "min_support": {
+        "commits": 50,
+        "window_days": 30
+      },
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "cadence shape, not commitment or effort",
+      "notes": "A day-of-week-only R0 variant may be split out at the MYB-10.17 sitting; until then R1 keeps it out of employer-safe",
+      "risk_note": "activity timing can leak timezone and lifestyle patterns in combination; hour-of-day grain is structurally excluded"
+    },
+    {
+      "id": "repo.stack_fingerprint",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Stack fingerprint",
+      "inputs": [
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ci_sophistication_band",
+          "frameworks",
+          "iac_present",
+          "monorepo"
+        ],
+        "properties": {
+          "frameworks": {
+            "type": "array",
+            "maxItems": 15,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}$",
+              "maxLength": 32
+            }
+          },
+          "iac_present": {
+            "type": "boolean"
+          },
+          "ci_sophistication_band": {
+            "type": "string",
+            "enum": [
+              "none",
+              "basic",
+              "matrix",
+              "advanced"
+            ]
+          },
+          "monorepo": {
+            "type": "boolean"
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "ci_sophistication_band",
+          "bands": [
+            "none",
+            "basic",
+            "matrix",
+            "advanced"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        }
+      ],
+      "min_support": {
+        "repos": 1
+      },
+      "inference_risk": "R2",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "inventory, not endorsement; stack choice is context, not skill",
+      "risk_note": "a rare stack + niche MCP + scale band can near-identify an employer (the handoff's canonical R2 example)"
+    },
+    {
+      "id": "repo.scale_bands",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Scale bands",
+      "inputs": [
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "codebase_size_band",
+          "longest_maintained_band"
+        ],
+        "properties": {
+          "codebase_size_band": {
+            "type": "string",
+            "enum": [
+              "<10k",
+              "10k-100k",
+              "100k-1M",
+              "1M+"
+            ]
+          },
+          "longest_maintained_band": {
+            "type": "string",
+            "enum": [
+              "<6mo",
+              "6mo-2y",
+              "2y-5y",
+              "5y+"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "codebase_size_band",
+          "bands": [
+            "<10k",
+            "10k-100k",
+            "100k-1M",
+            "1M+"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change (LOC)"
+        },
+        {
+          "field": "longest_maintained_band",
+          "bands": [
+            "<6mo",
+            "6mo-2y",
+            "2y-5y",
+            "5y+"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        }
+      ],
+      "min_support": {
+        "repos": 1
+      },
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "hiring signals public GitHub structurally cannot show for private work; size is not quality",
+      "risk_note": "scale bands combine with stack and MCP disclosures toward employer identification"
+    },
+    {
+      "id": "repo.test_docs_density",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 1,
+      "title": "Test and docs density",
+      "inputs": [
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "docs_density_band",
+          "test_density_band"
+        ],
+        "properties": {
+          "test_density_band": {
+            "type": "string",
+            "enum": [
+              "none",
+              "sparse",
+              "moderate",
+              "dense"
+            ]
+          },
+          "docs_density_band": {
+            "type": "string",
+            "enum": [
+              "none",
+              "sparse",
+              "moderate",
+              "dense"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "test_density_band",
+          "bands": [
+            "none",
+            "sparse",
+            "moderate",
+            "dense"
+          ],
+          "note": "provisional v0.1.0 band edges \u2014 recalibration is a registry version bump + retroactive re-disclosure, never a code change"
+        },
+        {
+          "field": "docs_density_band",
+          "bands": [
+            "none",
+            "sparse",
+            "moderate",
+            "dense"
+          ]
+        }
+      ],
+      "min_support": {
+        "repos": 1,
+        "commits": 50
+      },
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "density describes practice shape; sparse tests in a prototype is not a deficit"
+    },
+    {
+      "id": "repo.absence_claims",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Absence claims",
+      "inputs": [
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "universally-quantified claims are honest only over the complete corpus; locally these are 'scan passed'",
+      "notes": "Deferred post-v0 with MYB-10.11 (no roadmap \u00a76 consumer); id reserved so the shape is stable"
+    },
+    {
+      "id": "repo.domain_mix",
+      "version": "0.1.0",
+      "class": "characterization",
+      "status": "reserved",
+      "wave": 3,
+      "title": "Domain mix",
+      "inputs": [
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "coarse category mix with confidence; judge-tier pill; never a specialization rank",
+      "notes": "Trails at low priority per MYB-10.13 reframe (no roadmap \u00a76 consumer)",
+      "risk_note": "domain mix combines with location and other disclosures toward identification \u2014 the handoff \u00a78.3 R1 example"
+    },
+    {
+      "id": "xstream.linkage",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Session-commit linkage proof",
+      "inputs": [
+        "normalized-session-events",
+        "normalized-repo-evidence",
+        "anchor-log"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "a replay result, honestly classified (divergence vs missing-evidence vs unsupported edit)",
+      "notes": "Replay-proof track per the MYB-10.10 split; baseline association is MYB-12.6"
+    },
+    {
+      "id": "xstream.coherence",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Cross-stream coherence",
+      "inputs": [
+        "normalized-session-events",
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "consistency check between evidence streams, not an honesty verdict",
+      "notes": "Rides the replay-proof track (MYB-10.10 split half b)"
+    },
+    {
+      "id": "xstream.landing_rate",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Landing rate",
+      "inputs": [
+        "normalized-session-events",
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "fraction of sessions culminating in an anchored commit; exploration sessions are not failures",
+      "notes": "Rides the replay-proof track (MYB-10.10 split half b)"
+    },
+    {
+      "id": "xstream.agentic_share",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Agentic share",
+      "inputs": [
+        "normalized-session-events",
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "attested rather than self-reported share; neither high nor low is graded",
+      "notes": "Milestone-A consumer: roadmap \u00a76 human-vs-agent split (MYB-10.12(a))"
+    },
+    {
+      "id": "xstream.judge_coverage",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Judge coverage",
+      "inputs": [
+        "judge-scorecards"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "a coverage percentage, not a quality claim",
+      "notes": "Deferred until the judge exists (MYB-7 post-v0); id reserved per handoff \u00a76.3"
+    },
+    {
+      "id": "transcript.instruction_efficacy",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Instruction efficacy",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "measures whether instructions land first try \u2014 the practice, never the person (handoff \u00a78.6); complexity-stratified against trivial-instruction farming",
+      "notes": "Practice-signal family: deferred post-v0 with MYB-10.15; any public preset additionally gates on the OQ #33 legal review"
+    },
+    {
+      "id": "transcript.steering_economy",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Steering economy",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "re-instruction rate is a practice signal, not a capability trait",
+      "notes": "Practice-signal family: deferred post-v0 with MYB-10.15; OQ #33 gate"
+    },
+    {
+      "id": "transcript.spec_discipline",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Spec discipline",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "presence/density of pre-work specification; structure is measured, quality is judge-only",
+      "notes": "Practice-signal family: deferred post-v0 with MYB-10.15; OQ #33 gate; judge sibling: judge.spec_quality"
+    },
+    {
+      "id": "transcript.decomposition_structure",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Decomposition structure",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "ordered-subtask structure only; quality is judge-only (judge.decomposition_quality)",
+      "notes": "Practice-signal family: deferred post-v0 with MYB-10.15; OQ #33 gate"
+    },
+    {
+      "id": "transcript.recovery",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Recovery structure",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "retries-to-green and intervention split; diagnostic accuracy is judge-only",
+      "notes": "Practice-signal family: deferred post-v0 with MYB-10.15; OQ #33 gate"
+    },
+    {
+      "id": "transcript.context_hygiene",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Context hygiene",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "repro-material presence when reporting problems; a habit, not a trait",
+      "notes": "Practice-signal family: deferred post-v0 with MYB-10.15; OQ #33 gate; requires pasted-content-span attribution (MYB-10.4)"
+    },
+    {
+      "id": "transcript.domain_vocabulary",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 2,
+      "title": "Domain vocabulary overlap",
+      "inputs": [
+        "normalized-session-events",
+        "normalized-repo-evidence"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R2",
+      "disclosure": "internal-feature-only",
+      "presets": [],
+      "neutrality_note": "internal feature only: stylometric fingerprint + language-background adverse impact make this permanently non-renderable",
+      "notes": "Feeds work-shape features and judge inputs only; the structural non-renderability test target",
+      "risk_note": "stylometric fingerprinting risk; never rendered on any surface (handoff \u00a77.1 first member)"
+    },
+    {
+      "id": "judge.spec_quality",
+      "version": "0.1.0",
+      "class": "characterization",
+      "status": "reserved",
+      "wave": 3,
+      "title": "Spec quality (judge)",
+      "inputs": [
+        "committed-human-spec-spans"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "judge-tier characterization; CPU sibling transcript.spec_discipline measures structure",
+      "notes": "Post-v0 (MYB-7); inputs pre-committed via MYB-10.16 so re-judgment is retroactive"
+    },
+    {
+      "id": "judge.decomposition_quality",
+      "version": "0.1.0",
+      "class": "characterization",
+      "status": "reserved",
+      "wave": 3,
+      "title": "Decomposition quality (judge)",
+      "inputs": [
+        "committed-human-planning-turns"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "judge-tier characterization; CPU sibling transcript.decomposition_structure",
+      "notes": "Post-v0 (MYB-7); MYB-10.16 span pre-commitment"
+    },
+    {
+      "id": "judge.diagnostic_accuracy",
+      "version": "0.1.0",
+      "class": "characterization",
+      "status": "reserved",
+      "wave": 3,
+      "title": "Diagnostic accuracy (judge)",
+      "inputs": [
+        "committed-failure-context-spans"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "judge-tier characterization; CPU sibling transcript.recovery",
+      "notes": "Post-v0 (MYB-7); MYB-10.16 span pre-commitment"
+    },
+    {
+      "id": "judge.plan_coherence",
+      "version": "0.1.0",
+      "class": "characterization",
+      "status": "reserved",
+      "wave": 3,
+      "title": "Plan coherence (judge)",
+      "inputs": [
+        "committed-plan-spans",
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "stated-plan vs executed-sequence alignment \u2014 the honest version of 'idea coherence'",
+      "notes": "Post-v0 (MYB-7); siblings transcript.spec_discipline + xstream.linkage"
+    },
+    {
+      "id": "judge.tradeoff_reasoning",
+      "version": "0.1.0",
+      "class": "characterization",
+      "status": "reserved",
+      "wave": 3,
+      "title": "Tradeoff reasoning (judge)",
+      "inputs": [
+        "committed-design-discussion-spans"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "design-discussion characterization where alternatives are explicitly weighed; never a trait claim",
+      "notes": "Post-v0 (MYB-7); sibling transcript.decomposition_structure"
+    },
+    {
+      "id": "fingerprint.workflow_summary",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 0,
+      "title": "Workflow summary (report section)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
+      "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.1/MYB-10.13; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.workflow_map",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 0,
+      "title": "Workflow map (report section)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
+      "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.2/MYB-13.3; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.model_role_profile",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 0,
+      "title": "Model role profile (report section)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
+      "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.5; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.context_profile",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 0,
+      "title": "Context-management profile (report section)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
+      "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.4; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.orchestration_topology",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 0,
+      "title": "Orchestration topology (report section)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
+      "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.7/MYB-6.8; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.token_cost_profile",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 0,
+      "title": "Token and cost profile (report section)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
+      "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.6; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.evidence_coverage",
+      "version": "0.1.0",
+      "class": "measured",
+      "status": "reserved",
+      "wave": 0,
+      "title": "Evidence coverage (report section)",
+      "inputs": [
+        "normalized-session-events"
+      ],
+      "output_schema": {
+        "$comment": "reserved \u2014 shape lands with the owning task"
+      },
+      "band_definitions": [],
+      "min_support": {},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": [
+        "employer-safe",
+        "full"
+      ],
+      "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
+      "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.8/MYB-6.1; schema spec: MYB-13.1"
+    }
+  ],
+  "rejected": [
+    {
+      "topic": "raw lexical statistics (type-token ratio, readability scores, vocabulary-size estimates)",
+      "rationale": "confounded (expert terseness, LLM-drafted human turns, native-language advantage), stylometric fingerprints (R2), and trivially inflatable \u2014 rejected as disclosures per handoff \u00a77.2"
+    },
+    {
+      "topic": "cognitive-trait framings ('IQ', 'intelligence', 'reasoning ability')",
+      "rationale": "banned as descriptor titles, ids, or copy anywhere in the product; this data source cannot support trait claims and a hiring-signal product emitting cognitive-ability proxies invites adverse-impact scrutiny (handoff \u00a78.6; OQ #33 legal review)"
+    },
+    {
+      "topic": "tokens-per-line or any composite developer-effectiveness score",
+      "rationale": "roadmap explicit v0 non-goals: no ranking users on tokens per line, no composite score; token-per-line is a diagnostic, not a quality measure (roadmap Stage 1 \u00a76)"
+    },
+    {
+      "topic": "ordered event sequences and per-session point values",
+      "rationale": "metrics-v0 pinned exclusions: distributions/aggregates only; ordered sequences and per-session values leak activity shape (THREAT_MODEL \u00a73 discipline; workflow-map transition frequencies await the MYB-16.2 ruling)"
+    },
+    {
+      "topic": "hour-of-day activity grain",
+      "rationale": "timezone/lifestyle leak (metrics-v0 exclusion; OQ #11 lineage); coarsest useful grain only"
+    }
+  ],
+  "banned_framings": [
+    "IQ",
+    "intelligence",
+    "reasoning ability",
+    "correction rate",
+    "developer score",
+    "10x"
+  ]
+}

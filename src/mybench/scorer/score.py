@@ -27,6 +27,10 @@ BACKFILL_NOTE = (
 # Labels are zero-padded so canonical sorted-JSON order IS numeric order
 # (handoff fix #4, 2026-07-09): determinism untouched, every consumer sees
 # buckets in order, the page strips padding for display.
+# Band-edge note (MYB-10.2): these v1 report-metric buckets predate the
+# descriptor registry. Registry-governed scorers (MYB-10.6+) read band edges
+# from mybench.registry — never constants; these migrate when their metrics
+# become registry entries (fingerprint.* / MYB-13.x, gated on MYB-16.2).
 WEEKLY_BUCKETS = (("00", 0, 0), ("01-05", 1, 5), ("06-15", 6, 15), ("16-40", 16, 40),
                   ("41+", 41, None))
 SIZE_BUCKETS = (("0001-0010", 1, 10), ("0011-0100", 11, 100),
