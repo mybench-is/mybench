@@ -1,6 +1,8 @@
 # Threat-model traceability (epics → sections)
 
-Companion to `THREAT_MODEL.md` (v0.1.1), maintained per privacy invariant #4:
+Companion to `THREAT_MODEL.md` (v0.2.0, adopted 2026-07-14 at ADR sitting 2;
+row sweep against the v0.1.3/v0.2.0 revisions pending MYB-16.7), maintained
+per privacy invariant #4:
 every feature must trace to the threat model. Epics live in
 `../../mybench-ops/epics/`; review record in
 `../../mybench-ops/reviews/2026-07-08-threat-model-v0.1.0-review.md`.

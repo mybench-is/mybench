@@ -4,6 +4,10 @@
 verbatim. Report schema: `src/mybench/schemas/report.schema.json` (v1).
 Threat-model tracing: §3 (published-report whitelist), §6 (trust tiers),
 ADV-1 (report-granularity residual), ADV-2 (never overclaim).
+Exclusions section updated 2026-07-14 (ADR sitting 2) to conform to
+THREAT_MODEL v0.2.0's class-based §3 (MYB-16.2 AC #4); this document remains
+the instance-level granularity spec for the shipped v0 metric set, under the
+§3 ceilings.
 
 ## Disclosure policy (resolves mybench-ops OPEN_QUESTIONS #11)
 
@@ -70,6 +74,12 @@ without a description.
 
 ## Exclusions (deliberate, test-guarded where possible)
 
-Per-session values; exact per-day/per-week counts; hour-of-day anything;
-ordered event sequences; repo names without per-repo opt-in confirmation;
-token counts (arrive with MYB-6.4's reviewed ledger widening).
+Per-session and per-episode point values; exact per-day/per-week counts;
+hour-of-day anything; ordered per-session event or phase sequences at any
+grain (corpus-level phase-transition aggregates over the pinned taxonomy
+are a distinct, separately admitted class — THREAT_MODEL §3.2, per-session
+ban restated in §3.5; adopted v0.2.0, 2026-07-14); repo names without
+per-repo opt-in confirmation; model/provider strings outside the pinned
+public vocabulary; orchestration file names, paths, and contents. Token
+counts publish only in MYB-13.6's log-bucket form under the §3 token/cost
+class.
