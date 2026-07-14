@@ -29,6 +29,8 @@ from tests.determinism.stages import (
     RUNNERS,
     STAGES,
     EntryPoint,
+    Invocation,
+    ResultEncoding,
     Stage,
     execute_stage,
     validate_registration,
@@ -56,7 +58,10 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
     [
         ({}, "missing=\\['fixture'\\]"),
         (
-            {"fixture": lambda entry: b"x", "extra": lambda entry: b"x"},
+            {
+                "fixture": lambda: Invocation((), {}),
+                "extra": lambda: Invocation((), {}),
+            },
             "extra=\\['extra'\\]",
         ),
         ({"fixture": b"not callable"}, "not callable"),
@@ -67,6 +72,7 @@ def test_manifest_runner_drift_fires(runners, match):
         Stage(
             "fixture",
             EntryPoint("mybench.scorer.score", "score"),
+            ResultEncoding.BYTES,
             True,
             ("mybench.scorer.score",),
         ),
@@ -75,12 +81,33 @@ def test_manifest_runner_drift_fires(runners, match):
         validate_registration(stages, runners)
 
 
-def test_constant_runner_cannot_bypass_bound_entry_point():
-    def unrelated_constant(_entry):
-        return b"synthetic constant that never exercised the scorer"
+def test_call_then_constant_runner_cannot_define_artifact():
+    invocation = RUNNERS["activity-report-json"]()
+    scorer = STAGES[0].entrypoint.resolve()
 
-    with pytest.raises(ValueError, match="did not invoke its bound entry point"):
-        execute_stage(STAGES[0], unrelated_constant)
+    def call_then_return_unrelated_constant():
+        scorer(*invocation.args, **dict(invocation.kwargs))
+        return b"unrelated constant despite exercising the scorer"
+
+    with pytest.raises(TypeError, match="returned bytes, not Invocation"):
+        execute_stage(STAGES[0], call_then_return_unrelated_constant)
+
+
+def test_bytes_artifact_is_exact_production_result():
+    artifact = b"exact production bytes\x00"
+
+    def production_entry(argument, *, option):
+        assert argument == "synthetic" and option is True
+        return artifact
+
+    assert (
+        execute_stage(
+            STAGES[0],
+            lambda: Invocation(("synthetic",), {"option": True}),
+            production_entry,
+        )
+        is artifact
+    )
 
 
 def test_entry_point_must_be_owned_by_its_registered_module():
@@ -88,12 +115,13 @@ def test_entry_point_must_be_owned_by_its_registered_module():
         Stage(
             "borrowed",
             EntryPoint("mybench.scorer.score", "json.dumps"),
+            ResultEncoding.BYTES,
             True,
             ("mybench.scorer.score",),
         ),
     )
     with pytest.raises(ValueError, match="not owned by mybench.scorer.score"):
-        validate_registration(stages, {"borrowed": lambda entry: entry({})})
+        validate_registration(stages, {"borrowed": lambda: Invocation((), {})})
 
 
 def test_unregistered_pipeline_module_fails_closed_but_wrappers_do_not(tmp_path):
@@ -107,11 +135,12 @@ def test_unregistered_pipeline_module_fails_closed_but_wrappers_do_not(tmp_path)
         Stage(
             "score",
             EntryPoint("mybench.scorer.score", "score"),
+            ResultEncoding.BYTES,
             True,
             ("mybench.scorer.score",),
         ),
     )
-    runners = {"score": lambda entry: b"synthetic"}
+    runners = {"score": lambda: Invocation((), {})}
     with pytest.raises(GateError, match="missing=\\['mybench.scorer.unregistered'\\]"):
         validate_manifest_and_audit(
             stages,
