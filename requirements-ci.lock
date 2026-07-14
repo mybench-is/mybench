@@ -1,0 +1,22 @@
+# Exact CI environment for the MYB-10.3 byte-reproducibility gate.
+# Regenerate intentionally from requirements-ci.txt and review every change.
+attrs==26.1.0
+cffi==2.1.0
+cryptography==49.0.0
+hypothesis==6.156.4
+iniconfig==2.3.0
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+opentimestamps==0.4.5
+packaging==26.2
+pluggy==1.6.0
+pycparser==3.0
+pycryptodomex==3.23.0
+pygments==2.20.0
+pytest==9.1.1
+python-bitcoinlib==0.12.2
+referencing==0.37.0
+rpds-py==2026.6.3
+ruff==0.15.20
+sortedcontainers==2.4.0
+typing-extensions==4.16.0
