@@ -1,6 +1,7 @@
-"""mybench.daemon — capture AI-agent transcripts into the local ledger (see README)."""
+"""mybench.daemon — preserve local transcript evidence (see README)."""
 
 COMPONENT = "daemon"
 RESPONSIBILITY = (
-    "watch local AI-agent transcripts and append salted commitments to the local ledger"
+    "record salted transcript commitments and, only with --archive, keep an exact "
+    "private local transcript copy"
 )
