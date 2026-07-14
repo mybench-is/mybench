@@ -2,5 +2,6 @@
 
 COMPONENT = "daemon"
 RESPONSIBILITY = (
-    "append salted transcript commitments and, only when explicitly enabled, retain A9 bytes"
+    "record salted transcript commitments and, only with --archive, keep an exact "
+    "private local transcript copy"
 )

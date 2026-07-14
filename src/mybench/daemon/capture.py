@@ -4,11 +4,12 @@ Scan-based in v0: each :meth:`Daemon.scan_once` walks the configured dirs,
 extracts complete JSONL lines as items (ADR-0002 §2: exact raw bytes, one
 line = one item; a partial trailing line is left for the next scan), commits
 any items not yet covered by the session's nonce file, and appends one ledger
-row carrying the session root over ALL items committed so far.  When A9 is
-explicitly enabled, after that capture commit point it extends and
-commitment-verifies the session's retention archive.  Archiving defaults off;
-archive failure is reported but never rolls back or blocks capture, and a later
-enabled no-op re-scan retries it (MYB-12.1 / owner ruling D-B).
+row carrying the session root over ALL items committed so far. When private
+transcript archiving (threat-model asset A9) is explicitly enabled, the daemon
+then extends the exact local transcript copy and verifies it against the saved
+nonces (A2) and commitment ledger (A3). Archiving defaults off; archive failure
+is reported but never rolls back or blocks capture, and a later enabled no-op
+re-scan retries it (MYB-12.1 / owner ruling D-B).
 
 Privacy: configuration is always explicit — there is no default watch list in
 test mode (``default_config`` refuses under pytest), so tests can only ever
@@ -59,7 +60,7 @@ class ConfigError(RuntimeError):
 
 
 class CaptureIntegrityError(RuntimeError):
-    """Existing A2/A3 state cannot safely reconcile with the source snapshot."""
+    """The saved nonce records or ledger do not match the transcript snapshot."""
 
 
 @dataclass(frozen=True)
@@ -93,7 +94,7 @@ class _CaptureResult:
 
 @contextmanager
 def _capture_scan_lock():
-    """Serialize the full covered-state → A2 → A3 → A9 scan transaction."""
+    """Serialize reconciliation of transcript, nonces, ledger, and optional archive."""
     paths.ensure_data_dir()
     fd = os.open(
         paths.capture_scan_lock_path(),

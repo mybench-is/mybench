@@ -1,15 +1,17 @@
-"""A9 raw-transcript retention archive (MYB-12.1).
+"""Private transcript archive (threat-model asset A9; MYB-12.1).
 
 Each captured session has one byte-exact, append-only file at
 ``archive/<source>/<session-id>`` inside the 0700 mybench data directory.
-Only complete items already committed to the ledger may enter A9.  A grown
-source extends the existing file in place; an interrupted append is recovered
-by completing the byte prefix, never by truncating or replacing the file.
+Only complete records already committed to the ledger may enter the archive.
+A grown source extends the existing file in place; an interrupted append is
+recovered by completing the byte prefix, never by truncating or replacing it.
 
 The archive is deliberately session-addressed rather than a CAS (owner ruling
-D-B, 2026-07-14).  Integrity comes from fsynced read-back against the salted
-session commitment in A3.  Callers must preserve capture-first ordering: a
-failure here is local retention loss, but must not suppress a ledger row.
+D-B, 2026-07-14). Integrity comes from a flushed read-back checked with the
+saved nonce records (A2) against the salted commitment in the private ledger
+(A3). Neither A2 nor A3 is copied into this archive. Callers must preserve
+capture-first ordering: archive failure is local retention loss, but must not
+suppress a ledger row.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ _LOOSE_BITS = 0o077
 
 
 class ArchiveError(RuntimeError):
-    """A9 storage, append-consistency, or commitment-verification failure."""
+    """Private-archive storage, append-consistency, or verification failure."""
 
 
 @dataclass(frozen=True)
@@ -137,12 +139,12 @@ def archive_session(
     expected_item_count: int,
     expected_session_root: str,
 ) -> ArchiveResult:
-    """Extend one A9 file and verify its fsynced read-back against its A3 row.
+    """Extend one private transcript copy and verify it against its ledger row.
 
     A complete, commitment-valid existing archive is authoritative even if the
     live source later changes or shrinks.  Otherwise the live source must be a
     full, commitment-valid preimage before any suffix is appended; this avoids
-    irreversibly poisoning A9 with post-capture mutations.
+    irreversibly archiving post-capture mutations.
     """
     if expected_item_count <= 0:
         raise ArchiveError("archive verification needs a positive committed item count")
@@ -224,7 +226,7 @@ def archive_session(
 
 
 def archive_stats() -> ArchiveStats:
-    """Counts-only A9 disk monitor; never reads archive bytes or exposes paths."""
+    """Counts-only archive disk monitor; never reads transcript bytes or exposes paths."""
     root = paths.archive_dir()
     session_files = total_bytes = 0
     if root.is_symlink():

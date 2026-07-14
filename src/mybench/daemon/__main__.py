@@ -30,7 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--archive",
         action="store_true",
-        help="explicitly enable local A9 transcript archiving (default: disabled)",
+        help=(
+            "keep an exact private local copy of committed transcript records "
+            "(default: disabled)"
+        ),
     )
     args = parser.parse_args(argv)
 
