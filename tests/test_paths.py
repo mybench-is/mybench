@@ -23,9 +23,69 @@ def test_honors_xdg_override(tmp_path, monkeypatch):
     assert paths.data_dir() == tmp_path / "elsewhere" / "mybench"
 
 
+def test_fresh_bootstrap_fsyncs_managed_directory_entries_to_existing_parent(
+    tmp_path, monkeypatch
+):
+    xdg = tmp_path / "fresh-xdg"
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+    events = []
+    real_fsync_directory = paths._fsync_directory
+
+    def tracked_fsync_directory(directory):
+        events.append(directory)
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(paths, "_fsync_directory", tracked_fsync_directory)
+    d = paths.ensure_data_dir()
+    expected = [d, xdg, tmp_path]
+    for subdir in (
+        paths.nonces_dir(),
+        paths.ledger_dir(),
+        paths.archive_dir(),
+        paths.keys_dir(),
+        paths.anchors_dir(),
+        paths.enrollments_dir(),
+    ):
+        expected.extend((subdir, d))
+    assert events[: len(expected)] == expected
+    assert events[len(expected) :] == [d.absolute(), *d.absolute().parents]
+
+
+def test_precreated_visible_data_tree_gets_restart_durability_barrier(
+    tmp_path, monkeypatch
+):
+    xdg = tmp_path / "visible-xdg"
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+    d = paths.data_dir()
+    managed = (
+        d,
+        paths.nonces_dir(),
+        paths.ledger_dir(),
+        paths.archive_dir(),
+        paths.keys_dir(),
+        paths.anchors_dir(),
+        paths.enrollments_dir(),
+    )
+    for directory in managed:
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+
+    events = []
+    real_fsync_directory = paths._fsync_directory
+
+    def tracked_fsync_directory(directory):
+        events.append(directory)
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(paths, "_fsync_directory", tracked_fsync_directory)
+    assert paths.ensure_data_dir() == d
+    assert events[: len(managed)] == list(managed)
+    assert events[len(managed) :] == [d.absolute(), *d.absolute().parents]
+
+
 def test_ensure_creates_tree_0700():
     d = paths.ensure_data_dir()
-    for p in (d, paths.nonces_dir(), paths.ledger_dir(), paths.keys_dir()):
+    for p in (d, paths.nonces_dir(), paths.ledger_dir(), paths.archive_dir(), paths.keys_dir()):
         assert p.is_dir()
         assert mode_of(p) == 0o700
 
@@ -51,6 +111,27 @@ def test_loose_perms_on_existing_subdir_fail_loudly():
         paths.ensure_data_dir()
 
 
+def test_symlinked_data_dir_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    d = paths.data_dir()
+    d.parent.mkdir(parents=True)
+    d.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(paths.PathsError, match="symlinked"):
+        paths.ensure_data_dir()
+
+
+def test_symlinked_managed_archive_dir_is_rejected(tmp_path):
+    paths.ensure_data_dir()
+    paths.archive_dir().rmdir()
+    outside = tmp_path / "outside-archive"
+    outside.mkdir()
+    paths.archive_dir().symlink_to(outside, target_is_directory=True)
+    with pytest.raises(paths.PathsError, match="symlinked"):
+        paths.ensure_data_dir()
+
+
 def test_refuses_data_dir_inside_git_worktree(tmp_path, monkeypatch):
     (tmp_path / "repo" / ".git").mkdir(parents=True)
     (tmp_path / "repo" / ".git" / "HEAD").write_text("ref: refs/heads/master\n")
@@ -58,6 +139,18 @@ def test_refuses_data_dir_inside_git_worktree(tmp_path, monkeypatch):
     with pytest.raises(paths.DataDirInsideRepoError):
         paths.ensure_data_dir()
     assert not (tmp_path / "repo" / "data").exists()
+
+
+def test_refuses_data_dir_whose_xdg_symlink_resolves_inside_repo(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/master\n")
+    (repo / "xdg").mkdir()
+    linked_xdg = tmp_path / "linked-xdg"
+    linked_xdg.symlink_to(repo / "xdg", target_is_directory=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(linked_xdg))
+    with pytest.raises(paths.DataDirInsideRepoError):
+        paths.ensure_data_dir()
 
 
 def test_refuses_linked_worktree_gitfile(tmp_path, monkeypatch):

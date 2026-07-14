@@ -27,6 +27,29 @@ def test_files_live_under_nonces_dir_mode_0600():
     assert mode_of(f.parent) == 0o700
 
 
+def test_new_nonce_file_and_parent_are_fsynced(monkeypatch):
+    events = []
+    real_file = nonces._fsync_file
+    real_parent = nonces._fsync_parent
+
+    def fsync_file(fd):
+        events.append("file")
+        real_file(fd)
+
+    def fsync_parent(directory):
+        events.append("parent")
+        real_parent(directory)
+
+    monkeypatch.setattr(nonces, "_fsync_file", fsync_file)
+    monkeypatch.setattr(nonces, "_fsync_parent", fsync_parent)
+    nonces.append_nonce("durable-session", generate_nonce())
+    assert events == ["file", "parent"]
+
+    events.clear()
+    nonces.append_nonce("durable-session", generate_nonce())
+    assert events == ["file"]  # parent entry already durable; every append still fsyncs A2
+
+
 def test_missing_session_loads_empty():
     assert nonces.load_nonces("never-written") == []
 

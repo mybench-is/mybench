@@ -63,6 +63,19 @@ def _utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _fsync_file(fd: int) -> None:
+    os.fsync(fd)
+
+
+def _fsync_directory(directory: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(directory, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 class Ledger:
     def __init__(self, path: Path | None = None):
         self.path = path if path is not None else paths.ledger_dir() / "ledger.jsonl"
@@ -74,6 +87,18 @@ class Ledger:
         errors = sorted(self._schema.iter_errors(row), key=str)
         if errors:
             raise LedgerError(f"{context}: schema violation: {errors[0].message}")
+
+    def _ensure_storage_durable(self) -> None:
+        """Fsync clean A3 bytes and their directory entry before trusting them."""
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(self.path, flags)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise LedgerError("ledger path is not a regular file")
+            _fsync_file(fd)
+        finally:
+            os.close(fd)
+        _fsync_directory(self.path.parent)
 
     # -- reading ---------------------------------------------------------------
 
@@ -168,6 +193,7 @@ class Ledger:
             while True:
                 try:
                     self.verify_chain()
+                    self._ensure_storage_durable()
                     return quarantined
                 except TornTailError:
                     data = self.path.read_bytes()
@@ -206,12 +232,13 @@ class Ledger:
                 import signal
 
                 os.write(fd, line[: max(1, len(line) // 2)])
-                os.fsync(fd)
+                _fsync_file(fd)
                 os.kill(os.getpid(), signal.SIGKILL)
             os.write(fd, line)
-            os.fsync(fd)
+            _fsync_file(fd)
         finally:
             os.close(fd)
+        _fsync_directory(self.path.parent)
         return row
 
     def append_session(

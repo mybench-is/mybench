@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import re
 
 import pytest
@@ -88,6 +89,111 @@ def test_partial_trailing_line_is_not_yet_an_item(fx, config):
     assert daemon.scan_once() == 1
 
 
+def test_nonce_file_and_parent_are_durable_before_ledger_append(
+    tmp_path, monkeypatch
+):
+    watch_dir = tmp_path / "watch"
+    watch_dir.mkdir()
+    (watch_dir / "opaque.jsonl").write_bytes(
+        b'{"synthetic":"first"}\n{"synthetic":"second"}\n'
+    )
+    cfg = capture.DaemonConfig(
+        watches=(capture.WatchSpec(watch_dir, "synthetic"),)
+    )
+    daemon = capture.Daemon(cfg)
+    events = []
+    real_file_fsync = nonces._fsync_file
+    real_parent_fsync = nonces._fsync_parent
+    real_append_session = daemon.ledger.append_session
+
+    def fsync_file(fd):
+        events.append("nonce_file_fsync")
+        real_file_fsync(fd)
+
+    def fsync_parent(directory):
+        events.append(
+            "nonce_dir_fsync" if directory == paths.nonces_dir() else "data_dir_fsync"
+        )
+        real_parent_fsync(directory)
+
+    def append_session(**kwargs):
+        events.append("ledger_append")
+        return real_append_session(**kwargs)
+
+    monkeypatch.setattr(nonces, "_fsync_file", fsync_file)
+    monkeypatch.setattr(nonces, "_fsync_parent", fsync_parent)
+    monkeypatch.setattr(daemon.ledger, "append_session", append_session)
+    assert daemon.scan_once() == 1
+
+    ledger_at = events.index("ledger_append")
+    assert events[:ledger_at].count("nonce_file_fsync") == 3
+    assert events[:ledger_at].count("nonce_dir_fsync") == 2
+    assert events[-4:] == [
+        "nonce_file_fsync",
+        "nonce_dir_fsync",
+        "data_dir_fsync",
+        "ledger_append",
+    ]
+
+
+def test_complete_unfsynced_orphan_nonce_is_redurabilized_before_a3(
+    tmp_path, monkeypatch
+):
+    watch_dir = tmp_path / "watch"
+    watch_dir.mkdir()
+    session_file = watch_dir / "orphan.jsonl"
+    session_file.write_bytes(b'{"synthetic":"orphan-complete-row"}\n')
+    watch = capture.WatchSpec(watch_dir, "synthetic")
+    cfg = capture.DaemonConfig(watches=(watch,))
+    paths.ensure_data_dir()
+    session_id = capture.session_id_for(
+        session_file, watch, paths.ensure_session_scope_key()
+    )
+    nonce = c.generate_nonce()
+    nonce_file = nonces.session_nonce_file(session_id)
+    fd = os.open(nonce_file, os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        row = json.dumps({"i": 0, "nonce": nonce.hex()}).encode() + b"\n"
+        assert os.write(fd, row) == len(row)
+        # Deliberately no file or parent fsync: restart can still see this
+        # complete page-cache row, but A3 must not reference it yet.
+    finally:
+        os.close(fd)
+
+    daemon = capture.Daemon(cfg)
+    events = []
+    real_file_fsync = nonces._fsync_file
+    real_parent_fsync = nonces._fsync_parent
+    real_append_session = daemon.ledger.append_session
+
+    def fsync_file(sync_fd):
+        events.append("nonce_file_fsync")
+        real_file_fsync(sync_fd)
+
+    def fsync_parent(directory):
+        events.append(
+            "nonce_dir_fsync" if directory == paths.nonces_dir() else "data_dir_fsync"
+        )
+        real_parent_fsync(directory)
+
+    def append_session(**kwargs):
+        events.append("ledger_append")
+        return real_append_session(**kwargs)
+
+    monkeypatch.setattr(nonces, "_fsync_file", fsync_file)
+    monkeypatch.setattr(nonces, "_fsync_parent", fsync_parent)
+    monkeypatch.setattr(daemon.ledger, "append_session", append_session)
+    assert daemon.scan_once() == 1
+    assert events == [
+        "nonce_file_fsync",
+        "nonce_dir_fsync",
+        "data_dir_fsync",
+        "ledger_append",
+    ]
+    assert nonces.load_nonces(session_id) == [nonce]
+    assert daemon.ledger.verify_chain() == 2
+
+
 # --- Idempotency (AC #2) ----------------------------------------------------------
 
 
@@ -124,6 +230,11 @@ def test_config_requires_explicit_watches_and_known_sources(tmp_path):
         capture.DaemonConfig(watches=())
     with pytest.raises(capture.ConfigError):
         capture.DaemonConfig(watches=(capture.WatchSpec(tmp_path, "cursor"),))
+    with pytest.raises(capture.ConfigError, match="explicit boolean"):
+        capture.DaemonConfig(
+            watches=(capture.WatchSpec(tmp_path, "synthetic"),),
+            archive_enabled="yes",  # type: ignore[arg-type]
+        )
 
 
 def test_missing_watch_dir_is_skipped_not_fatal(tmp_path):
@@ -227,6 +338,45 @@ def test_unreadable_entry_is_counted_and_skipped(fx, config, caplog):
     assert len(errors) == 1
     assert "trap" not in errors[0].getMessage()  # class only, never the path
     assert daemon.ledger.verify_chain() == 1 + len(fx.sessions)
+
+
+def test_symlinked_transcript_is_rejected_without_reading_target(tmp_path, caplog):
+    watch_dir = tmp_path / "watch"
+    outside = tmp_path / "outside"
+    watch_dir.mkdir()
+    outside.mkdir()
+    canary = "MYBENCH-SYMLINK-TARGET-CANARY"
+    target = outside / "target.jsonl"
+    target.write_text(json.dumps({"synthetic": canary}) + "\n")
+    (watch_dir / "linked.jsonl").symlink_to(target)
+    cfg = capture.DaemonConfig(
+        watches=(capture.WatchSpec(watch_dir, "synthetic"),),
+        archive_enabled=True,
+    )
+
+    with caplog.at_level(logging.INFO, logger="mybench.daemon"):
+        assert capture.Daemon(cfg).scan_once() == 0
+    assert "event=source_symlink" in caplog.text
+    assert canary not in caplog.text
+    assert Ledger().rows() == []
+    assert not list(paths.archive_dir().glob("*/*"))
+
+
+def test_symlinked_watch_directory_is_rejected(tmp_path, caplog):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "target.jsonl").write_text('{"synthetic":"outside"}\n')
+    linked_watch = tmp_path / "linked-watch"
+    linked_watch.symlink_to(outside, target_is_directory=True)
+    cfg = capture.DaemonConfig(
+        watches=(capture.WatchSpec(linked_watch, "synthetic"),),
+        archive_enabled=True,
+    )
+
+    with caplog.at_level(logging.INFO, logger="mybench.daemon"):
+        assert capture.Daemon(cfg).scan_once() == 0
+    assert "event=watch_symlink" in caplog.text
+    assert Ledger().rows() == []
 
 
 # --- Leak surface (AC #4) -----------------------------------------------------------
