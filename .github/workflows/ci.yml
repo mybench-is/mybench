@@ -20,12 +20,17 @@ jobs:
           python -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip
-          pip install -r requirements-ci.txt
+          pip install -r requirements-ci.lock
           pip install -e .
+          python -m pip check
       - name: Lint (ruff)
         run: |
           . .venv/bin/activate
           ruff check .
+      - name: Determinism gate (two fresh runs, byte-identical)
+        run: |
+          . .venv/bin/activate
+          python -m tests.determinism.gate
       - name: Test (pytest)
         run: |
           . .venv/bin/activate
