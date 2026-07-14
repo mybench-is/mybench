@@ -1,4 +1,5 @@
-# Exact CI environment for the MYB-10.3 byte-reproducibility gate.
+# Exact runtime/test distribution pins for the MYB-10.3 CI gate.
+# Python, pip, setuptools/build isolation, OS packages, and wheels are not pinned here.
 # Regenerate intentionally from requirements-ci.txt and review every change.
 attrs==26.1.0
 cffi==2.1.0

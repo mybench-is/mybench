@@ -22,6 +22,7 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-ci.lock
           pip install -e .
+          python -m pip check
       - name: Lint (ruff)
         run: |
           . .venv/bin/activate
