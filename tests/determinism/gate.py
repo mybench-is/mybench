@@ -471,7 +471,9 @@ def validate_pipeline_coverage(
         roots=roots,
         reviewed_non_stages=reviewed_non_stages,
     )
-    registered = {stage.entry_module for stage in stages if stage.entry_module}
+    registered = {
+        stage.entrypoint.module for stage in stages if stage.discovery_entry
+    }
     missing = sorted(discovered - registered)
     extra = sorted(registered - discovered)
     if missing or extra:

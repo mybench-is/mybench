@@ -12,10 +12,12 @@ exist on this branch yet. Each owning story must add both a byte-producing
 callable to `RUNNERS` and a same-name `Stage`; exact key equality and
 callability are checked before anything runs. Compute/render modules discovered
 under scorer, parser/normalizer, report, and publication package roots must also
-be the `entry_module` of an executable stage. `__main__.py`/`cli.py` I/O shells
-are excluded by convention; other helpers require an explicit reviewed
-non-stage entry. Merely naming a scorer as an audit module cannot satisfy the
-gate.
+be owned by a stage marked `discovery_entry`. Every stage carries a production
+`EntryPoint(module, qualname)`; registration imports it, proves it is callable
+and owned by that module, then passes an invocation-recording wrapper into the
+fixture runner. A runner that returns unrelated constant bytes without calling
+the bound entry point fails. `__main__.py`/`cli.py` I/O shells are excluded by
+convention; other helpers require an explicit reviewed non-stage entry.
 
 The AST audit follows static first-party imports transitively and rejects
 clock, network, environment, subprocess, locale, dynamic-import,

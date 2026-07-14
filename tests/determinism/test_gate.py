@@ -25,7 +25,14 @@ from tests.determinism.gate import (
     validate_manifest_and_audit,
     verify_installed_dependency_versions,
 )
-from tests.determinism.stages import RUNNERS, STAGES, Stage, validate_registration
+from tests.determinism.stages import (
+    RUNNERS,
+    STAGES,
+    EntryPoint,
+    Stage,
+    execute_stage,
+    validate_registration,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,14 +55,45 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
     ("runners", "match"),
     [
         ({}, "missing=\\['fixture'\\]"),
-        ({"fixture": lambda: b"x", "extra": lambda: b"x"}, "extra=\\['extra'\\]"),
+        (
+            {"fixture": lambda entry: b"x", "extra": lambda entry: b"x"},
+            "extra=\\['extra'\\]",
+        ),
         ({"fixture": b"not callable"}, "not callable"),
     ],
 )
 def test_manifest_runner_drift_fires(runners, match):
-    stages = (Stage("fixture", "mybench.scorer.fixture", ("mybench.scorer.fixture",)),)
+    stages = (
+        Stage(
+            "fixture",
+            EntryPoint("mybench.scorer.score", "score"),
+            True,
+            ("mybench.scorer.score",),
+        ),
+    )
     with pytest.raises(ValueError, match=match):
         validate_registration(stages, runners)
+
+
+def test_constant_runner_cannot_bypass_bound_entry_point():
+    def unrelated_constant(_entry):
+        return b"synthetic constant that never exercised the scorer"
+
+    with pytest.raises(ValueError, match="did not invoke its bound entry point"):
+        execute_stage(STAGES[0], unrelated_constant)
+
+
+def test_entry_point_must_be_owned_by_its_registered_module():
+    stages = (
+        Stage(
+            "borrowed",
+            EntryPoint("mybench.scorer.score", "json.dumps"),
+            True,
+            ("mybench.scorer.score",),
+        ),
+    )
+    with pytest.raises(ValueError, match="not owned by mybench.scorer.score"):
+        validate_registration(stages, {"borrowed": lambda entry: entry({})})
 
 
 def test_unregistered_pipeline_module_fails_closed_but_wrappers_do_not(tmp_path):
@@ -65,8 +103,15 @@ def test_unregistered_pipeline_module_fails_closed_but_wrappers_do_not(tmp_path)
     for name in ("score.py", "unregistered.py", "__main__.py", "cli.py"):
         (scorer / name).write_text("def compute():\n    return b'synthetic'\n")
 
-    stages = (Stage("score", "mybench.scorer.score", ("mybench.scorer.score",)),)
-    runners = {"score": lambda: b"synthetic"}
+    stages = (
+        Stage(
+            "score",
+            EntryPoint("mybench.scorer.score", "score"),
+            True,
+            ("mybench.scorer.score",),
+        ),
+    )
+    runners = {"score": lambda entry: b"synthetic"}
     with pytest.raises(GateError, match="missing=\\['mybench.scorer.unregistered'\\]"):
         validate_manifest_and_audit(
             stages,
