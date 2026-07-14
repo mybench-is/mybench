@@ -15,7 +15,9 @@ mybench: a privacy-preserving developer attestation system. Full brief in
 
 1. No transcript content, prompt text, code, or filenames ever leaves the
    machine or enters a git repo. Only salted commitments H(nonce||len||content),
-   Merkle roots, and timestamps are publishable.
+   Merkle roots, timestamps, and report artifacts of the classes admitted by
+   THREAT_MODEL §3 (granularity-pinned, control-bound, user-published) are
+   publishable.
 2. Nonces and the ledger live in a dedicated local data directory (0700, outside
    all repos), never in any repo, test output, or logs.
 3. Real transcripts are never used as test data — synthetic fixtures only.
@@ -37,7 +39,8 @@ mybench: a privacy-preserving developer attestation system. Full brief in
   (`.mybench/commit-binding-enabled`). NEVER install a global git hook or set
   `core.hooksPath`. See `src/mybench/hooks/README.md` and
   `../mybench-ops/decisions/ADR-0001-workspace-structure.md`.
-- `docs/THREAT_MODEL.md` v0.1.1 adopted 2026-07-08 (owner-authored). Invariant
+- `docs/THREAT_MODEL.md` v0.2.0 adopted 2026-07-14 at ADR sitting 2
+  (owner-decided; v0.1.0 seed owner-authored 2026-07-08). Invariant
   #4 is live: trace every feature to it (`docs/THREAT_MODEL_TRACEABILITY.md`);
   if it doesn't cover something, stop and flag — the doc gets updated first.
 
