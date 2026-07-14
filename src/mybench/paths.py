@@ -8,6 +8,7 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     nonces/       per-session nonce files (0600)      — asset A2
     ledger/       hash-chained ledger                 — asset A3
     archive/      byte-exact transcript preimages     — asset A9
+    capture.lock  whole-scan daemon flock (0600)
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
     anchors/      staged anchor artifacts + OTS proofs pre-publication
     enrollments/  per-repo commit-binding enrollment records (MYB-3.7)
@@ -30,6 +31,8 @@ _KEY_MODE = 0o600
 _LOOSE_BITS = 0o077
 ARCHIVE_SOURCES = ("claude-code", "codex", "synthetic")
 _OPAQUE_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_DURABLE_DIRS: set[tuple[str, int, int]] = set()
+_DURABLE_ROOT_CHAINS: set[tuple[str, int, int]] = set()
 
 
 class PathsError(RuntimeError):
@@ -82,6 +85,11 @@ def archive_session_path(source: str, session_id: str) -> Path:
     if not _OPAQUE_SESSION_ID_RE.fullmatch(session_id):
         raise PathsError("invalid opaque archive session id")
     return archive_source_dir(source) / session_id
+
+
+def capture_scan_lock_path() -> Path:
+    """Global daemon-scan lock; serializes A2/A3/A9 reconciliation."""
+    return data_dir() / "capture.lock"
 
 
 def keys_dir() -> Path:
@@ -250,11 +258,16 @@ def _is_worktree_root(p: Path) -> bool:
 
 
 def _assert_not_in_repo(d: Path) -> None:
-    for p in (d, *d.parents):
-        if _is_worktree_root(p):
-            raise DataDirInsideRepoError(
-                f"refusing to use data dir {d}: inside git worktree at {p} (invariant #2)"
-            )
+    # Check both the configured spelling and its resolved destination.  An
+    # XDG/data-dir symlink must not bypass the repository-containment guard.
+    candidates = {d.absolute(), d.resolve()}
+    for candidate in candidates:
+        for p in (candidate, *candidate.parents):
+            if _is_worktree_root(p):
+                raise DataDirInsideRepoError(
+                    f"refusing to use data dir {d}: inside git worktree at {p} "
+                    "(invariant #2)"
+                )
 
 
 def _assert_tight(p: Path, allowed_bits: int) -> None:
@@ -266,13 +279,61 @@ def _assert_tight(p: Path, allowed_bits: int) -> None:
         )
 
 
+def _fsync_directory(directory: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(directory, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _directory_key(directory: Path) -> tuple[str, int, int]:
+    info = directory.stat()
+    return (str(directory.absolute()), info.st_dev, info.st_ino)
+
+
+def _ensure_root_chain_durable(d: Path) -> None:
+    """Repair a possibly interrupted data-root mkdir from leaf through root."""
+    key = _directory_key(d)
+    if key in _DURABLE_ROOT_CHAINS:
+        return
+    absolute = d.absolute()
+    for directory in (absolute, *absolute.parents):
+        _fsync_directory(directory)
+    _DURABLE_ROOT_CHAINS.add(key)
+
+
 def _ensure_dir(d: Path) -> Path:
+    if d.is_symlink():
+        raise PathsError("refusing symlinked managed data directory")
     existed = d.is_dir()
+    missing = []
+    cursor = d.absolute()
+    while not cursor.exists():
+        if cursor.is_symlink():
+            raise PathsError("refusing symlinked managed data-directory component")
+        missing.append(cursor)
+        if cursor == cursor.parent:
+            break
+        cursor = cursor.parent
     d.mkdir(parents=True, exist_ok=True, mode=_DIR_MODE)
     if existed:
         _assert_tight(d, _DIR_MODE)
     else:
         os.chmod(d, _DIR_MODE)  # mkdir mode is subject to umask
+        # Persist each newly created directory entry from leaf to the first
+        # pre-existing ancestor. This makes a fresh data-dir bootstrap durable,
+        # rather than assuming XDG/mybench was provisioned before capture.
+        for directory in (*missing, cursor):
+            _fsync_directory(directory)
+    key = _directory_key(d)
+    if key not in _DURABLE_DIRS:
+        if existed:
+            # A previous process may have completed mkdir/chmod but died before
+            # its directory fsync. Re-establish that barrier once per process.
+            _fsync_directory(d)
+        _DURABLE_DIRS.add(key)
     return d
 
 
@@ -290,6 +351,7 @@ def ensure_data_dir() -> Path:
         enrollments_dir(),
     ):
         _ensure_dir(sub)
+    _ensure_root_chain_durable(d)
     return d
 
 

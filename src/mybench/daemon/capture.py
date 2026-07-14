@@ -4,10 +4,11 @@ Scan-based in v0: each :meth:`Daemon.scan_once` walks the configured dirs,
 extracts complete JSONL lines as items (ADR-0002 §2: exact raw bytes, one
 line = one item; a partial trailing line is left for the next scan), commits
 any items not yet covered by the session's nonce file, and appends one ledger
-row carrying the session root over ALL items committed so far.  After that
-capture commit point, it extends and commitment-verifies the session's A9
-retention archive.  Archive failure is reported but never rolls back or blocks
-capture; a no-op re-scan retries it (MYB-12.1 / owner ruling D-B).
+row carrying the session root over ALL items committed so far.  When A9 is
+explicitly enabled, after that capture commit point it extends and
+commitment-verifies the session's retention archive.  Archiving defaults off;
+archive failure is reported but never rolls back or blocks capture, and a later
+enabled no-op re-scan retries it (MYB-12.1 / owner ruling D-B).
 
 Privacy: configuration is always explicit — there is no default watch list in
 test mode (``default_config`` refuses under pytest), so tests can only ever
@@ -18,10 +19,14 @@ content, session ids, or watched paths/filenames (invariant #1).
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
 import logging
+import os
+import stat
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,6 +58,10 @@ class ConfigError(RuntimeError):
     pass
 
 
+class CaptureIntegrityError(RuntimeError):
+    """Existing A2/A3 state cannot safely reconcile with the source snapshot."""
+
+
 @dataclass(frozen=True)
 class WatchSpec:
     path: Path
@@ -62,8 +71,11 @@ class WatchSpec:
 @dataclass(frozen=True)
 class DaemonConfig:
     watches: tuple[WatchSpec, ...]
+    archive_enabled: bool = False
 
     def __post_init__(self):
+        if type(self.archive_enabled) is not bool:
+            raise ConfigError("archive_enabled must be an explicit boolean")
         if not self.watches:
             raise ConfigError("daemon config needs at least one explicit watch dir")
         for w in self.watches:
@@ -77,6 +89,28 @@ class _CaptureResult:
     archive_covered: int = 0
     archive_failed: int = 0
     archive_bytes_appended: int = 0
+
+
+@contextmanager
+def _capture_scan_lock():
+    """Serialize the full covered-state → A2 → A3 → A9 scan transaction."""
+    paths.ensure_data_dir()
+    fd = os.open(
+        paths.capture_scan_lock_path(),
+        os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise CaptureIntegrityError("capture scan lock is not a regular file")
+        if stat.S_IMODE(os.fstat(fd).st_mode) & 0o077:
+            raise paths.InsecurePermissionsError(
+                "capture scan lock is group/other-accessible; expected 0600"
+            )
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 def production_watches(home: Path) -> tuple[WatchSpec, ...]:
@@ -130,6 +164,21 @@ def _complete_lines(data: bytes) -> list[bytes]:
     return lines
 
 
+def _read_source_bytes(source_file: Path) -> bytes:
+    """Read one regular source without following a final-component symlink."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(source_file, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise CaptureIntegrityError("transcript source is not a regular file")
+        chunks = []
+        while chunk := os.read(fd, 1024 * 1024):
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
 class Daemon:
     def __init__(self, config: DaemonConfig, ledger: Ledger | None = None):
         self.config = config
@@ -137,6 +186,15 @@ class Daemon:
 
     def scan_once(self) -> int:
         """One full pass over all watches; returns the number of rows appended.
+
+        A global process lock is acquired before rebuilding ledger coverage and
+        held through nonce, ledger, and optional archive reconciliation.
+        """
+        with _capture_scan_lock():
+            return self._scan_once_locked()
+
+    def _scan_once_locked(self) -> int:
+        """Implementation of :meth:`scan_once`; caller holds the global scan lock.
 
         Starts by self-healing a torn ledger tail (MYB-2.6): an append
         interrupted by an ungraceful death is quarantined + truncated before
@@ -158,11 +216,21 @@ class Daemon:
                     covered[row["session_id"]] = row
         appended = sessions_seen = archive_covered = archive_failed = archive_bytes = 0
         for watch in self.config.watches:
+            if watch.path.is_symlink():
+                log.error("symlinked watch dir rejected (event=watch_symlink); skipping")
+                continue
             if not watch.path.is_dir():
                 log.warning("watch dir missing (event=missing_dir); skipping")
                 continue
+            watch_root = watch.path.resolve()
             for f in sorted(watch.path.rglob("*.jsonl")):
                 sessions_seen += 1
+                if f.is_symlink():
+                    log.error("symlinked transcript rejected (event=source_symlink); skipping")
+                    continue
+                if not f.resolve().is_relative_to(watch_root):
+                    log.error("transcript escaped watch root (event=source_outside); skipping")
+                    continue
                 try:
                     result = self._capture_file(f, watch, scope_key, covered)
                     appended += result.rows_appended
@@ -172,12 +240,23 @@ class Daemon:
                 except Exception as exc:  # noqa: BLE001 — one bad file must not stop capture
                     # Exception CLASS only: messages may embed paths/ids (leak surface).
                     log.error("capture failed (event=capture_error type=%s)", type(exc).__name__)
+        if not self.config.archive_enabled:
+            log.info(
+                "scan complete: sessions=%d rows_appended=%d committed_sessions=%d "
+                "archive_enabled=0",
+                sessions_seen,
+                appended,
+                len(covered),
+            )
+            return appended
+
         try:
             stats = archive_store.archive_stats()
             log.info(
                 "scan complete: sessions=%d rows_appended=%d committed_sessions=%d "
-                "archive_covered=%d archive_failed=%d archive_bytes_appended=%d "
-                "archive_files=%d archive_bytes=%d disk_free_bytes=%d",
+                "archive_enabled=1 archive_covered=%d archive_failed=%d "
+                "archive_bytes_appended=%d archive_files=%d archive_bytes=%d "
+                "disk_free_bytes=%d",
                 sessions_seen,
                 appended,
                 len(covered),
@@ -192,7 +271,8 @@ class Daemon:
             log.error("archive stats failed (event=archive_stats_error type=%s)", type(exc).__name__)
             log.info(
                 "scan complete: sessions=%d rows_appended=%d committed_sessions=%d "
-                "archive_covered=%d archive_failed=%d archive_bytes_appended=%d",
+                "archive_enabled=1 archive_covered=%d archive_failed=%d "
+                "archive_bytes_appended=%d",
                 sessions_seen,
                 appended,
                 len(covered),
@@ -207,21 +287,36 @@ class Daemon:
     ) -> _CaptureResult:
         source = watch.source
         session_id = session_id_for(f, watch, scope_key)
-        items = _complete_lines(f.read_bytes())
+        items = _complete_lines(_read_source_bytes(f))
         known = nonces.load_nonces(session_id)
+        row = covered.get(session_id)
+        if row is not None and len(known) < row["item_count"]:
+            raise CaptureIntegrityError(
+                "nonce store is shorter than an existing committed session row"
+            )
         if len(items) < len(known):
             # Source shrank below what we committed — never rewrite history.
             log.error("session shrank below committed items (event=source_shrunk); skipping")
-            row = covered.get(session_id)
-            if row is None:
+            if row is None or not self.config.archive_enabled:
                 return _CaptureResult()
             return self._archive_file(source, session_id, items, known, row)
         if not items:
             return _CaptureResult()
 
-        row = covered.get(session_id)
         row_appended = 0
         if row is None or row["item_count"] < len(items) or len(known) < len(items):
+            if row is not None and row["item_count"] < len(items):
+                committed_count = row["item_count"]
+                committed_leaves = [
+                    commitments.leaf_commitment(nonce, item)
+                    for nonce, item in zip(
+                        known[:committed_count], items[:committed_count]
+                    )
+                ]
+                if commitments.session_root(committed_leaves).hex() != row["session_root"]:
+                    raise CaptureIntegrityError(
+                        "live source prefix no longer matches its committed session row"
+                    )
             fresh = [commitments.generate_nonce() for _ in items[len(known) :]]
             for nonce in fresh:
                 nonces.append_nonce(session_id, nonce)
@@ -230,6 +325,10 @@ class Daemon:
                 commitments.leaf_commitment(nonce, item)
                 for nonce, item in zip(all_nonces, items)
             ]
+            # Re-fsync ALL known rows, not only freshly appended nonces: a
+            # restart can see a complete orphan row whose prior process died
+            # before file/directory fsync. A3 may reference it only afterward.
+            nonces.ensure_durable(session_id)
             row = self.ledger.append_session(
                 session_id=session_id,
                 session_root=commitments.session_root(leaves),
@@ -245,6 +344,9 @@ class Daemon:
                 len(fresh),
             )
             known = all_nonces
+
+        if not self.config.archive_enabled:
+            return _CaptureResult(rows_appended=row_appended)
 
         archived = self._archive_file(source, session_id, items, known, row)
         return _CaptureResult(

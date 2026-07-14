@@ -27,6 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval", type=float, default=30.0)
     parser.add_argument("--scans", type=int, default=None, help="stop after N scans")
     parser.add_argument("--once", action="store_true", help="single scan, then exit")
+    parser.add_argument(
+        "--archive",
+        action="store_true",
+        help="explicitly enable local A9 transcript archiving (default: disabled)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -34,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     for spec in args.watch:
         directory, _, source = spec.rpartition(":")
         watches.append(WatchSpec(Path(directory), source))
-    daemon = Daemon(DaemonConfig(watches=tuple(watches)))
+    daemon = Daemon(DaemonConfig(watches=tuple(watches), archive_enabled=args.archive))
     if args.once:
         daemon.scan_once()
     else:

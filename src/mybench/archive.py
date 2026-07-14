@@ -68,6 +68,10 @@ def _write_all(fd: int, data: bytes) -> None:
         view = view[written:]
 
 
+def _fsync_file(fd: int) -> None:
+    os.fsync(fd)
+
+
 def _fsync_dir(fd_path) -> None:
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     fd = os.open(fd_path, flags)
@@ -75,6 +79,15 @@ def _fsync_dir(fd_path) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _fsync_archive_directories(source_dir) -> None:
+    # Persist the session-file entry, a lazily-created source-dir entry, and
+    # the archive-root entry. This is intentionally repeated after every
+    # successful verify: a prior process may have died between any barriers.
+    _fsync_dir(source_dir)
+    _fsync_dir(paths.archive_dir())
+    _fsync_dir(paths.data_dir())
 
 
 def _serialized_items(items: list[bytes]) -> bytes:
@@ -92,6 +105,29 @@ def _items_from_readback(data: bytes) -> list[bytes]:
     return data[:-1].split(b"\n")
 
 
+def _root_for(items: list[bytes], nonces: list[bytes]) -> bytes:
+    leaves = [
+        commitments.leaf_commitment(nonce, item)
+        for nonce, item in zip(nonces[: len(items)], items)
+    ]
+    return commitments.session_root(leaves)
+
+
+def _verified_items(
+    data: bytes,
+    nonces: list[bytes],
+    expected_item_count: int,
+    expected_root: bytes,
+) -> list[bytes] | None:
+    try:
+        items = _items_from_readback(data)
+    except ArchiveError:
+        return None
+    if len(items) != expected_item_count:
+        return None
+    return items if _root_for(items, nonces) == expected_root else None
+
+
 def archive_session(
     *,
     source: str,
@@ -103,16 +139,13 @@ def archive_session(
 ) -> ArchiveResult:
     """Extend one A9 file and verify its fsynced read-back against its A3 row.
 
-    ``source_items`` may be shorter than ``expected_item_count`` when the
-    harness has already truncated a live source.  In that case an existing,
-    complete archive can still verify; missing bytes are reported as an
-    :class:`ArchiveError`.  It may never be longer: that would copy bytes not
-    yet committed to A3.
+    A complete, commitment-valid existing archive is authoritative even if the
+    live source later changes or shrinks.  Otherwise the live source must be a
+    full, commitment-valid preimage before any suffix is appended; this avoids
+    irreversibly poisoning A9 with post-capture mutations.
     """
     if expected_item_count <= 0:
         raise ArchiveError("archive verification needs a positive committed item count")
-    if len(source_items) > expected_item_count:
-        raise ArchiveError("refusing to archive items beyond the committed ledger row")
     if len(nonces) < expected_item_count:
         raise ArchiveError("insufficient nonces to verify the committed archive")
     try:
@@ -122,9 +155,21 @@ def archive_session(
     if len(expected_root) != 32:
         raise ArchiveError("ledger session root has the wrong length")
 
-    source_dir = paths.ensure_archive_source_dir(source)
     archive_path = paths.archive_session_path(source, session_id)
     existed = archive_path.exists()
+    source_verified = False
+    if not existed:
+        if len(source_items) != expected_item_count:
+            raise ArchiveError(
+                "missing archive requires a full live source before creation"
+            )
+        if _root_for(source_items, nonces) != expected_root:
+            raise ArchiveError(
+                "live source does not match the committed session root; refusing creation"
+            )
+        source_verified = True
+
+    source_dir = paths.ensure_archive_source_dir(source)
     flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(archive_path, flags, _FILE_MODE)
     try:
@@ -133,14 +178,28 @@ def archive_session(
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise ArchiveError("archive target is not a regular file")
         existing = _read_all(fd)
+
+        verified = _verified_items(existing, nonces, expected_item_count, expected_root)
+        if verified is not None:
+            # The bytes may be visible only through page cache after a prior
+            # process wrote a complete suffix and died before file fsync.
+            _fsync_file(fd)
+            _fsync_archive_directories(source_dir)
+            return ArchiveResult(bytes_appended=0, items_verified=len(verified))
+
+        if not source_verified:
+            if len(source_items) != expected_item_count:
+                raise ArchiveError(
+                    "incomplete archive requires a full live source before append"
+                )
+            if _root_for(source_items, nonces) != expected_root:
+                raise ArchiveError(
+                    "live source does not match the committed session root; refusing append"
+                )
+
         target = _serialized_items(source_items)
         if target.startswith(existing):
             suffix = target[len(existing) :]
-        elif existing.startswith(target):
-            # The live source shrank after an earlier successful archive.  A9
-            # is authoritative and append-only; read-back below decides
-            # whether it still covers the ledger row.
-            suffix = b""
         else:
             raise ArchiveError("archive bytes diverge from the live source prefix")
 
@@ -149,26 +208,18 @@ def archive_session(
                 # Test-only deterministic crash seam: persist a strict prefix
                 # and die.  The next scan must complete it without truncation.
                 _write_all(fd, suffix[: max(1, len(suffix) // 2)])
-                os.fsync(fd)
+                _fsync_file(fd)
                 os.kill(os.getpid(), signal.SIGKILL)
             _write_all(fd, suffix)
-        os.fsync(fd)
+        _fsync_file(fd)
         readback = _read_all(fd)
     finally:
         os.close(fd)  # also releases flock
 
-    if not existed:
-        _fsync_dir(source_dir)
-
-    archived_items = _items_from_readback(readback)
-    if len(archived_items) != expected_item_count:
-        raise ArchiveError("archive item count does not match the committed ledger row")
-    leaves = [
-        commitments.leaf_commitment(nonce, item)
-        for nonce, item in zip(nonces[:expected_item_count], archived_items)
-    ]
-    if commitments.session_root(leaves) != expected_root:
+    archived_items = _verified_items(readback, nonces, expected_item_count, expected_root)
+    if archived_items is None:
         raise ArchiveError("archive read-back does not match the committed session root")
+    _fsync_archive_directories(source_dir)
     return ArchiveResult(bytes_appended=len(suffix), items_verified=len(archived_items))
 
 
@@ -176,15 +227,25 @@ def archive_stats() -> ArchiveStats:
     """Counts-only A9 disk monitor; never reads archive bytes or exposes paths."""
     root = paths.archive_dir()
     session_files = total_bytes = 0
+    if root.is_symlink():
+        raise paths.PathsError("refusing symlinked archive root")
     if root.is_dir():
         for source in paths.ARCHIVE_SOURCES:
             source_dir = paths.archive_source_dir(source)
-            if not source_dir.is_dir():
+            if not source_dir.exists() and not source_dir.is_symlink():
+                continue
+            source_stat = source_dir.lstat()
+            if stat.S_ISLNK(source_stat.st_mode):
+                raise paths.PathsError("refusing symlinked archive source directory")
+            if not stat.S_ISDIR(source_stat.st_mode):
                 continue
             for entry in source_dir.iterdir():
-                if entry.is_file():
+                entry_stat = entry.lstat()
+                if stat.S_ISLNK(entry_stat.st_mode):
+                    raise paths.PathsError("refusing symlinked archive session entry")
+                if stat.S_ISREG(entry_stat.st_mode):
                     session_files += 1
-                    total_bytes += entry.stat().st_size
+                    total_bytes += entry_stat.st_size
     free_bytes = shutil.disk_usage(paths.data_dir()).free
     return ArchiveStats(
         session_files=session_files,
