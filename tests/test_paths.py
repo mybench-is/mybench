@@ -25,7 +25,7 @@ def test_honors_xdg_override(tmp_path, monkeypatch):
 
 def test_ensure_creates_tree_0700():
     d = paths.ensure_data_dir()
-    for p in (d, paths.nonces_dir(), paths.ledger_dir(), paths.keys_dir()):
+    for p in (d, paths.nonces_dir(), paths.ledger_dir(), paths.archive_dir(), paths.keys_dir()):
         assert p.is_dir()
         assert mode_of(p) == 0o700
 

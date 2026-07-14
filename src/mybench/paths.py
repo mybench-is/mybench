@@ -7,6 +7,7 @@ logs. No other module may construct data paths (test-enforced).
 Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     nonces/       per-session nonce files (0600)      — asset A2
     ledger/       hash-chained ledger                 — asset A3
+    archive/      byte-exact transcript preimages     — asset A9
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
     anchors/      staged anchor artifacts + OTS proofs pre-publication
     enrollments/  per-repo commit-binding enrollment records (MYB-3.7)
@@ -15,6 +16,7 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import stat
 from pathlib import Path
@@ -26,6 +28,8 @@ _DIR_MODE = 0o700
 _KEY_MODE = 0o600
 # Permission bits that must NOT be set on data dirs/keys (group/other access).
 _LOOSE_BITS = 0o077
+ARCHIVE_SOURCES = ("claude-code", "codex", "synthetic")
+_OPAQUE_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 class PathsError(RuntimeError):
@@ -60,6 +64,24 @@ def nonces_dir() -> Path:
 
 def ledger_dir() -> Path:
     return data_dir() / "ledger"
+
+
+def archive_dir() -> Path:
+    """A9 root: local-only, session-addressed transcript preimages."""
+    return data_dir() / "archive"
+
+
+def archive_source_dir(source: str) -> Path:
+    if source not in ARCHIVE_SOURCES:
+        raise PathsError(f"unknown archive source {source!r}")
+    return archive_dir() / source
+
+
+def archive_session_path(source: str, session_id: str) -> Path:
+    """Return the A9 path without creating it; both components are closed-set/opaque."""
+    if not _OPAQUE_SESSION_ID_RE.fullmatch(session_id):
+        raise PathsError("invalid opaque archive session id")
+    return archive_source_dir(source) / session_id
 
 
 def keys_dir() -> Path:
@@ -259,9 +281,22 @@ def ensure_data_dir() -> Path:
     d = data_dir()
     _assert_not_in_repo(d)
     _ensure_dir(d)
-    for sub in (nonces_dir(), ledger_dir(), keys_dir(), anchors_dir(), enrollments_dir()):
+    for sub in (
+        nonces_dir(),
+        ledger_dir(),
+        archive_dir(),
+        keys_dir(),
+        anchors_dir(),
+        enrollments_dir(),
+    ):
         _ensure_dir(sub)
     return d
+
+
+def ensure_archive_source_dir(source: str) -> Path:
+    """Create/validate one 0700 source namespace below the A9 archive root."""
+    ensure_data_dir()
+    return _ensure_dir(archive_source_dir(source))
 
 
 def ensure_device_key() -> tuple[Path, Path]:

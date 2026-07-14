@@ -4,9 +4,10 @@ Scan-based in v0: each :meth:`Daemon.scan_once` walks the configured dirs,
 extracts complete JSONL lines as items (ADR-0002 §2: exact raw bytes, one
 line = one item; a partial trailing line is left for the next scan), commits
 any items not yet covered by the session's nonce file, and appends one ledger
-row carrying the session root over ALL items committed so far. The nonce
-store is the only capture state, so re-scans and restarts are idempotent by
-construction: no new items → no new nonces → no new row.
+row carrying the session root over ALL items committed so far.  After that
+capture commit point, it extends and commitment-verifies the session's A9
+retention archive.  Archive failure is reported but never rolls back or blocks
+capture; a no-op re-scan retries it (MYB-12.1 / owner ruling D-B).
 
 Privacy: configuration is always explicit — there is no default watch list in
 test mode (``default_config`` refuses under pytest), so tests can only ever
@@ -24,6 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from mybench import archive as archive_store
 from mybench import commitments, nonces, paths
 from mybench.ledger import Ledger
 
@@ -44,7 +46,7 @@ log = logging.getLogger("mybench.daemon")
 # Validity of the bytes is deliberately irrelevant: capture is content-opaque
 # and never parses items, so an unknown or binary line is still exactly one
 # committed record — malformed input cannot crash or skip capture.
-SOURCES = ("claude-code", "codex", "synthetic")
+SOURCES = paths.ARCHIVE_SOURCES
 
 
 class ConfigError(RuntimeError):
@@ -67,6 +69,14 @@ class DaemonConfig:
         for w in self.watches:
             if w.source not in SOURCES:
                 raise ConfigError(f"unknown source {w.source!r}; wired formats: {SOURCES}")
+
+
+@dataclass(frozen=True)
+class _CaptureResult:
+    rows_appended: int = 0
+    archive_covered: int = 0
+    archive_failed: int = 0
+    archive_bytes_appended: int = 0
 
 
 def production_watches(home: Path) -> tuple[WatchSpec, ...]:
@@ -140,13 +150,13 @@ class Daemon:
         # against THIS, not the nonce store: a crash between nonce writes and
         # the row append leaves nonces without a row, which must produce a
         # row on the next scan — not silence.
-        covered: dict[str, int] = {}
+        covered: dict[str, dict] = {}
         for row in self.ledger.rows():
             if row["type"] == "session":
-                covered[row["session_id"]] = max(
-                    covered.get(row["session_id"], 0), row["item_count"]
-                )
-        appended = sessions_seen = 0
+                previous = covered.get(row["session_id"])
+                if previous is None or row["item_count"] >= previous["item_count"]:
+                    covered[row["session_id"]] = row
+        appended = sessions_seen = archive_covered = archive_failed = archive_bytes = 0
         for watch in self.config.watches:
             if not watch.path.is_dir():
                 log.warning("watch dir missing (event=missing_dir); skipping")
@@ -154,45 +164,121 @@ class Daemon:
             for f in sorted(watch.path.rglob("*.jsonl")):
                 sessions_seen += 1
                 try:
-                    appended += self._capture_file(f, watch, scope_key, covered)
+                    result = self._capture_file(f, watch, scope_key, covered)
+                    appended += result.rows_appended
+                    archive_covered += result.archive_covered
+                    archive_failed += result.archive_failed
+                    archive_bytes += result.archive_bytes_appended
                 except Exception as exc:  # noqa: BLE001 — one bad file must not stop capture
                     # Exception CLASS only: messages may embed paths/ids (leak surface).
                     log.error("capture failed (event=capture_error type=%s)", type(exc).__name__)
-        log.info("scan complete: sessions=%d rows_appended=%d", sessions_seen, appended)
+        try:
+            stats = archive_store.archive_stats()
+            log.info(
+                "scan complete: sessions=%d rows_appended=%d committed_sessions=%d "
+                "archive_covered=%d archive_failed=%d archive_bytes_appended=%d "
+                "archive_files=%d archive_bytes=%d disk_free_bytes=%d",
+                sessions_seen,
+                appended,
+                len(covered),
+                archive_covered,
+                archive_failed,
+                archive_bytes,
+                stats.session_files,
+                stats.total_bytes,
+                stats.free_bytes,
+            )
+        except Exception as exc:  # noqa: BLE001 — monitoring cannot stop capture
+            log.error("archive stats failed (event=archive_stats_error type=%s)", type(exc).__name__)
+            log.info(
+                "scan complete: sessions=%d rows_appended=%d committed_sessions=%d "
+                "archive_covered=%d archive_failed=%d archive_bytes_appended=%d",
+                sessions_seen,
+                appended,
+                len(covered),
+                archive_covered,
+                archive_failed,
+                archive_bytes,
+            )
         return appended
 
     def _capture_file(
-        self, f: Path, watch: WatchSpec, scope_key: bytes, covered: dict[str, int]
-    ) -> int:
+        self, f: Path, watch: WatchSpec, scope_key: bytes, covered: dict[str, dict]
+    ) -> _CaptureResult:
         source = watch.source
         session_id = session_id_for(f, watch, scope_key)
         items = _complete_lines(f.read_bytes())
-        if not items:
-            return 0
         known = nonces.load_nonces(session_id)
         if len(items) < len(known):
             # Source shrank below what we committed — never rewrite history.
             log.error("session shrank below committed items (event=source_shrunk); skipping")
-            return 0
-        if len(known) == len(items) and covered.get(session_id, 0) >= len(items):
-            return 0
-        fresh = [commitments.generate_nonce() for _ in items[len(known) :]]
-        for nonce in fresh:
-            nonces.append_nonce(session_id, nonce)
-        leaves = [
-            commitments.leaf_commitment(nonce, item)
-            for nonce, item in zip(known + fresh, items)
-        ]
-        row = self.ledger.append_session(
-            session_id=session_id,
-            session_root=commitments.session_root(leaves),
-            item_count=len(items),
-            source=source,
+            row = covered.get(session_id)
+            if row is None:
+                return _CaptureResult()
+            return self._archive_file(source, session_id, items, known, row)
+        if not items:
+            return _CaptureResult()
+
+        row = covered.get(session_id)
+        row_appended = 0
+        if row is None or row["item_count"] < len(items) or len(known) < len(items):
+            fresh = [commitments.generate_nonce() for _ in items[len(known) :]]
+            for nonce in fresh:
+                nonces.append_nonce(session_id, nonce)
+            all_nonces = known + fresh
+            leaves = [
+                commitments.leaf_commitment(nonce, item)
+                for nonce, item in zip(all_nonces, items)
+            ]
+            row = self.ledger.append_session(
+                session_id=session_id,
+                session_root=commitments.session_root(leaves),
+                item_count=len(items),
+                source=source,
+            )
+            covered[session_id] = row
+            row_appended = 1
+            log.info(
+                "session row appended: row_i=%d items=%d new_items=%d",
+                row["i"],
+                len(items),
+                len(fresh),
+            )
+            known = all_nonces
+
+        archived = self._archive_file(source, session_id, items, known, row)
+        return _CaptureResult(
+            rows_appended=row_appended,
+            archive_covered=archived.archive_covered,
+            archive_failed=archived.archive_failed,
+            archive_bytes_appended=archived.archive_bytes_appended,
         )
-        covered[session_id] = len(items)
-        log.info("session row appended: row_i=%d items=%d new_items=%d",
-                 row["i"], len(items), len(fresh))
-        return 1
+
+    @staticmethod
+    def _archive_file(
+        source: str,
+        session_id: str,
+        items: list[bytes],
+        known: list[bytes],
+        row: dict,
+    ) -> _CaptureResult:
+        """Best-effort A9 step after capture; errors are counts/class only."""
+        try:
+            result = archive_store.archive_session(
+                source=source,
+                session_id=session_id,
+                source_items=items,
+                nonces=known,
+                expected_item_count=row["item_count"],
+                expected_session_root=row["session_root"],
+            )
+        except Exception as exc:  # noqa: BLE001 — A9 failure must never block A3 capture
+            log.error("archive failed (event=archive_error type=%s)", type(exc).__name__)
+            return _CaptureResult(archive_failed=1)
+        return _CaptureResult(
+            archive_covered=1,
+            archive_bytes_appended=result.bytes_appended,
+        )
 
     def run(self, interval: float = 30.0, max_scans: int | None = None) -> None:
         """Poll loop (owner-run); tests drive scan_once() directly."""

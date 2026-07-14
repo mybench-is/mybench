@@ -55,6 +55,11 @@ def sid(config, f):
     raise AssertionError(f"{f} not under any watch")
 
 
+def archive_path(config, f):
+    watch = next(w for w in config.watches if f.is_relative_to(w.path))
+    return paths.archive_session_path(watch.source, sid(config, f))
+
+
 def assert_matches_ground_truth(ledger, fx, config):
     rows = [r for r in ledger.rows() if r["type"] == "session"]
     latest = {}
@@ -69,6 +74,16 @@ def assert_matches_ground_truth(ledger, fx, config):
         assert len(known) == len(items)  # no gaps, no over-commitment
         leaves = [c.leaf_commitment(k, m) for k, m in zip(known, items)]
         assert row["session_root"] == c.session_root(leaves).hex()
+
+
+def assert_archives_match_ground_truth(fx, config):
+    for session_file in fx.sessions:
+        expected = b"".join(
+            item + b"\n" for item in capture._complete_lines(session_file.read_bytes())
+        )
+        archived = archive_path(config, session_file)
+        assert archived.read_bytes() == expected
+        assert stat.S_IMODE(archived.stat().st_mode) == 0o600
 
 
 # --- Deterministic fault injection (AC #1, #3) ------------------------------------
@@ -100,6 +115,7 @@ def test_sigkill_exactly_mid_append_then_recover_and_resume(fx, config, tmp_path
     ledger = Ledger()
     assert ledger.verify_chain() == 1 + len(fx.sessions)
     assert_matches_ground_truth(ledger, fx, config)
+    assert_archives_match_ground_truth(fx, config)
 
     # AC #5: quarantine, ledger, and daemon log are all leak-free.
     used = [n for f in paths.nonces_dir().glob("*.jsonl") for n in nonces.load_nonces(f.stem)]
@@ -156,6 +172,39 @@ def test_crash_between_nonces_and_row_produces_row_on_next_scan(fx, config):
     assert_matches_ground_truth(Ledger(), fx, config)
 
 
+def test_sigkill_mid_archive_append_completes_prefix_without_rewrite(fx, config, tmp_path):
+    env = dict(os.environ, MYBENCH_FAULT_ARCHIVE="1")
+    with (tmp_path / "archive-crash.log").open("ab") as logf:
+        proc = subprocess.run(
+            daemon_cmd(fx, "--once"), env=env, stderr=logf, timeout=TIMEOUT
+        )
+    assert proc.returncode == -signal.SIGKILL
+
+    # Capture-first ordering: the A3 row is already durable while A9 holds a
+    # strict prefix from the interrupted append.
+    ledger = Ledger()
+    assert ledger.verify_chain() == 2  # genesis + first session
+    partial_files = [p for p in paths.archive_dir().glob("*/*") if p.is_file()]
+    assert len(partial_files) == 1
+    partial_file = partial_files[0]
+    partial = partial_file.read_bytes()
+    target = next(s for s in fx.sessions if archive_path(config, s) == partial_file)
+    full = b"".join(item + b"\n" for item in capture._complete_lines(target.read_bytes()))
+    assert 0 < len(partial) < len(full)
+    inode = partial_file.stat().st_ino
+
+    capture.Daemon(config).scan_once()
+    assert partial_file.read_bytes().startswith(partial)
+    assert partial_file.stat().st_ino == inode
+    assert Ledger().verify_chain() == 1 + len(fx.sessions)
+    assert_matches_ground_truth(Ledger(), fx, config)
+    assert_archives_match_ground_truth(fx, config)
+
+    assert assert_no_canaries(
+        [Ledger().path, tmp_path / "archive-crash.log"], fx.all_canaries()
+    ) == 2
+
+
 # --- Randomized kill loop (AC #2, #4) -------------------------------------------------
 
 
@@ -183,3 +232,4 @@ def test_random_kill_loop_never_corrupts_or_loses_acknowledged_rows(fx, config, 
     ledger = Ledger()
     assert ledger.verify_chain() >= acknowledged
     assert_matches_ground_truth(ledger, fx, config)
+    assert_archives_match_ground_truth(fx, config)

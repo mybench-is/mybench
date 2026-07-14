@@ -14,7 +14,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Basenames/dirnames that only ever belong under the data dir (never in a repo).
 FORBIDDEN_BASENAMES = {"device.key", "device.pub", "session-scope.key", "identity.key", "identity.pub", "log-signing", "ledger.db"}
-FORBIDDEN_DIRNAMES = {"nonces"}
+FORBIDDEN_DIRNAMES = {"archive", "nonces"}
 
 
 @pytest.fixture(autouse=True)
