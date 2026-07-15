@@ -42,6 +42,7 @@ def test_fresh_bootstrap_fsyncs_managed_directory_entries_to_existing_parent(
         paths.nonces_dir(),
         paths.ledger_dir(),
         paths.archive_dir(),
+        paths.queue_dir(),
         paths.keys_dir(),
         paths.anchors_dir(),
         paths.enrollments_dir(),
@@ -62,6 +63,7 @@ def test_precreated_visible_data_tree_gets_restart_durability_barrier(
         paths.nonces_dir(),
         paths.ledger_dir(),
         paths.archive_dir(),
+        paths.queue_dir(),
         paths.keys_dir(),
         paths.anchors_dir(),
         paths.enrollments_dir(),
@@ -85,7 +87,14 @@ def test_precreated_visible_data_tree_gets_restart_durability_barrier(
 
 def test_ensure_creates_tree_0700():
     d = paths.ensure_data_dir()
-    for p in (d, paths.nonces_dir(), paths.ledger_dir(), paths.archive_dir(), paths.keys_dir()):
+    for p in (
+        d,
+        paths.nonces_dir(),
+        paths.ledger_dir(),
+        paths.archive_dir(),
+        paths.queue_dir(),
+        paths.keys_dir(),
+    ):
         assert p.is_dir()
         assert mode_of(p) == 0o700
 

@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/ledger_entry.schema.json",
+  "$id": "https://mybench.dev/schemas/v2/ledger_entry.schema.json",
   "title": "Mybench Ledger Row",
-  "description": "One row of the hash-chained append-only local ledger (asset A3). Metadata ONLY: additionalProperties:false makes content, prompt-text, and filename fields structurally impossible (privacy invariant #1). Version 1 replaces the pre-ADR-0002 version 0 stub; any widening of this schema is an ADR-level decision.",
+  "description": "One row of the hash-chained append-only local ledger (asset A3). Version 2 admits closed-shape capture-time lifecycle observations while version-1 rows remain valid and unchanged. Metadata ONLY: additionalProperties:false makes content, prompt text, paths, and filenames structurally impossible.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "i", "type", "ts", "prev", "h"],
   "properties": {
     "schema_version": {
-      "description": "Row schema version; bump on breaking changes.",
-      "const": "1"
+      "description": "Row schema version. Existing version-1 rows are never rewritten.",
+      "enum": ["1", "2"]
     },
     "i": {
       "description": "Row index, 0-based, strictly sequential.",
@@ -17,12 +17,11 @@
       "minimum": 0
     },
     "type": {
-      "description": "Row type. genesis appears exactly once, at i=0; binding rows record commit↔activity bindings (MYB-3.5).",
-      "type": "string",
-      "enum": ["genesis", "session", "binding"]
+      "description": "Closed row-kind whitelist.",
+      "enum": ["genesis", "session", "binding", "event"]
     },
     "ts": {
-      "description": "UTC RFC 3339 timestamp of the append.",
+      "description": "UTC RFC 3339 timestamp of the append/observation.",
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
     },
@@ -32,17 +31,17 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "h": {
-      "description": "SHA-256('mybench:v1:ledgerrow' || canonical JSON of this row without h), lowercase hex.",
+      "description": "SHA-256('mybench:v1:ledgerrow' || canonical JSON without h).",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
     "session_id": {
-      "description": "Opaque session id (source UUID); never path- or content-derived (ADR-0002 §4).",
+      "description": "Opaque daemon-compatible session id; never a raw path or content value.",
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]{1,64}$"
     },
     "session_root": {
-      "description": "Finalized session Merkle root per ADR-0002 §3, lowercase hex.",
+      "description": "Finalized session Merkle root per ADR-0002 §3.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
@@ -53,11 +52,10 @@
     },
     "source": {
       "description": "Capture adapter that produced the items.",
-      "type": "string",
       "enum": ["claude-code", "codex", "synthetic"]
     },
     "commit_hash": {
-      "description": "Bound commit id (SHA-1 or SHA-256 repo), lowercase hex. Never the message, diff, filenames, or branch — those are leak channels and have no fields.",
+      "description": "Bound commit id; never message, diff, filename, or branch.",
       "type": "string",
       "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
     },
@@ -67,22 +65,88 @@
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
     },
     "repo_id": {
-      "description": "Opaque keyed-HMAC repo identity (never a name, URL, or path) — OQ #9 / ADR-0002 §4 amendment pattern.",
+      "description": "Opaque keyed-HMAC repository identity.",
       "type": "string",
       "pattern": "^[0-9a-f]{16}$"
     },
     "session_ref": {
-      "description": "Optional abstract linkage to a session root (64 hex); semantics unpinned in v0 (MYB-3.5 notes).",
+      "description": "Frozen optional v1 binding field; retired unwritten by ADR-0013.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "event_kind": {
+      "enum": ["session_start", "session_end", "compact_pre", "model_change"]
+    },
+    "trigger": {
+      "enum": ["startup", "resume", "clear", "compact", "manual", "auto", "unknown"]
+    },
+    "context_gen": {
+      "description": "Observed session-scoped context generation, starting at zero.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "parent_session_id": {
+      "description": "Optional opaque predecessor linkage when the harness exposes one.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "harness": {
+      "enum": ["claude-code", "codex"]
+    },
+    "harness_version": {
+      "description": "Closed identifier-shaped harness version, never free text.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+    },
+    "model": {
+      "description": "Closed identifier-shaped model value, never prompt-adjacent text.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"
+    },
+    "effort": {
+      "description": "Closed identifier-shaped effort value.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$"
+    },
+    "worktree_id": {
+      "description": "Opaque keyed-HMAC worktree identity.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "head_before": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "head_after": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
     }
   },
   "allOf": [
     {
-      "if": { "properties": { "type": { "const": "genesis" } } },
+      "if": {"properties": {"schema_version": {"const": "1"}}},
       "then": {
         "properties": {
-          "i": { "const": 0 },
+          "type": {"enum": ["genesis", "session", "binding"]},
+          "event_kind": false,
+          "trigger": false,
+          "context_gen": false,
+          "parent_session_id": false,
+          "harness": false,
+          "harness_version": false,
+          "model": false,
+          "effort": false,
+          "worktree_id": false,
+          "head_before": false,
+          "head_after": false
+        }
+      }
+    },
+    {
+      "if": {"properties": {"type": {"const": "genesis"}}},
+      "then": {
+        "properties": {
+          "i": {"const": 0},
           "session_id": false,
           "session_root": false,
           "item_count": false,
@@ -90,31 +154,97 @@
           "commit_hash": false,
           "commit_ts": false,
           "repo_id": false,
-          "session_ref": false
+          "session_ref": false,
+          "event_kind": false,
+          "trigger": false,
+          "context_gen": false,
+          "parent_session_id": false,
+          "harness": false,
+          "harness_version": false,
+          "model": false,
+          "effort": false,
+          "worktree_id": false,
+          "head_before": false,
+          "head_after": false
         }
       }
     },
     {
-      "if": { "properties": { "type": { "const": "session" } } },
+      "if": {"properties": {"type": {"const": "session"}}},
       "then": {
         "required": ["session_id", "session_root", "item_count", "source"],
         "properties": {
           "commit_hash": false,
           "commit_ts": false,
           "repo_id": false,
-          "session_ref": false
+          "session_ref": false,
+          "event_kind": false,
+          "trigger": false,
+          "context_gen": false,
+          "parent_session_id": false,
+          "harness": false,
+          "harness_version": false,
+          "model": false,
+          "effort": false,
+          "worktree_id": false,
+          "head_before": false,
+          "head_after": false
         }
       }
     },
     {
-      "if": { "properties": { "type": { "const": "binding" } } },
+      "if": {"properties": {"type": {"const": "binding"}}},
       "then": {
         "required": ["commit_hash", "commit_ts", "repo_id"],
         "properties": {
           "session_id": false,
           "session_root": false,
           "item_count": false,
-          "source": false
+          "source": false,
+          "event_kind": false,
+          "trigger": false,
+          "context_gen": false,
+          "parent_session_id": false,
+          "harness": false,
+          "harness_version": false,
+          "model": false,
+          "effort": false,
+          "worktree_id": false,
+          "head_before": false,
+          "head_after": false
+        }
+      }
+    },
+    {
+      "if": {"properties": {"type": {"const": "event"}}},
+      "then": {
+        "required": ["event_kind", "trigger", "session_id", "context_gen", "harness"],
+        "allOf": [
+          {
+            "if": {"properties": {"event_kind": {"const": "session_start"}}},
+            "then": {"properties": {"trigger": {"enum": ["startup", "resume", "clear", "compact", "unknown"]}}}
+          },
+          {
+            "if": {"properties": {"event_kind": {"const": "session_end"}}},
+            "then": {"properties": {"trigger": {"enum": ["clear", "resume", "unknown"]}}}
+          },
+          {
+            "if": {"properties": {"event_kind": {"const": "compact_pre"}}},
+            "then": {"properties": {"trigger": {"enum": ["manual", "auto", "unknown"]}}}
+          },
+          {
+            "if": {"properties": {"event_kind": {"const": "model_change"}}},
+            "then": {"properties": {"trigger": {"const": "unknown"}}}
+          }
+        ],
+        "properties": {
+          "schema_version": {"const": "2"},
+          "session_root": false,
+          "item_count": false,
+          "source": false,
+          "commit_hash": false,
+          "commit_ts": false,
+          "session_ref": false
         }
       }
     }

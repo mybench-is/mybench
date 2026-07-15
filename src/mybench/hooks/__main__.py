@@ -1,4 +1,4 @@
-"""CLI: ``python -m mybench.hooks install|enroll <repo>`` / ``… run`` / ``… reconcile [repo]``."""
+"""CLI for opt-in git binding and machine-local Claude lifecycle hooks."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from mybench.hooks.binding import HookError, enroll, install, reconcile, run
+from mybench.hooks import lifecycle
 from mybench.paths import PathsError
 
 
@@ -35,8 +36,38 @@ def main(argv: list[str] | None = None) -> int:
     p_reconcile.add_argument(
         "repo", nargs="?", default=None, help="repo worktree (default: current directory)"
     )
+    p_lifecycle = sub.add_parser(
+        "lifecycle", help="manage the opt-in Claude Code lifecycle adapter"
+    )
+    lifecycle_sub = p_lifecycle.add_subparsers(dest="lifecycle_command", required=True)
+    lifecycle_sub.add_parser("run", help="hook entry point (reads Claude JSON from stdin)")
+    lifecycle_sub.add_parser(
+        "install", help="install async handlers in the machine-local user settings"
+    )
+    lifecycle_sub.add_parser(
+        "uninstall", help="remove only the machine-local mybench lifecycle handlers"
+    )
     args = parser.parse_args(argv)
 
+    if args.command == "lifecycle":
+        if args.lifecycle_command == "run":
+            return lifecycle.run_from_stdin()
+        settings_path = lifecycle.default_settings_path()
+        try:
+            changed = (
+                lifecycle.install(settings_path)
+                if args.lifecycle_command == "install"
+                else lifecycle.uninstall(settings_path)
+            )
+        except lifecycle.LifecycleError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        action = "installed" if args.lifecycle_command == "install" else "uninstalled"
+        if changed:
+            print(f"{action} {', '.join(changed)} in {settings_path}")
+        else:
+            print(f"unchanged {settings_path}")
+        return 0
     if args.command == "run":
         return run()
     if args.command == "reconcile":

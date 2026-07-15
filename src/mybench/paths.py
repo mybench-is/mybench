@@ -9,6 +9,7 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     ledger/       hash-chained ledger                 — asset A3
     normalized/   content-free normalized artifacts   — asset A8
     archive/      byte-exact transcript preimages     — asset A9
+    queue/        whitelisted hook tuples (0600)       — asset A3 ingress
     capture.lock  whole-scan daemon flock (0600)
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
     anchors/      staged anchor artifacts + OTS proofs pre-publication
@@ -91,6 +92,19 @@ def normalized_corpus_path(commitment: str) -> Path:
 def archive_dir() -> Path:
     """A9 root: local-only, session-addressed transcript preimages."""
     return data_dir() / "archive"
+
+
+def queue_dir() -> Path:
+    """Private ingress queue for already-whitelisted capture observations."""
+    return data_dir() / "queue"
+
+
+def claude_lifecycle_queue_path() -> Path:
+    return queue_dir() / "claude-lifecycle.jsonl"
+
+
+def claude_lifecycle_failure_path() -> Path:
+    return queue_dir() / "claude-lifecycle.failures"
 
 
 def archive_source_dir(source: str) -> Path:
@@ -365,6 +379,7 @@ def ensure_data_dir() -> Path:
         nonces_dir(),
         ledger_dir(),
         archive_dir(),
+        queue_dir(),
         keys_dir(),
         anchors_dir(),
         enrollments_dir(),
@@ -378,6 +393,12 @@ def ensure_archive_source_dir(source: str) -> Path:
     """Create/validate one 0700 source namespace below the A9 archive root."""
     ensure_data_dir()
     return _ensure_dir(archive_source_dir(source))
+
+
+def ensure_queue_dir() -> Path:
+    """Create/validate the 0700 hook-ingress queue below the private data dir."""
+    ensure_data_dir()
+    return _ensure_dir(queue_dir())
 
 
 def ensure_normalized_dir() -> Path:

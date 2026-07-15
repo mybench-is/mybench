@@ -23,7 +23,7 @@ FORBIDDEN_BASENAMES = {
     "log-signing",
     "session-scope.key",
 }
-FORBIDDEN_DIRNAMES = {"archive", "nonces", "normalized"}
+FORBIDDEN_DIRNAMES = {"archive", "nonces", "normalized", "queue"}
 
 
 @pytest.fixture(autouse=True)
