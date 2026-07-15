@@ -93,8 +93,13 @@ class _CaptureResult:
 
 
 @contextmanager
-def _capture_scan_lock():
-    """Serialize reconciliation of transcript, nonces, ledger, and optional archive."""
+def capture_scan_lock():
+    """Serialize every consistent A2/A3/A9 snapshot or reconciliation.
+
+    The normalizer's trusted loader shares this lock with capture so it can
+    authenticate one immutable ledger/nonce/archive view without racing a
+    session append.  The lock contains no transcript-derived identifier.
+    """
     paths.ensure_data_dir()
     fd = os.open(
         paths.capture_scan_lock_path(),
@@ -191,7 +196,7 @@ class Daemon:
         A global process lock is acquired before rebuilding ledger coverage and
         held through nonce, ledger, and optional archive reconciliation.
         """
-        with _capture_scan_lock():
+        with capture_scan_lock():
             return self._scan_once_locked()
 
     def _scan_once_locked(self) -> int:
