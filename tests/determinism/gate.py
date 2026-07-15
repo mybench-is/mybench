@@ -97,6 +97,9 @@ REVIEWED_NON_STAGE_MODULES = frozenset(
         # Source-neutral re-export facade; the executable implementation and
         # audit root remain mybench.normalizer.claude.
         "mybench.normalizer.contract",
+        # Trusted A2/A3/A9 filesystem boundary. It supplies explicit verified
+        # inputs to the pure Claude stage and is not itself compute/render.
+        "mybench.normalizer.loader",
     }
 )
 

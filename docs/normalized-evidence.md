@@ -71,10 +71,22 @@ big-endian length framing. The existing RFC-6962-shaped tree uses
 Zero input sessions produce no artifact. A nonempty input whose consent filter
 admits no records produces a valid manifest-only commitment.
 
-## Current integration boundary
+## Owner-supervised ingestion
 
 The pure adapter accepts records that an I/O layer has already authenticated
-against capture commitments. This slice provides the parser, shared contract,
-resolver, private store, and determinism registration; it does not discover
-owner transcripts or run real-data ingestion. Real corpus verification remains
-an explicit owner-supervised step and never becomes a test fixture.
+against capture commitments. The trusted loader takes a consistent snapshot
+under the capture lock, selects the latest committed Claude rows, verifies the
+A9 bytes against their A2 nonces and A3 roots, and only then constructs parser
+inputs. It requires an explicit owner assertion that the local harness sessions
+belong to the credentialed subject and that subject's own agent fleet.
+
+The operator entry point is deliberately not ambient or automatic:
+
+```text
+python -m mybench.normalizer --owner-dogfood --confirm-subject-owned
+```
+
+It stores the content-opaque A8 artifact privately and prints aggregate counts,
+coverage, the corpus commitment, and an artifact digest only. It never prints a
+source path, filename, session identifier, nonce, raw record, or resolved field.
+Real corpus verification remains owner-supervised and never becomes a fixture.

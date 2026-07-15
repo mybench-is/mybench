@@ -130,6 +130,59 @@ def _verified_items(
     return items if _root_for(items, nonces) == expected_root else None
 
 
+def read_verified_items(
+    *,
+    source: str,
+    session_id: str,
+    nonces: list[bytes],
+    expected_item_count: int,
+    expected_session_root: str,
+) -> tuple[bytes, ...]:
+    """Read one complete A9 session after authenticating it against A2/A3.
+
+    This is the trusted read boundary used by normalized-evidence ingestion.
+    It never falls back to an unverified prefix and deliberately emits only
+    generic errors: archive paths and opaque session identifiers must not
+    enter operator output.
+    """
+    if expected_item_count <= 0 or len(nonces) < expected_item_count:
+        raise ArchiveError("archive verification input is incomplete")
+    try:
+        expected_root = bytes.fromhex(expected_session_root)
+    except (TypeError, ValueError):
+        raise ArchiveError("archive verification input is invalid") from None
+    if len(expected_root) != 32:
+        raise ArchiveError("archive verification input is invalid")
+
+    try:
+        archive_path = paths.archive_session_path(source, session_id)
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        fd = os.open(archive_path, flags)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH)
+            info = os.fstat(fd)
+            _assert_tight(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ArchiveError("archive read refused")
+            data = _read_all(fd)
+        finally:
+            os.close(fd)
+    except ArchiveError:
+        raise
+    except (OSError, paths.PathsError):
+        raise ArchiveError("archive read refused") from None
+
+    verified = _verified_items(data, nonces, expected_item_count, expected_root)
+    if verified is None:
+        raise ArchiveError("archive read failed verification")
+    return tuple(verified)
+
+
 def archive_session(
     *,
     source: str,
