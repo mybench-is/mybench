@@ -1,0 +1,462 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v1/normalized_corpus.schema.json",
+  "title": "Mybench Normalized Evidence Corpus",
+  "description": "Closed A8 schema (MYB-10.4). It can represent derived structure, opaque identities, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "opaqueId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "episodeId": {
+      "type": "string",
+      "pattern": "^ep-[0-9a-f]{32}$",
+      "minLength": 35,
+      "maxLength": 35
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line_band", "size_band"],
+      "properties": {
+        "line_band": {"enum": ["none", "single", "few", "many", "unknown"]},
+        "size_band": {"enum": ["empty", "short", "medium", "long", "unknown"]}
+      }
+    },
+    "textPointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "start", "end", "unit", "record_commitment"],
+      "properties": {
+        "field": {"enum": ["message-text", "content-block-text"]},
+        "block_index": {"type": "integer", "minimum": 0},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 1},
+        "unit": {"const": "unicode-scalar"},
+        "record_commitment": {"$ref": "#/$defs/hex64"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"field": {"const": "content-block-text"}}},
+          "then": {"required": ["block_index"]},
+          "else": {"not": {"required": ["block_index"]}}
+        }
+      ]
+    },
+    "toolInputPointer": {
+      "description": "Pointer to a subject-agent tool invocation field in the source transcript. Its record commitment binds the invocation bytes, not any repo file or tool-result bytes named by that invocation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "block_index", "record_commitment"],
+      "properties": {
+        "field": {"const": "tool-input"},
+        "block_index": {"type": "integer", "minimum": 0},
+        "record_commitment": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "pointer": {
+      "oneOf": [
+        {"$ref": "#/$defs/textPointer"},
+        {"$ref": "#/$defs/toolInputPointer"}
+      ]
+    },
+    "parentLink": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {"status": {"enum": ["root", "missing", "dangling", "ambiguous"]}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "record_index"],
+          "properties": {
+            "status": {"const": "linked"},
+            "record_index": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    },
+    "toolRelation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {"status": {"enum": ["missing", "dangling", "ambiguous"]}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "record_index", "subevent_index"],
+          "properties": {
+            "status": {"const": "linked"},
+            "record_index": {"type": "integer", "minimum": 0},
+            "subevent_index": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    },
+    "tokenUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "input_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0},
+        "cache_creation_input_tokens": {"type": "integer", "minimum": 0},
+        "cache_read_input_tokens": {"type": "integer", "minimum": 0}
+      }
+    },
+    "eventBase": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "source",
+        "session_id",
+        "record_index",
+        "subevent_index",
+        "event_kind",
+        "authorship",
+        "parent_link"
+      ],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "kind": {"const": "normalized-event"},
+        "source": {"enum": ["claude-code", "codex"]},
+        "session_id": {"$ref": "#/$defs/opaqueId"},
+        "record_index": {"type": "integer", "minimum": 0},
+        "subevent_index": {"type": "integer", "minimum": 0},
+        "event_kind": {"enum": ["turn", "pasted-span", "tool-call", "tool-result", "lifecycle", "model", "token-usage", "reference", "test"]},
+        "authorship": {"enum": ["human-turn", "agent-turn", "pasted-content-span"]},
+        "task_episode_id": {"$ref": "#/$defs/episodeId"},
+        "observed_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
+          "minLength": 27,
+          "maxLength": 27
+        },
+        "parent_link": {"$ref": "#/$defs/parentLink"}
+      }
+    },
+    "turnEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["content_shape"],
+          "properties": {
+            "event_kind": {"const": "turn"},
+            "authorship": {"enum": ["human-turn", "agent-turn"]},
+            "content_shape": {"$ref": "#/$defs/shape"},
+            "pointer": {"$ref": "#/$defs/textPointer"}
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": ["authorship"],
+                "properties": {"authorship": {"const": "human-turn"}}
+              },
+              "then": {"not": {"required": ["pointer"]}}
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "pastedSpanEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["content_shape"],
+          "properties": {
+            "event_kind": {"const": "pasted-span"},
+            "authorship": {"const": "pasted-content-span"},
+            "content_shape": {"$ref": "#/$defs/shape"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolCallEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["tool_family"],
+          "properties": {
+            "event_kind": {"const": "tool-call"},
+            "authorship": {"const": "agent-turn"},
+            "tool_family": {"enum": ["read", "write", "edit", "search", "execute", "web", "mcp", "task", "other"]},
+            "pointer": {"$ref": "#/$defs/toolInputPointer"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolResultEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["content_shape", "tool_relation", "result_status"],
+          "properties": {
+            "event_kind": {"const": "tool-result"},
+            "authorship": {"const": "pasted-content-span"},
+            "content_shape": {"$ref": "#/$defs/shape"},
+            "tool_relation": {"$ref": "#/$defs/toolRelation"},
+            "result_status": {"enum": ["success", "error", "unknown"]}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "lifecycleEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["lifecycle_marker"],
+          "properties": {
+            "event_kind": {"const": "lifecycle"},
+            "authorship": {"const": "agent-turn"},
+            "lifecycle_marker": {"enum": ["context-boundary", "session-start", "session-end", "model-change"]},
+            "context_generation_id": {"type": "integer", "minimum": 0}
+          },
+          "allOf": [
+            {
+              "if": {"required": ["context_generation_id"]},
+              "then": {"properties": {"lifecycle_marker": {"const": "context-boundary"}}}
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "properties": {
+            "event_kind": {"const": "model"},
+            "authorship": {"const": "agent-turn"},
+            "model": {
+              "type": "string",
+              "pattern": "^((claude|synthetic|gpt|codex)-[a-z0-9][a-z0-9._-]{0,63}|o[1-9](-[a-z0-9][a-z0-9._-]{0,63})?|sonnet|opus|haiku)$",
+              "maxLength": 74
+            },
+            "provider": {"enum": ["anthropic", "aws-bedrock", "google-vertex", "openai", "azure-openai", "synthetic"]},
+            "reasoning_effort": {"enum": ["none", "minimal", "low", "medium", "high", "max", "xhigh"]}
+          },
+          "anyOf": [
+            {"required": ["model"]},
+            {"required": ["provider"]},
+            {"required": ["reasoning_effort"]}
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "tokenUsageEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["token_usage"],
+          "properties": {
+            "event_kind": {"const": "token-usage"},
+            "authorship": {"const": "agent-turn"},
+            "token_usage": {"$ref": "#/$defs/tokenUsage"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "referenceEvent": {
+      "description": "Structural classification of a subject-agent reference invocation; the pointer addresses the committed invocation field, not the referenced target bytes.",
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["reference_kind", "pointer"],
+          "properties": {
+            "event_kind": {"const": "reference"},
+            "authorship": {"const": "agent-turn"},
+            "reference_kind": {"enum": ["plan", "instruction", "source", "orchestration"]},
+            "pointer": {"$ref": "#/$defs/pointer"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "testEvent": {
+      "description": "Structural test invocation/result observation. A pointer, when present, addresses the subject-agent invocation; pasted test output never receives a pointer.",
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["test_scope", "test_status"],
+          "properties": {
+            "event_kind": {"const": "test"},
+            "authorship": {"const": "agent-turn"},
+            "test_scope": {"enum": ["unit", "integration", "end-to-end", "other"]},
+            "test_status": {"enum": ["passed", "failed", "error", "unknown"]},
+            "pointer": {"$ref": "#/$defs/toolInputPointer"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "event": {
+      "oneOf": [
+        {"$ref": "#/$defs/turnEvent"},
+        {"$ref": "#/$defs/pastedSpanEvent"},
+        {"$ref": "#/$defs/toolCallEvent"},
+        {"$ref": "#/$defs/toolResultEvent"},
+        {"$ref": "#/$defs/lifecycleEvent"},
+        {"$ref": "#/$defs/modelEvent"},
+        {"$ref": "#/$defs/tokenUsageEvent"},
+        {"$ref": "#/$defs/referenceEvent"},
+        {"$ref": "#/$defs/testEvent"}
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "corpus_commitment", "manifest", "events"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "normalized-corpus-artifact"},
+    "corpus_commitment": {"$ref": "#/$defs/hex64"},
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "kind", "normalizer", "adapters", "sessions", "coverage", "event_count"],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "kind": {"const": "normalized-corpus-manifest"},
+        "normalizer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version"],
+          "properties": {
+            "name": {"const": "mybench.normalizer"},
+            "version": {"const": "1.0.0"},
+            "authorship_policy_version": {"const": "1.0.0"},
+            "episode_stitcher_version": {"const": "1.0.0"}
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "version"],
+                "properties": {
+                  "source": {"const": "claude-code"},
+                  "version": {"const": "1.0.0"}
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source", "version"],
+                "properties": {
+                  "source": {"const": "codex"},
+                  "version": {"const": "1.0.0"}
+                }
+              }
+            ]
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "session_id", "admitted_record_count"],
+            "properties": {
+              "source": {"enum": ["claude-code", "codex"]},
+              "session_id": {"$ref": "#/$defs/opaqueId"},
+              "admitted_record_count": {"type": "integer", "minimum": 1},
+              "parent_session_id": {"$ref": "#/$defs/opaqueId"},
+              "task_episode_id": {"$ref": "#/$defs/episodeId"},
+              "episode_predecessor": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["session_id", "signals"],
+                "properties": {
+                  "session_id": {"$ref": "#/$defs/opaqueId"},
+                  "signals": {
+                    "const": ["repo-id", "head-continuity", "temporal-adjacency"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sessions_admitted",
+            "records_seen",
+            "records_parsed",
+            "records_malformed",
+            "records_unsupported",
+            "records_ambiguous_authorship",
+            "user_turns_ambiguous",
+            "blocks_seen",
+            "blocks_unsupported",
+            "content_references",
+            "content_unknown",
+            "metadata_invalid",
+            "lineage_unresolved"
+          ],
+          "properties": {
+            "sessions_admitted": {"type": "integer", "minimum": 0},
+            "records_seen": {"type": "integer", "minimum": 0},
+            "records_parsed": {"type": "integer", "minimum": 0},
+            "records_malformed": {"type": "integer", "minimum": 0},
+            "records_unsupported": {"type": "integer", "minimum": 0},
+            "records_ambiguous_authorship": {"type": "integer", "minimum": 0},
+            "user_turns_ambiguous": {"type": "integer", "minimum": 0},
+            "blocks_seen": {"type": "integer", "minimum": 0},
+            "blocks_unsupported": {"type": "integer", "minimum": 0},
+            "content_references": {"type": "integer", "minimum": 0},
+            "content_unknown": {"type": "integer", "minimum": 0},
+            "metadata_invalid": {"type": "integer", "minimum": 0},
+            "lineage_unresolved": {"type": "integer", "minimum": 0}
+          }
+        },
+        "event_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/event"}
+    }
+  }
+}

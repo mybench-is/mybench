@@ -7,6 +7,7 @@ logs. No other module may construct data paths (test-enforced).
 Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     nonces/       per-session nonce files (0600)      — asset A2
     ledger/       hash-chained ledger                 — asset A3
+    normalized/   content-free normalized artifacts   — asset A8
     archive/      byte-exact transcript preimages     — asset A9
     capture.lock  whole-scan daemon flock (0600)
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
@@ -31,6 +32,7 @@ _KEY_MODE = 0o600
 _LOOSE_BITS = 0o077
 ARCHIVE_SOURCES = ("claude-code", "codex", "synthetic")
 _OPAQUE_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_CORPUS_COMMITMENT_RE = re.compile(r"[0-9a-f]{64}")
 _DURABLE_DIRS: set[tuple[str, int, int]] = set()
 _DURABLE_ROOT_CHAINS: set[tuple[str, int, int]] = set()
 
@@ -67,6 +69,23 @@ def nonces_dir() -> Path:
 
 def ledger_dir() -> Path:
     return data_dir() / "ledger"
+
+
+def normalized_dir() -> Path:
+    """A8 root: parser-versioned, content-free normalized artifacts."""
+    return data_dir() / "normalized"
+
+
+def normalized_corpus_dir(commitment: str) -> Path:
+    """Return one content-addressed A8 corpus directory without creating it."""
+    if not isinstance(commitment, str) or not _CORPUS_COMMITMENT_RE.fullmatch(commitment):
+        raise PathsError("invalid normalized corpus commitment")
+    return normalized_dir() / commitment
+
+
+def normalized_corpus_path(commitment: str) -> Path:
+    """Return the canonical artifact path for one validated A8 commitment."""
+    return normalized_corpus_dir(commitment) / "corpus.json"
 
 
 def archive_dir() -> Path:
@@ -359,6 +378,19 @@ def ensure_archive_source_dir(source: str) -> Path:
     """Create/validate one 0700 source namespace below the A9 archive root."""
     ensure_data_dir()
     return _ensure_dir(archive_source_dir(source))
+
+
+def ensure_normalized_dir() -> Path:
+    """Create/validate the 0700 A8 normalized-artifact root lazily."""
+    ensure_data_dir()
+    return _ensure_dir(normalized_dir())
+
+
+def ensure_normalized_corpus_dir(commitment: str) -> Path:
+    """Create/validate one 0700 content-addressed A8 corpus directory."""
+    corpus_dir = normalized_corpus_dir(commitment)
+    ensure_normalized_dir()
+    return _ensure_dir(corpus_dir)
 
 
 def ensure_device_key() -> tuple[Path, Path]:

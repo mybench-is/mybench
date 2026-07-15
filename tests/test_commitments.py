@@ -6,6 +6,7 @@ import random
 
 import pytest
 
+from mybench import commitment_tree as tree
 from mybench import commitments as c
 from tests.fixtures import assert_no_canaries, generate_fixtures
 
@@ -26,6 +27,23 @@ VECTORS = {
     "S_B": "c94a28f837bbeb223ec5b218fa3f8b18edaf4fe20dd72e2b21dd0ed5247e99a7",
     "DAY": "44e004a74a1c5bf6cf638be91019ec2b1f1879b5c4b4f11c51bb81d307ddc300",
 }
+
+
+def test_compatibility_module_reexports_pure_tree_api():
+    names = (
+        "day_root",
+        "inclusion_proof",
+        "leaf_commitment",
+        "merkle_root",
+        "node_hash",
+        "session_root",
+        "verify_inclusion",
+        "verify_session_inclusion",
+    )
+    assert all(getattr(c, name) is getattr(tree, name) for name in names)
+    assert c.NONCE_LEN == tree.NONCE_LEN
+    assert c.DOMAIN_NODE == tree.DOMAIN_NODE
+    assert not hasattr(tree, "generate_nonce")
 
 
 def test_adr0002_vectors_byte_for_byte():
