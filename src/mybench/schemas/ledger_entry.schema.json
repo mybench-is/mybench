@@ -222,19 +222,55 @@
         "allOf": [
           {
             "if": {"properties": {"event_kind": {"const": "session_start"}}},
-            "then": {"properties": {"trigger": {"enum": ["startup", "resume", "clear", "compact", "unknown"]}}}
+            "then": {
+              "properties": {
+                "trigger": {"enum": ["startup", "resume", "clear", "compact", "unknown"]},
+                "head_after": false
+              },
+              "dependentRequired": {
+                "repo_id": ["worktree_id", "head_before"],
+                "worktree_id": ["repo_id", "head_before"],
+                "head_before": ["repo_id", "worktree_id"]
+              }
+            }
           },
           {
             "if": {"properties": {"event_kind": {"const": "session_end"}}},
-            "then": {"properties": {"trigger": {"enum": ["clear", "resume", "unknown"]}}}
+            "then": {
+              "properties": {
+                "trigger": {"enum": ["clear", "resume", "unknown"]},
+                "head_before": false
+              },
+              "dependentRequired": {
+                "repo_id": ["worktree_id", "head_after"],
+                "worktree_id": ["repo_id", "head_after"],
+                "head_after": ["repo_id", "worktree_id"]
+              }
+            }
           },
           {
             "if": {"properties": {"event_kind": {"const": "compact_pre"}}},
-            "then": {"properties": {"trigger": {"enum": ["manual", "auto", "unknown"]}}}
+            "then": {
+              "properties": {
+                "trigger": {"enum": ["manual", "auto", "unknown"]},
+                "repo_id": false,
+                "worktree_id": false,
+                "head_before": false,
+                "head_after": false
+              }
+            }
           },
           {
             "if": {"properties": {"event_kind": {"const": "model_change"}}},
-            "then": {"properties": {"trigger": {"const": "unknown"}}}
+            "then": {
+              "properties": {
+                "trigger": {"const": "unknown"},
+                "repo_id": false,
+                "worktree_id": false,
+                "head_before": false,
+                "head_after": false
+              }
+            }
           }
         ],
         "properties": {

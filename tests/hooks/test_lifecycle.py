@@ -47,7 +47,7 @@ def _payload(event: str, transcript: Path, **fields) -> dict:
 
 def _record(event: str, trigger: str, session_id: str, ts: str = TS) -> dict:
     return {
-        "queue_version": "1",
+        "queue_version": lifecycle.QUEUE_VERSION,
         "ts": ts,
         "event_kind": event,
         "trigger": trigger,

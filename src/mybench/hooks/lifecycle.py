@@ -22,9 +22,10 @@ from typing import BinaryIO, Callable
 
 from mybench import paths
 from mybench.capture_identity import session_id_for_path
+from mybench.hooks import provenance
 from mybench.ledger import Ledger
 
-QUEUE_VERSION = "1"
+QUEUE_VERSION = "2"
 HOOK_EVENTS = ("SessionStart", "SessionEnd", "PreCompact")
 HOOK_ARGS = ("-m", "mybench.hooks", "lifecycle", "run")
 HOOK_TIMEOUT_SECONDS = 1
@@ -36,7 +37,17 @@ _SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z")
 _EVENT_KINDS = {"session_start", "session_end", "compact_pre"}
 _TRIGGERS = {"startup", "resume", "clear", "compact", "manual", "auto", "unknown"}
-_QUEUE_KEYS = {"queue_version", "ts", "event_kind", "trigger", "session_id", "harness"}
+_QUEUE_REQUIRED_KEYS = {
+    "queue_version",
+    "ts",
+    "event_kind",
+    "trigger",
+    "session_id",
+    "harness",
+}
+_QUEUE_PROVENANCE_KEYS = {"repo_id", "worktree_id", "head_before", "head_after"}
+_HEX16_RE = re.compile(r"[0-9a-f]{16}")
+_HEAD_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 
 log = logging.getLogger("mybench.daemon")
 
@@ -66,9 +77,10 @@ def extract_event(
     """Whitelist one official Claude lifecycle payload into a queue tuple.
 
     Claude Code 2.1.210 supplies raw ``cwd``, ``transcript_path``, and, for
-    PreCompact, prompt-adjacent ``custom_instructions``.  Only the fields read
-    below influence output.  Unknown fields and new enum values are tolerated;
-    new enum values collapse to the honest structural label ``unknown``.
+    PreCompact, prompt-adjacent ``custom_instructions``.  This pure extraction
+    stage reads no cwd; :func:`handle_payload` reduces it separately through
+    the bounded Git probe for start/end events.  Unknown fields and new enum
+    values are tolerated; new enum values collapse to ``unknown``.
     """
     if not isinstance(payload, dict) or not _TS_RE.fullmatch(observed_ts):
         raise LifecycleError("invalid hook envelope")
@@ -118,10 +130,18 @@ def extract_event(
 
 
 def _validate_queue_record(record: object) -> dict:
-    if not isinstance(record, dict) or set(record) != _QUEUE_KEYS:
+    if not isinstance(record, dict):
+        raise LifecycleError("lifecycle queue record is not an object")
+    keys = set(record)
+    if not _QUEUE_REQUIRED_KEYS <= keys or not keys <= (
+        _QUEUE_REQUIRED_KEYS | _QUEUE_PROVENANCE_KEYS
+    ):
         raise LifecycleError("queue record does not match the closed whitelist")
-    if record.get("queue_version") != QUEUE_VERSION:
+    queue_version = record.get("queue_version")
+    if queue_version not in {"1", QUEUE_VERSION}:
         raise LifecycleError("unknown queue record version")
+    if queue_version == "1" and keys != _QUEUE_REQUIRED_KEYS:
+        raise LifecycleError("version-1 lifecycle queue record has extra fields")
     if record.get("event_kind") not in _EVENT_KINDS:
         raise LifecycleError("unknown lifecycle event kind")
     if record.get("trigger") not in _TRIGGERS:
@@ -134,6 +154,31 @@ def _validate_queue_record(record: object) -> dict:
         record["session_id"]
     ):
         raise LifecycleError("invalid opaque session id")
+
+    provenance_keys = keys & _QUEUE_PROVENANCE_KEYS
+    if provenance_keys:
+        event_kind = record["event_kind"]
+        if event_kind == "session_start":
+            expected = {"repo_id", "worktree_id", "head_before"}
+        elif event_kind == "session_end":
+            expected = {"repo_id", "worktree_id", "head_after"}
+        else:
+            raise LifecycleError("Git provenance is forbidden on non-boundary events")
+        if provenance_keys != expected:
+            raise LifecycleError("Git provenance tuple is incomplete or misplaced")
+        repo_id = record["repo_id"]
+        worktree_id = record["worktree_id"]
+        if (
+            not isinstance(repo_id, str)
+            or not _HEX16_RE.fullmatch(repo_id)
+            or not isinstance(worktree_id, str)
+            or not _HEX16_RE.fullmatch(worktree_id)
+        ):
+            raise LifecycleError("invalid opaque Git identity")
+        head_key = "head_before" if event_kind == "session_start" else "head_after"
+        head = record[head_key]
+        if not isinstance(head, str) or not _HEAD_RE.fullmatch(head):
+            raise LifecycleError("invalid Git HEAD observation")
     return record
 
 
@@ -192,6 +237,33 @@ def _record_failure(exc: Exception) -> None:
         pass
 
 
+def _log_probe_absent(reason: str) -> None:
+    """Best-effort one-count metadata line; never includes a raw probe value."""
+    if reason not in provenance.ABSENT_REASONS:
+        reason = "error"
+    try:
+        if not paths.data_dir().is_dir():
+            return
+        line = (
+            f"{_utc_now()} claude-git-provenance "
+            f"event=git_provenance_absent reason={reason} count=1\n"
+        ).encode()
+        fd = os.open(
+            paths.data_dir() / "hooks.log",
+            os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+            _FILE_MODE,
+        )
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & _LOOSE_BITS:
+                return
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    except Exception:  # noqa: BLE001 — lifecycle capture has no other safe log surface
+        pass
+
+
 def handle_payload(
     payload: object,
     *,
@@ -211,6 +283,17 @@ def handle_payload(
             scope_key=scope_key,
             observed_ts=now(),
         )
+        try:
+            probe = provenance.probe_git_context(
+                payload.get("cwd") if isinstance(payload, dict) else None,
+                event_kind=event["event_kind"],
+                scope_key=scope_key,
+            )
+        except Exception:  # noqa: BLE001 — probe bugs must not lose the lifecycle boundary
+            probe = provenance.GitProbeResult({}, "error")
+        event.update(probe.fields)
+        if probe.absent_reason is not None:
+            _log_probe_absent(probe.absent_reason)
         enqueue_event(event)
     except Exception as exc:  # noqa: BLE001 — lifecycle capture must never block Claude
         _record_failure(exc)
@@ -315,6 +398,10 @@ def flush_queue(ledger: Ledger | None = None) -> int:
                 context_gen=generation,
                 harness=record["harness"],
                 ts=record["ts"],
+                repo_id=record.get("repo_id"),
+                worktree_id=record.get("worktree_id"),
+                head_before=record.get("head_before"),
+                head_after=record.get("head_after"),
             )
             appended += row is not None
         os.lseek(fd, 0, os.SEEK_SET)

@@ -77,10 +77,47 @@ def install(repo: str) -> Path:
     return hook_path
 
 
-def repo_identity(top: Path) -> str:
+def repo_identity(top: Path, *, scope_key: bytes | None = None) -> str:
     """Opaque keyed repo id (OQ #9): HMAC over the realpath, never the path itself."""
-    key = paths.ensure_session_scope_key()
+    key = scope_key if scope_key is not None else paths.ensure_session_scope_key()
     return hmac.new(key, b"repo:" + os.fsencode(top.resolve()), hashlib.sha256).hexdigest()[:16]
+
+
+def repo_identity_from_common_dir(
+    common_dir: Path,
+    *,
+    scope_key: bytes | None = None,
+) -> str:
+    """Return one repo id across its main and linked worktrees.
+
+    A normal/linked worktree's common dir is ``<canonical-top>/.git``.  Hashing
+    its parent preserves every existing canonical-worktree id while making a
+    linked worktree converge on that same id.  Repositories with an externally
+    located common dir use that common dir itself as the stable identity base.
+    """
+    common_dir = common_dir.resolve()
+    identity_base = common_dir.parent if common_dir.name == ".git" else common_dir
+    return repo_identity(identity_base, scope_key=scope_key)
+
+
+def repo_identity_for_worktree(
+    top: Path,
+    *,
+    scope_key: bytes | None = None,
+) -> str:
+    """Resolve a worktree through Git's common-dir identity hierarchy."""
+    common_dir = Path(_git(top, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    return repo_identity_from_common_dir(common_dir, scope_key=scope_key)
+
+
+def worktree_identity(top: Path, *, scope_key: bytes | None = None) -> str:
+    """Opaque keyed discriminator for one worktree of a shared repository."""
+    key = scope_key if scope_key is not None else paths.ensure_session_scope_key()
+    return hmac.new(
+        key,
+        b"worktree:" + os.fsencode(top.resolve()),
+        hashlib.sha256,
+    ).hexdigest()[:16]
 
 
 def _log_error(exc: Exception, context: str = "post-commit") -> None:
@@ -113,7 +150,7 @@ def run(cwd: Path | None = None) -> int:
         Ledger().append_binding(
             commit_hash=commit_hash,
             commit_ts=_committer_ts(cwd, commit_hash),
-            repo_id=repo_identity(top),
+            repo_id=repo_identity_for_worktree(top),
         )
     except Exception as exc:  # noqa: BLE001 — never block the commit
         _log_error(exc)
@@ -202,7 +239,7 @@ def enroll(repo: str | Path, at: str | None = None) -> dict:
                 f"--at {at!r} is not an ancestor of HEAD in {top} — the sweep window "
                 "enroll_commit..HEAD would not contain the history it claims to cover"
             ) from exc
-    repo_id = repo_identity(top)
+    repo_id = repo_identity_for_worktree(top)
     paths.ensure_data_dir()
     path = paths.enrollment_path(repo_id)
     if path.exists():
@@ -271,7 +308,9 @@ def reconcile(cwd: Path | None = None) -> int:
         return 0
     if not (top / MARKER_RELPATH).is_file():
         return 0  # strictly opt-in, exactly like the hook — no marker, no sweep
-    repo_id = repo_identity(top)  # PathsError propagates: integrity failures must surface
+    repo_id = repo_identity_for_worktree(
+        top
+    )  # PathsError propagates: integrity failures must surface
     enroll_path = paths.enrollment_path(repo_id)
     if not enroll_path.exists():
         return 0  # not stamped: enrollment must be recorded before any sweep
