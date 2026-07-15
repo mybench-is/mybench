@@ -46,7 +46,24 @@ def test_codex_sessions_shaped_like_jsonl_transcripts(tmp_path):
         assert lines
         for line in lines:
             assert {"timestamp", "type", "payload"} <= line.keys()
-            assert line["payload"]["role"] in {"user", "assistant"}
+        assert [line["type"] for line in lines] == [
+            "session_meta",
+            "turn_context",
+            "response_item",
+            "response_item",
+            "response_item",
+            "response_item",
+            "event_msg",
+            "event_msg",
+        ]
+        assert lines[0]["payload"]["model_provider"] == "openai"
+        assert lines[1]["payload"]["model"] == "gpt-5-codex"
+        assert lines[2]["payload"]["role"] == "user"
+        assert lines[3]["payload"]["role"] == "assistant"
+        assert lines[4]["payload"]["type"] == "function_call"
+        assert lines[5]["payload"]["type"] == "function_call_output"
+        assert lines[6]["payload"]["type"] == "token_count"
+        assert lines[7]["payload"]["type"] == "context_compacted"
 
 
 def test_fixtures_embed_content_filename_and_low_entropy_canaries(tmp_path):

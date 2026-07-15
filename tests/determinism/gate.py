@@ -72,13 +72,13 @@ class ReviewedCall:
 
 
 # Required roots exist today; optional roots reserve the fail-closed package
-# contract for the parser/normalizer/publication stories that have not landed.
+# contract for parser/publication stories that have not landed.
 PIPELINE_ROOTS = (
     PipelineRoot("mybench.scorer", required=True),
     PipelineRoot("mybench.report", required=True),
     PipelineRoot("mybench.parser"),
     PipelineRoot("mybench.parsers"),
-    PipelineRoot("mybench.normalizer"),
+    PipelineRoot("mybench.normalizer", required=True),
     PipelineRoot("mybench.normalizers"),
     PipelineRoot("mybench.normalize"),
     PipelineRoot("mybench.publication"),

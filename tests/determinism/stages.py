@@ -133,9 +133,18 @@ def _claude_normalized_corpus() -> Invocation:
     return Invocation(args=(synthetic_normalizer_input().sessions,), kwargs={})
 
 
+def _codex_normalized_corpus() -> Invocation:
+    # Fixed synthetic rollout records and nonces only. The Codex adapter is a
+    # pure sibling stage and receives no ambient rollout-directory authority.
+    from tests.normalizer.synthetic import synthetic_codex_normalizer_input
+
+    return Invocation(args=(synthetic_codex_normalizer_input().sessions,), kwargs={})
+
+
 RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
+    "codex-normalized-corpus": _codex_normalized_corpus,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
@@ -158,6 +167,13 @@ STAGES = (
         ResultEncoding.BYTES,
         True,
         ("mybench.normalizer.claude",),
+    ),
+    Stage(
+        "codex-normalized-corpus",
+        EntryPoint("mybench.normalizer.codex", "normalize_codex"),
+        ResultEncoding.BYTES,
+        True,
+        ("mybench.normalizer.codex",),
     ),
     Stage(
         "signed-claim",

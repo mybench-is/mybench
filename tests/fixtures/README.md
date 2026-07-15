@@ -11,7 +11,10 @@ regenerate from the generator instead.
 
 - `synthetic.py` — deterministic fixture generator; embeds content canaries,
   fake-filename canaries, low-entropy lines (MYB-1.3), and provides 32-byte
-  nonce canaries (ADR-0002) for nonce-leak tests.
+  nonce canaries (ADR-0002) for nonce-leak tests. Codex fixtures use the
+  rollout-v1 session-meta, turn-context, response-item, event-message, tool,
+  token, and compaction envelopes; nonce canaries remain separate pipeline
+  inputs and never appear in transcript bytes.
 - `leakscan.py` — `assert_no_canaries(paths, canaries)`: raw / hex / base64
   (all byte phases) / gzip scanning. Every story that writes to disk or
   network must run its published artifacts through this (invariant #1,
