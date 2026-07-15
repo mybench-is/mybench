@@ -125,17 +125,25 @@ def _static_report_html() -> Invocation:
     )
 
 
+def _claude_normalized_corpus() -> Invocation:
+    # Fixed synthetic records and nonces only.  The production entry point
+    # receives verified bytes explicitly and cannot discover owner data.
+    from tests.normalizer.synthetic import synthetic_normalizer_input
+
+    return Invocation(args=(synthetic_normalizer_input().sessions,), kwargs={})
+
+
 RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
+    "claude-normalized-corpus": _claude_normalized_corpus,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
 }
 
-# The current landed pipeline has no parser, normalizer, or publication-preview
-# implementation yet. Their owning stories add a Stage with discovery_entry
-# set and a same-name invocation factory. Claim/registry outputs are valuable
-# deterministic substrates, but are not pipeline discovery roots themselves.
+# Parser/publication-preview implementations remain reserved fail-closed roots.
+# Claim/registry outputs are valuable deterministic substrates, but are not
+# pipeline discovery roots themselves.
 STAGES = (
     Stage(
         "activity-report-json",
@@ -143,6 +151,13 @@ STAGES = (
         ResultEncoding.BYTES,
         True,
         ("mybench.scorer.score",),
+    ),
+    Stage(
+        "claude-normalized-corpus",
+        EntryPoint("mybench.normalizer.claude", "normalize_claude"),
+        ResultEncoding.BYTES,
+        True,
+        ("mybench.normalizer.claude",),
     ),
     Stage(
         "signed-claim",

@@ -94,6 +94,9 @@ REVIEWED_NON_STAGE_MODULES = frozenset(
     {
         # Copy-only constants consumed transitively by report.page.
         "mybench.report.descriptions",
+        # Source-neutral re-export facade; the executable implementation and
+        # audit root remain mybench.normalizer.claude.
+        "mybench.normalizer.contract",
     }
 )
 
@@ -136,6 +139,8 @@ FORBIDDEN_CALLS = {
     "mybench.claims.envelope.sign_with_device_key": "device/environment helper",
     "mybench.claims.local_device_pub": "device/environment helper",
     "mybench.claims.sign_with_device_key": "device/environment helper",
+    "mybench.commitments.generate_nonce": "ambient randomness",
+    "mybench.nonce_generation.generate_nonce": "ambient randomness",
     "pathlib.Path.cwd": "process working directory",
     "pathlib.Path.home": "environment home directory",
 }
@@ -195,15 +200,18 @@ REVIEWED_CALLS: Mapping[tuple[str, str], ReviewedCall] = {
     ),
 }
 
-# Following envelope -> paths would audit a deliberately impure device-key
-# boundary that the fixed signed-claim runner never calls.  This one exact edge
-# is reviewed; importing mybench.paths from any scorer/parser/report module is
-# still followed and rejected transitively.
+# These exact edges isolate deliberately impure helpers that deterministic
+# stage entry points never call. Pure commitment/Merkle code remains visible
+# transitively through the commitments compatibility facade.
 REVIEWED_IMPORT_BOUNDARIES: Mapping[tuple[str, str], str] = {
     (
         "mybench.claims.envelope",
         "mybench.paths",
     ): "dormant device-key convenience functions; fixed claim runner uses dev seed",
+    (
+        "mybench.commitments",
+        "mybench.nonce_generation",
+    ): "CSPRNG-only capture helper; deterministic callers use commitment_tree re-exports",
 }
 
 

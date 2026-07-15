@@ -35,6 +35,8 @@ from tests.determinism.stages import (
     execute_stage,
     validate_registration,
 )
+from tests.fixtures import assert_no_canaries
+from tests.normalizer.synthetic import synthetic_normalizer_input
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -45,11 +47,40 @@ def test_all_landed_stages_are_byte_identical_across_perturbed_processes():
     assert all(result.size > 0 and len(result.sha256) == 64 for result in results)
 
 
+def test_normalizer_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_path):
+    stage = next(stage for stage in STAGES if stage.name == "claude-normalized-corpus")
+    artifact = _run_once(
+        stage,
+        {
+            "PYTHONHASHSEED": "303",
+            "TZ": "UTC",
+            "LC_ALL": "C",
+            "LANG": "C",
+            "MYBENCH_DETERMINISM_SENTINEL": "privacy-run",
+        },
+        tmp_path,
+        1,
+    )
+    artifact_path = tmp_path / stage.name / "run-1" / "artifact.bin"
+    assert artifact_path.read_bytes() == artifact
+    assert assert_no_canaries(
+        [artifact_path], list(synthetic_normalizer_input().canaries)
+    ) == 1
+    data_root = tmp_path / stage.name / "run-1" / "data" / "mybench"
+    assert not any(
+        (data_root / name).exists() for name in ("normalized", "ledger", "anchors")
+    )
+
+
 def test_manifest_runner_registration_and_current_discovery_are_exact():
     validate_registration()
     assert {stage.name for stage in STAGES} == set(RUNNERS)
     assert all(callable(runner) for runner in RUNNERS.values())
-    assert discover_pipeline_modules() == {"mybench.report.page", "mybench.scorer.score"}
+    assert discover_pipeline_modules() == {
+        "mybench.normalizer.claude",
+        "mybench.report.page",
+        "mybench.scorer.score",
+    }
     validate_manifest_and_audit()
 
 
@@ -176,6 +207,14 @@ def test_byte_compare_fires_on_divergence_without_logging_artifact_bytes():
         ("from datetime import datetime as instant\nvalue = instant.now()\n", "wall clock"),
         ("from datetime import date\nvalue = date.today()\n", "wall clock"),
         ("from pathlib import Path\nvalue = Path.home()\n", "environment home"),
+        (
+            "from mybench.commitments import generate_nonce as fresh\nvalue = fresh()\n",
+            "ambient randomness",
+        ),
+        (
+            "from mybench.nonce_generation import generate_nonce as fresh\nvalue = fresh()\n",
+            "ambient randomness",
+        ),
     ],
 )
 def test_ambient_state_audit_fires_for_aliases(tmp_path, source, reason):
@@ -264,10 +303,19 @@ def test_pipeline_caller_cannot_inherit_claim_device_helper_exception(tmp_path):
     assert any("device/environment helper" in issue.message for issue in issues)
 
 
-def test_current_transitive_closure_uses_only_the_reviewed_device_boundary():
+def test_current_transitive_closure_audits_pure_commitment_tree():
     closure = validate_manifest_and_audit()
-    assert {"mybench.claims.envelope", "mybench.registry", "mybench.schemas"} <= closure.modules
-    assert "mybench.paths" not in closure.modules
+    assert {
+        "mybench.claims.envelope",
+        "mybench.commitment_tree",
+        "mybench.registry",
+        "mybench.schemas",
+    } <= closure.modules
+    assert {
+        "mybench.commitments",
+        "mybench.nonce_generation",
+        "mybench.paths",
+    }.isdisjoint(closure.modules)
 
 
 def test_failed_stage_reports_only_stderr_size_and_digest(tmp_path, monkeypatch):
