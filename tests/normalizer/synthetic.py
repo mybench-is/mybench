@@ -22,6 +22,15 @@ SIDECHAIN_RAW_SESSION_CANARY = "raw-session-identifier-canary-b"
 NON_SUBJECT_RAW_SESSION_CANARY = "raw-session-identifier-canary-c"
 TOOL_ID_CANARY = "tool-use-identifier-canary-77cc"
 UUID_CANARIES = tuple(f"raw-uuid-canary-{index:02d}" for index in range(12))
+CODEX_CONTENT_CANARY = "MYBENCH-CODEX-CONTENT-CANARY-6aa1"
+CODEX_AGENT_CANARY = "MYBENCH-CODEX-AGENT-CANARY-583f"
+CODEX_RESULT_CANARY = "MYBENCH-CODEX-RESULT-CANARY-93e2"
+CODEX_UNKNOWN_CANARY = "MYBENCH-CODEX-UNKNOWN-CANARY-70cb"
+CODEX_NON_SUBJECT_CANARY = "MYBENCH-CODEX-NON-SUBJECT-CANARY-6bb0"
+CODEX_FILENAME_CANARY = "codex_private_plan_90cc.py"
+CODEX_PATH_CANARY = "/synthetic/codex/private/codex_private_plan_90cc.py"
+CODEX_RAW_SESSION_CANARY = "raw-codex-thread-identifier-canary"
+CODEX_CALL_ID_CANARY = "raw-codex-call-identifier-canary"
 
 
 @dataclass(frozen=True)
@@ -50,6 +59,7 @@ def _session(
     subject_owned: bool,
     parent_session_id: str | None = None,
     generations: dict[int, int] | None = None,
+    source: str = "claude-code",
 ) -> tuple[VerifiedSession, list[bytes]]:
     generations = generations or {}
     raws = [value if isinstance(value, bytes) else _raw(value) for value in values]
@@ -67,7 +77,7 @@ def _session(
     )
     return (
         VerifiedSession(
-            source="claude-code",
+            source=source,
             session_id=session_id,
             session_root=session_root(commitments).hex(),
             records=records,
@@ -283,4 +293,250 @@ def synthetic_normalizer_input() -> SyntheticNormalizedInput:
         sessions=(main, sidechain, non_subject),
         canaries=tuple(value.encode() for value in string_canaries) + nonces,
         nonces=nonces,
+    )
+
+
+def synthetic_codex_normalizer_input() -> SyntheticNormalizedInput:
+    """Return fixed rollout-v1 records with content, path, id, and nonce canaries."""
+    values: list[dict | bytes] = [
+        {
+            "timestamp": "2026-01-02T00:00:00.000Z",
+            "type": "session_meta",
+            "payload": {
+                "id": CODEX_RAW_SESSION_CANARY,
+                "session_id": CODEX_RAW_SESSION_CANARY,
+                "timestamp": "2026-01-02T00:00:00.000Z",
+                "cwd": CODEX_PATH_CANARY,
+                "originator": "synthetic_codex_cli",
+                "cli_version": "0.1.0-synthetic",
+                "source": "cli",
+                "model_provider": "openai",
+                "base_instructions": {"text": CODEX_CONTENT_CANARY},
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:01.000Z",
+            "type": "turn_context",
+            "payload": {
+                "cwd": CODEX_PATH_CANARY,
+                "model": "gpt-5-codex",
+                "effort": "xhigh",
+                "approval_policy": "never",
+                "sandbox_policy": {"type": "workspace_write"},
+                "summary": "auto",
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:02.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": CODEX_CONTENT_CANARY}],
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:03.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": CODEX_AGENT_CANARY}],
+                "phase": "commentary",
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:04.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": json.dumps(
+                    {"cmd": f"pytest tests/{CODEX_FILENAME_CANARY}", "yield_time_ms": 1000},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "call_id": CODEX_CALL_ID_CANARY,
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:05.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": CODEX_CALL_ID_CANARY,
+                "output": CODEX_RESULT_CANARY + " " + CODEX_PATH_CANARY,
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:06.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "read_file",
+                "arguments": json.dumps(
+                    {"file_path": CODEX_PATH_CANARY},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "call_id": "synthetic-read-call",
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:07.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "apply_patch",
+                "call_id": "synthetic-patch-call",
+                "input": CODEX_FILENAME_CANARY + "\n" + CODEX_CONTENT_CANARY,
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:08.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "name": "apply_patch",
+                "call_id": "synthetic-patch-call",
+                "output": {"content": CODEX_RESULT_CANARY},
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:09.000Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 101,
+                        "cached_input_tokens": 11,
+                        "output_tokens": 23,
+                        "reasoning_output_tokens": 5,
+                        "total_tokens": 124,
+                    },
+                    "last_token_usage": {
+                        "input_tokens": 17,
+                        "cached_input_tokens": 3,
+                        "output_tokens": 7,
+                        "reasoning_output_tokens": 2,
+                        "total_tokens": 24,
+                    },
+                    "model_context_window": 272000,
+                },
+                "rate_limits": None,
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:10.000Z",
+            "type": "event_msg",
+            "payload": {"type": "context_compacted"},
+        },
+        {
+            "timestamp": "2026-01-02T00:00:11.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": f"```synthetic\n{CODEX_FILENAME_CANARY}\n```",
+                    }
+                ],
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:12.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": CODEX_UNKNOWN_CANARY}],
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:13.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": CODEX_NON_SUBJECT_CANARY}],
+            },
+        },
+        b'{"synthetic-codex-malformed":',
+        {
+            "timestamp": "2026-01-02T00:00:15.000Z",
+            "type": "future_rollout_item",
+            "payload": {"private": CODEX_CONTENT_CANARY},
+        },
+        {
+            "timestamp": "2026-01-02T00:00:16.000Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "thread_settings_applied",
+                "thread_settings": {
+                    "model": "gpt-5-codex-max",
+                    "model_provider_id": "openai",
+                    "reasoning_effort": "high",
+                    "cwd": CODEX_PATH_CANARY,
+                },
+            },
+        },
+        {
+            "timestamp": "2026-01-02T00:00:17.000Z",
+            "type": "event_msg",
+            "payload": {"type": "task_complete", "last_agent_message": CODEX_AGENT_CANARY},
+        },
+        {
+            "timestamp": "2026-01-02T00:00:18.000Z",
+            "type": "compacted",
+            "payload": {"message": CODEX_CONTENT_CANARY, "window_number": 2},
+        },
+    ]
+    attributions = [
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "unknown",
+        "non-subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+        "subject",
+    ]
+    session, nonces = _session(
+        session_index=10,
+        session_id="opaque-codex-session",
+        values=values,
+        attributions=attributions,
+        subject_owned=True,
+        generations={10: 1, 18: 2},
+        source="codex",
+    )
+    string_canaries = (
+        CODEX_CONTENT_CANARY,
+        CODEX_AGENT_CANARY,
+        CODEX_RESULT_CANARY,
+        CODEX_UNKNOWN_CANARY,
+        CODEX_NON_SUBJECT_CANARY,
+        CODEX_FILENAME_CANARY,
+        CODEX_PATH_CANARY,
+        CODEX_RAW_SESSION_CANARY,
+        CODEX_CALL_ID_CANARY,
+    )
+    return SyntheticNormalizedInput(
+        sessions=(session,),
+        canaries=tuple(value.encode() for value in string_canaries) + tuple(nonces),
+        nonces=tuple(nonces),
     )

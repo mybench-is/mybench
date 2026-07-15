@@ -1,8 +1,9 @@
 """Shared normalized-corpus contract for every transcript adapter.
 
-Claude owns the first implementation, but callers and sibling adapters use
-this module for the byte contract and artifact validator. Keeping that public
-surface source-neutral prevents a Codex-only schema or Merkle fork.
+Claude owns the v1 contract implementation, while the Claude and Codex sibling
+adapters both use this module for the byte contract and artifact validator.
+Keeping that public surface source-neutral prevents an adapter-specific schema
+or Merkle fork.
 """
 
 from mybench.normalizer.claude import (

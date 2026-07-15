@@ -72,11 +72,39 @@ def test_normalizer_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_
     )
 
 
+def test_codex_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_path):
+    from tests.normalizer.synthetic import synthetic_codex_normalizer_input
+
+    stage = next(stage for stage in STAGES if stage.name == "codex-normalized-corpus")
+    artifact = _run_once(
+        stage,
+        {
+            "PYTHONHASHSEED": "404",
+            "TZ": "America/Los_Angeles",
+            "LC_ALL": "C.UTF-8",
+            "LANG": "C.UTF-8",
+            "MYBENCH_DETERMINISM_SENTINEL": "codex-privacy-run",
+        },
+        tmp_path,
+        1,
+    )
+    artifact_path = tmp_path / stage.name / "run-1" / "artifact.bin"
+    assert artifact_path.read_bytes() == artifact
+    assert assert_no_canaries(
+        [artifact_path], list(synthetic_codex_normalizer_input().canaries)
+    ) == 1
+    data_root = tmp_path / stage.name / "run-1" / "data" / "mybench"
+    assert not any(
+        (data_root / name).exists() for name in ("normalized", "ledger", "anchors")
+    )
+
+
 def test_manifest_runner_registration_and_current_discovery_are_exact():
     validate_registration()
     assert {stage.name for stage in STAGES} == set(RUNNERS)
     assert all(callable(runner) for runner in RUNNERS.values())
     assert discover_pipeline_modules() == {
+        "mybench.normalizer.codex",
         "mybench.normalizer.claude",
         "mybench.report.page",
         "mybench.scorer.score",

@@ -100,21 +100,119 @@ def _claude_session(rng: random.Random, path: Path, fx: FixtureSet) -> None:
 
 
 def _codex_session(rng: random.Random, path: Path, fx: FixtureSet) -> None:
-    lines = []
-    texts = [
-        rng.choice(fx.low_entropy_lines),
-        f"synthetic codex prompt {rng.choice(fx.content_canaries)}",
-        f"open {rng.choice(fx.filename_canaries)}",
-    ]
-    for i, text in enumerate(texts):
-        role = "user" if i % 2 == 0 else "assistant"
-        lines.append(
-            {
-                "timestamp": _ts(i),
+    thread_id = _uuid(rng)
+    call_id = _uuid(rng)
+    filename = rng.choice(fx.filename_canaries)
+    content = rng.choice(fx.content_canaries)
+    cwd = f"/synthetic/codex/{filename.removesuffix('.py')}"
+    lines = [
+        {
+            "timestamp": _ts(0),
+            "type": "session_meta",
+            "payload": {
+                "id": thread_id,
+                "session_id": thread_id,
+                "timestamp": _ts(0),
+                "cwd": cwd,
+                "originator": "synthetic_codex_cli",
+                "cli_version": "0.1.0-synthetic",
+                "source": "cli",
+                "model_provider": "openai",
+                "base_instructions": {"text": f"synthetic base {content}"},
+            },
+        },
+        {
+            "timestamp": _ts(1),
+            "type": "turn_context",
+            "payload": {
+                "cwd": cwd,
+                "model": "gpt-5-codex",
+                "effort": "high",
+                "approval_policy": "never",
+                "sandbox_policy": {"type": "workspace_write"},
+                "summary": "auto",
+            },
+        },
+        {
+            "timestamp": _ts(2),
+            "type": "response_item",
+            "payload": {
                 "type": "message",
-                "payload": {"role": role, "content": [{"type": "input_text", "text": text}]},
-            }
-        )
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": f"{rng.choice(fx.low_entropy_lines)} {content}",
+                    }
+                ],
+            },
+        },
+        {
+            "timestamp": _ts(3),
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "output_text", "text": f"synthetic reply {rng.randbytes(4).hex()}"}
+                ],
+                "phase": "commentary",
+            },
+        },
+        {
+            "timestamp": _ts(4),
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": json.dumps(
+                    {"cmd": f"pytest tests/{filename}"},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "call_id": call_id,
+            },
+        },
+        {
+            "timestamp": _ts(5),
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": f"synthetic result {content} {filename}",
+            },
+        },
+        {
+            "timestamp": _ts(6),
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 13,
+                        "cached_input_tokens": 2,
+                        "output_tokens": 5,
+                        "reasoning_output_tokens": 1,
+                        "total_tokens": 18,
+                    },
+                    "last_token_usage": {
+                        "input_tokens": 13,
+                        "cached_input_tokens": 2,
+                        "output_tokens": 5,
+                        "reasoning_output_tokens": 1,
+                        "total_tokens": 18,
+                    },
+                    "model_context_window": 272000,
+                },
+                "rate_limits": None,
+            },
+        },
+        {
+            "timestamp": _ts(7),
+            "type": "event_msg",
+            "payload": {"type": "context_compacted"},
+        },
+    ]
     path.write_text("".join(json.dumps(line) + "\n" for line in lines))
     fx.sessions.append(path)
 

@@ -240,7 +240,9 @@ def _canonical_timestamp(value: object) -> str | None:
     return parsed.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
-def _check_input_sessions(sessions: Sequence[VerifiedSession]) -> list[VerifiedSession]:
+def _check_input_sessions(
+    sessions: Sequence[VerifiedSession], *, expected_source: str = _SOURCE
+) -> list[VerifiedSession]:
     """Return the admitted view after the ADR-0018 consent filter.
 
     Known non-subject sessions and records are discarded before any field that
@@ -272,8 +274,8 @@ def _check_input_sessions(sessions: Sequence[VerifiedSession]) -> list[VerifiedS
         admitted_records = tuple(record for _, record in admitted_entries)
         if not admitted_records:
             continue
-        if session.source != _SOURCE:
-            raise _safe_error("Claude adapter received an unsupported source")
+        if session.source != expected_source:
+            raise _safe_error("transcript adapter received an unsupported source")
         if not isinstance(session.session_id, str) or not _OPAQUE_ID.fullmatch(
             session.session_id
         ):
@@ -589,19 +591,25 @@ def _tool_family(name: object) -> str:
     if not isinstance(name, str):
         return "other"
     lowered = name.lower()
-    if lowered == "read":
+    if lowered in {"read", "read_file", "view_image"}:
         return "read"
-    if lowered == "write":
+    if lowered in {"write", "write_file"}:
         return "write"
-    if lowered in {"edit", "multiedit", "notebookedit"}:
+    if lowered in {"edit", "multiedit", "notebookedit", "apply_patch"}:
         return "edit"
-    if lowered in {"glob", "grep"}:
+    if lowered in {"glob", "grep", "rg", "search", "find"}:
         return "search"
-    if lowered in {"bash", "execute", "shell"}:
+    if lowered in {"bash", "execute", "shell", "exec_command", "write_stdin"}:
         return "execute"
-    if lowered in {"webfetch", "websearch"}:
+    if lowered in {"webfetch", "websearch", "web_search", "search_query"}:
         return "web"
-    if lowered in {"task", "agent"}:
+    if lowered in {
+        "task",
+        "agent",
+        "spawn_agent",
+        "send_message",
+        "followup_task",
+    }:
         return "task"
     if lowered.startswith("mcp__"):
         return "mcp"
@@ -622,9 +630,25 @@ def _reference_kind(name: object, tool_input: object) -> str | None:
     if not isinstance(name, str) or not isinstance(tool_input, dict):
         return None
     lowered_name = name.lower()
-    if lowered_name in {"task", "agent"}:
+    if lowered_name in {
+        "task",
+        "agent",
+        "spawn_agent",
+        "send_message",
+        "followup_task",
+    }:
         return "orchestration"
-    if lowered_name not in {"read", "write", "edit", "multiedit", "notebookedit"}:
+    if lowered_name not in {
+        "read",
+        "read_file",
+        "view_image",
+        "write",
+        "write_file",
+        "edit",
+        "multiedit",
+        "notebookedit",
+        "apply_patch",
+    }:
         return None
     path = next(
         (
@@ -657,7 +681,12 @@ _TEST_COMMAND = re.compile(
 
 
 def _is_test_invocation(name: object, tool_input: object) -> bool:
-    if not isinstance(name, str) or name.lower() not in {"bash", "execute", "shell"}:
+    if not isinstance(name, str) or name.lower() not in {
+        "bash",
+        "execute",
+        "shell",
+        "exec_command",
+    }:
         return False
     if not isinstance(tool_input, dict):
         return False
@@ -1820,10 +1849,51 @@ def _committed_record(
     return matches[0] if matches else None
 
 
+def _codex_pointer_value(pointer: Mapping, value: Mapping) -> object:
+    payload = value.get("payload")
+    if not isinstance(payload, dict):
+        raise ResolutionIntegrityError("resolved record is missing the pointed-to structure")
+    if pointer["field"] == "content-block-text":
+        content = payload.get("content")
+        block_index = pointer["block_index"]
+        if (
+            payload.get("type") != "message"
+            or payload.get("role") != "assistant"
+            or not isinstance(content, list)
+            or block_index >= len(content)
+        ):
+            raise ResolutionIntegrityError("resolved content block is unavailable")
+        block = content[block_index]
+        target = (
+            block.get("text")
+            if isinstance(block, dict) and block.get("type") == "output_text"
+            else None
+        )
+        if not isinstance(target, str) or pointer["end"] > len(target):
+            raise ResolutionIntegrityError("resolved pointer coordinates are invalid")
+        return target[pointer["start"] : pointer["end"]]
+    if pointer["field"] != "tool-input" or pointer["block_index"] != 0:
+        raise ResolutionIntegrityError("resolved tool input is unavailable")
+    item_type = payload.get("type")
+    fields = {
+        "function_call": "arguments",
+        "custom_tool_call": "input",
+        "local_shell_call": "action",
+        "tool_search_call": "arguments",
+        "web_search_call": "action",
+    }
+    field = fields.get(item_type)
+    if field is None or field not in payload:
+        raise ResolutionIntegrityError("resolved tool input is unavailable")
+    return payload[field]
+
+
 def _pointer_value(pointer: Mapping, raw: bytes) -> object:
     value = _json_object(raw)
     if value is None:
         raise ResolutionIntegrityError("resolved record is not valid structured data")
+    if value.get("type") == "response_item":
+        return _codex_pointer_value(pointer, value)
     if value.get("type") != "assistant":
         raise ResolutionIntegrityError("resolved record has ineligible authorship")
     message = value.get("message")
@@ -1869,7 +1939,7 @@ def resolve_content_pointer(
     live_records: Sequence[ResolutionRecord] | None = None,
     archive_records: Sequence[ResolutionRecord] | None = None,
 ) -> ContentResolution:
-    """Resolve a Claude transcript pointer live-first, then verified A9.
+    """Resolve a supported transcript pointer live-first, then verified A9.
 
     Live and archive nonce layouts are independent because the live harness
     may already have pruned a prefix. Missing both authorities is honest

@@ -25,6 +25,21 @@ The directories are mode 0700 and the artifact is mode 0600. The store refuses
 symlinks, hard-linked artifacts, loose existing permissions, non-canonical
 bytes, and content-address mismatches.
 
+## Transcript adapters
+
+Claude Code and Codex are sibling pure adapters over the same verified-record
+input and normalized-corpus contract. Both use the same schema version,
+authorship policy, task-episode stitcher, event commitment domains, validator,
+private A8 store, and honest UNKNOWN coverage semantics.
+
+The Codex v1 adapter recognizes durable rollout envelopes for session metadata,
+turn context, response items, event messages, and compaction. It maps observed
+message, tool, model/provider/effort, token, and lifecycle structure only where
+the rollout carries it. Missing or unsupported fields stay absent or increment
+coverage; they are never zero-filled or inferred. Agent text and tool inputs
+may receive commitment-bound pointers. Human text, tool results, compaction
+summaries, and ambiguous records remain shape-only and receive no pointer.
+
 ## What a pointer means
 
 A transcript pointer names a field and carries the salted commitment of its
@@ -73,7 +88,7 @@ admits no records produces a valid manifest-only commitment.
 
 ## Owner-supervised ingestion
 
-The pure adapter accepts records that an I/O layer has already authenticated
+Each pure adapter accepts records that an I/O layer has already authenticated
 against capture commitments. The trusted loader takes a consistent snapshot
 under the capture lock, selects the latest committed Claude rows, verifies the
 A9 bytes against their A2 nonces and A3 roots, and only then constructs parser
@@ -90,3 +105,8 @@ It stores the content-opaque A8 artifact privately and prints aggregate counts,
 coverage, the corpus commitment, and an artifact digest only. It never prints a
 source path, filename, session identifier, nonce, raw record, or resolved field.
 Real corpus verification remains owner-supervised and never becomes a fixture.
+
+The supervised loader currently admits Claude rows only. Production Codex
+discovery and loading remain a separate capture-adapter task; MYB-10.18 adds no
+ambient access to Codex rollout directories. Codex adapter validation uses
+seeded synthetic rollout-v1 records and the same two-process determinism gate.
