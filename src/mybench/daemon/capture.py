@@ -21,8 +21,6 @@ content, session ids, or watched paths/filenames (invariant #1).
 from __future__ import annotations
 
 import fcntl
-import hashlib
-import hmac
 import logging
 import os
 import stat
@@ -33,6 +31,8 @@ from pathlib import Path
 
 from mybench import archive as archive_store
 from mybench import commitments, nonces, paths
+from mybench.capture_identity import session_id_for_path
+from mybench.hooks import lifecycle
 from mybench.ledger import Ledger
 
 log = logging.getLogger("mybench.daemon")
@@ -158,9 +158,12 @@ def session_id_for(f: Path, watch: WatchSpec, scope_key: bytes) -> str:
     (ADR-0002 §4 amendment, 2026-07-08) disambiguates every file while
     keeping readable path components out of the id.
     """
-    rel = f.relative_to(watch.path).as_posix()
-    tag = hmac.new(scope_key, f"{watch.source}:{rel}".encode(), hashlib.sha256).hexdigest()[:16]
-    return f"{f.stem[:40]}-{tag}"
+    return session_id_for_path(
+        f,
+        watch_root=watch.path,
+        source=watch.source,
+        scope_key=scope_key,
+    )
 
 
 def _complete_lines(data: bytes) -> list[bytes]:
@@ -209,6 +212,14 @@ class Daemon:
         recovered = self.ledger.recover()
         if recovered:
             log.warning("recovered torn ledger tail (event=torn_tail bytes=%d)", recovered)
+        try:
+            lifecycle_appended = lifecycle.flush_queue(self.ledger)
+        except Exception as exc:  # noqa: BLE001 — queue trouble cannot stop transcript capture
+            log.error(
+                "lifecycle queue flush failed (event=lifecycle_queue_error type=%s)",
+                type(exc).__name__,
+            )
+            lifecycle_appended = 0
         scope_key = paths.ensure_session_scope_key()
         # Items covered by an existing row, per session. Capture reconciles
         # against THIS, not the nonce store: a crash between nonce writes and
@@ -220,7 +231,8 @@ class Daemon:
                 previous = covered.get(row["session_id"])
                 if previous is None or row["item_count"] >= previous["item_count"]:
                     covered[row["session_id"]] = row
-        appended = sessions_seen = archive_covered = archive_failed = archive_bytes = 0
+        appended = lifecycle_appended
+        sessions_seen = archive_covered = archive_failed = archive_bytes = 0
         for watch in self.config.watches:
             if watch.path.is_symlink():
                 log.error("symlinked watch dir rejected (event=watch_symlink); skipping")

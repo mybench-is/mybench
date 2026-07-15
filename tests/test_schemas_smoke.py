@@ -110,6 +110,30 @@ def test_synthetic_ledger_rows_validate():
     jsonschema.validate(session, schema)
 
 
+def test_schema_v2_lifecycle_row_is_closed_and_v1_stays_frozen():
+    schema = _schema("ledger_entry.schema.json")
+    event = {
+        "schema_version": "2",
+        "i": 1,
+        "type": "event",
+        "ts": "2026-07-15T20:00:00Z",
+        "prev": "a" * 64,
+        "h": "b" * 64,
+        "event_kind": "compact_pre",
+        "trigger": "manual",
+        "session_id": "synthetic-session-a1",
+        "context_gen": 1,
+        "harness": "claude-code",
+    }
+    jsonschema.validate(event, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**event, "custom_instructions": "must never fit"}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**event, "schema_version": "1"}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**event, "trigger": "startup"}, schema)
+
+
 def test_ledger_schema_rejects_content_shaped_fields():
     schema = _schema("ledger_entry.schema.json")
     bad = {

@@ -9,7 +9,7 @@ trailing write therefore fails JSON parsing or the ``h`` recomputation and is
 reported as :class:`TornTailError`, distinct from corruption elsewhere.
 
 Rows are metadata only. The schema (``schemas/ledger_entry.schema.json``,
-version "1", ``additionalProperties: false``) is enforced on write AND read,
+versions "1" and "2", ``additionalProperties: false``) is enforced on write AND read,
 making content/filename fields structurally impossible (invariant #1).
 
 Writers serialize on ``<ledger>.lock`` (MYB-3.7): the read-tip → append pair
@@ -37,6 +37,7 @@ from mybench.schemas import load_validator
 DOMAIN_ROW = b"mybench:v1:ledgerrow"
 GENESIS_PREV = "0" * 64
 SCHEMA_VERSION = "1"
+EVENT_SCHEMA_VERSION = "2"
 _FILE_MODE = 0o600
 _LOOSE_BITS = 0o077
 
@@ -309,3 +310,77 @@ class Ledger:
                     "repo_id": repo_id,
                 }
             )
+
+    def append_event(
+        self,
+        *,
+        event_kind: str,
+        trigger: str,
+        session_id: str,
+        context_gen: int,
+        harness: str,
+        ts: str | None = None,
+        parent_session_id: str | None = None,
+        harness_version: str | None = None,
+        model: str | None = None,
+        effort: str | None = None,
+        repo_id: str | None = None,
+        worktree_id: str | None = None,
+        head_before: str | None = None,
+        head_after: str | None = None,
+    ) -> dict | None:
+        """Append one capture-time observation, idempotently (ADR-0013).
+
+        The replay key is exactly ``(session_id, event_kind, ts)``.  The
+        read-tip, duplicate check, and append share the writer lock, so two
+        scan processes cannot race a replay into duplicate rows.
+        """
+        if self.path == paths.ledger_dir() / "ledger.jsonl":
+            paths.ensure_data_dir()
+        ts = ts if ts is not None else _utc_now()
+        with self._writer_lock():
+            existing = self.rows()
+            if any(
+                row["type"] == "event"
+                and row["session_id"] == session_id
+                and row["event_kind"] == event_kind
+                and row["ts"] == ts
+                for row in existing
+            ):
+                return None
+            if not existing:
+                existing = [
+                    self._append_row(
+                        {
+                            "schema_version": SCHEMA_VERSION,
+                            "i": 0,
+                            "type": "genesis",
+                            "ts": ts,
+                            "prev": GENESIS_PREV,
+                        }
+                    )
+                ]
+            row = {
+                "schema_version": EVENT_SCHEMA_VERSION,
+                "i": existing[-1]["i"] + 1,
+                "type": "event",
+                "ts": ts,
+                "prev": existing[-1]["h"],
+                "event_kind": event_kind,
+                "trigger": trigger,
+                "session_id": session_id,
+                "context_gen": context_gen,
+                "harness": harness,
+            }
+            optional = {
+                "parent_session_id": parent_session_id,
+                "harness_version": harness_version,
+                "model": model,
+                "effort": effort,
+                "repo_id": repo_id,
+                "worktree_id": worktree_id,
+                "head_before": head_before,
+                "head_after": head_after,
+            }
+            row.update({key: value for key, value in optional.items() if value is not None})
+            return self._append_row(row)
