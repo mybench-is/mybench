@@ -10,7 +10,9 @@ ever blocking the developer's harness.
 - Claude lifecycle capture is activated per machine by explicit user-settings
   install. Raw hook JSON is reduced in memory to a closed tuple, queued under
   the private data dir, then flushed by the normal scan into hash-chained event
-  rows. It never implies publication. See
+  rows. Start/end boundaries add only keyed-HMAC repo/worktree ids and the
+  observed Git HEAD from a timeout-bounded probe; raw cwd, branch, remote, and
+  Git paths are discarded. It never implies publication. See
   [`docs/claude-lifecycle-hooks.md`](../../../docs/claude-lifecycle-hooks.md).
 
 See `../../../../mybench-ops/decisions/ADR-0001-workspace-structure.md` and
