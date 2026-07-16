@@ -6,7 +6,7 @@ check to run, and an unambiguous pass criterion. Execution against the real
 deployment is MYB-4.4 (owner sitting; findings recorded in mybench-ops with
 metadata-level notes only — never paste suspect content into findings).
 
-**Estimated total time: 45–60 minutes** in one sitting. Run everything from
+**Estimated total time: 50–65 minutes** in one sitting. Run everything from
 the mybench repo root with `V=.venv/bin/python`. `DD=~/.local/share/mybench`.
 
 ## Write-site → surface completeness mapping (AC #2)
@@ -21,6 +21,7 @@ maps to a surface below:
 | `nonces.py` | per-session nonce file append | S3 |
 | `ledger.py` | ledger row append; quarantine write + truncate | S4 |
 | `daemon/capture.py` | none directly (writes via nonces/ledger); log records | S5 |
+| `scan_config.py` | confirmed source/exclusion config, atomically replaced | S16 |
 | `hooks/binding.py` | hook file into enrolled repo's .git/hooks; hooks.log | S6, S5 |
 | `hooks/lifecycle.py` | whitelisted tuple queue; failure counter; hooks.log; explicit user-settings install/uninstall | S15, S5 |
 | `anchor/ots.py` | HTTP POST/GET to calendars; staged artifact + proof files | S7, S8 |
@@ -202,6 +203,27 @@ rather than by the `src/mybench` grep.
   flush/replay/crash recovery; config round-trips with unrelated settings and
   hooks unchanged; handlers are async with a one-second timeout; no publication
   state is touched.
+
+### S16 — Confirmed source-discovery scan config
+- **Risk:** scanning begins before informed consent; an excluded tree is
+  entered; confirmed local paths escape the private data dir through logs,
+  reports, CI output, or an accidental repo copy; config permissions expose
+  the owner's source layout.
+- **Check:** `$V -m pytest tests/test_scan_config.py -q`; then inspect metadata
+  without printing paths:
+  `$V -c "import stat; from mybench import paths; from mybench.scan_config import load; c=load(); p=paths.scan_config_path(); print(oct(stat.S_IMODE(p.stat().st_mode)), len(c.watches), len(c.repos), len(c.exclusions))"`.
+  Confirm `git -C /srv/agents/typer/repos/mybench status --porcelain` shows no
+  `scan-config.json`. Run a proposal locally and verify every proposed path is
+  shown before confirmation; decline it and verify the config mtime is
+  unchanged.
+- **Pass:** proposal-only and decline modes write nothing; an accepted config
+  is a single regular, unlinked 0600 file under the 0700 data dir and validates
+  against the closed schema; Git discovery has only explicit roots; tests
+  prove excluded directories are pruned before `scandir` and both unified scan
+  and daemon honor the same persisted exclusions. Full paths appear only in
+  the explicit local consent proposal and the private config—never in daemon
+  logs, report artifacts, CI summaries, or publication surfaces. Synthetic
+  negative leak scans pass and the repo-copy firing test fails as intended.
 
 ## Failure protocol (MYB-4.4)
 

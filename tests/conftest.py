@@ -21,6 +21,7 @@ FORBIDDEN_BASENAMES = {
     "identity.pub",
     "ledger.db",
     "log-signing",
+    "scan-config.json",
     "session-scope.key",
 }
 FORBIDDEN_DIRNAMES = {"archive", "nonces", "normalized", "queue", "reports"}

@@ -10,6 +10,7 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     normalized/   content-free normalized artifacts   — asset A8
     archive/      byte-exact transcript preimages     — asset A9
     reports/      private local report artifacts       — asset A10
+    scan-config.json confirmed local scan locations (0600)
     queue/        whitelisted hook tuples (0600)       — asset A3 ingress
     capture.lock  whole-scan daemon flock (0600)
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
@@ -99,6 +100,11 @@ def archive_dir() -> Path:
 def reports_dir() -> Path:
     """A10 root: private local reports that are never published implicitly."""
     return data_dir() / "reports"
+
+
+def scan_config_path() -> Path:
+    """Confirmed local source locations and exclusions (0600, private)."""
+    return data_dir() / "scan-config.json"
 
 
 def report_dir(report_id: str) -> Path:
