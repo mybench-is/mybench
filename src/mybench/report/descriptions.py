@@ -17,6 +17,14 @@ INTRO = (
 )
 
 METRIC_DESCRIPTIONS = {
+    "anchor_chain_continuity": (
+        "Whether the private ledger hash chain verifies and every supplied "
+        "anchor range is contiguous with a matching covered-row chain tip."
+    ),
+    "anchor_latency_distribution": (
+        "How long covered ledger rows waited for the first successful "
+        "OpenTimestamps calendar response, shown only in coarse time buckets."
+    ),
     "anchored_span_days": (
         "Days between the first and latest public anchor — how long this "
         "publicly verifiable timeline has existed. Needs no trust in the author."
@@ -53,6 +61,10 @@ METRIC_DESCRIPTIONS = {
         "commits made while mybench was recording, each carrying a "
         "tamper-evident link into the attested timeline. 1.0 means every "
         "commit since enrollment."
+    ),
+    "evidence_provenance_split": (
+        "Share of ledger rows captured in the first anchor (IMPORTED), covered "
+        "by later anchors (LIVE), measured across anchored rows only."
     ),
 }
 

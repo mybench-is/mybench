@@ -15,8 +15,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mybench.anchor.publish import staged_files
-from mybench.ledger import Ledger
+from mybench import paths
+from mybench.anchor.event import EventError, verify_event
+from mybench.anchor.publish import EVENT_RE, staged_files
+from mybench.ledger import Ledger, LedgerError
 from mybench.schemas import load_validator
 from mybench.scorer.score import ScoreError, score
 
@@ -38,6 +40,37 @@ def _repo_facts(path: Path) -> dict:
     rev_range = f"{marker_added}~1..HEAD" if has_parent else "HEAD"
     commits = git("rev-list", rev_range).splitlines()
     return {"tip": git("rev-parse", "HEAD"), "commits": commits}
+
+
+def _anchor_events() -> list[dict]:
+    """Load date-only events from private staging plus the local published clone."""
+    by_path: dict[str, bytes] = {}
+    candidates = list(staged_files())
+    clone = paths.data_dir() / "anchors-repo"
+    if clone.is_dir():
+        candidates.extend(
+            (path, path.relative_to(clone).as_posix())
+            for path in sorted((clone / "anchors").rglob("*.json"))
+        )
+    for path, relative in candidates:
+        if not EVENT_RE.match(relative):
+            continue
+        encoded = path.read_bytes()
+        if relative in by_path and by_path[relative] != encoded:
+            raise ScoreError(f"conflicting staged/published anchor event: {relative}")
+        by_path[relative] = encoded
+    events = []
+    for relative in sorted(by_path):
+        try:
+            event = json.loads(by_path[relative])
+            verify_event(event)
+        except (EventError, ValueError) as exc:
+            raise ScoreError(f"invalid anchor event {relative}: {exc}") from exc
+        expected = f"anchors/{event['identity_id']}/{event['date'].replace('-', '/')}.json"
+        if relative != expected:
+            raise ScoreError(f"anchor event path does not match identity/date: {relative}")
+        events.append(event)
+    return events
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,10 +97,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", help="write report here (default: stdout)")
     args = parser.parse_args(argv)
 
-    rows = Ledger().rows()
-    batches = [
-        json.loads(f.read_bytes()) for f in staged_files() if f.suffix == ".json"
-    ]
     enrolled = {}
     for spec in args.enrolled_repo:
         name, _, path = spec.partition("=")
@@ -82,14 +111,18 @@ def main(argv: list[str] | None = None) -> int:
     for name in args.public:
         enrolled[name]["public"] = True
     try:
+        ledger = Ledger()
+        ledger.verify_chain()
+        rows = ledger.rows()
+        anchors = _anchor_events()
         report_bytes = score(
             rows,
-            batches,
+            anchors,
             generated_at=args.generated_at,
             report_version=args.report_version,
             enrolled=enrolled or None,
         )
-    except ScoreError as exc:
+    except (LedgerError, ScoreError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     report = json.loads(report_bytes)

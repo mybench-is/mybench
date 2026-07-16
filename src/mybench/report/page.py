@@ -91,7 +91,9 @@ def _esc(value) -> str:
 
 def _pretty_bucket(label: str) -> str:
     """Strip the sortable zero-padding for humans: 0011-0100 -> 11-100."""
-    return re.sub(r"\b0+(\d)", r"\1", label)
+    if re.match(r"^\d{2}_", label):
+        label = label[3:]
+    return re.sub(r"\b0+(\d)", r"\1", label).replace("_", " ")
 
 
 def _badge(tier: str) -> str:
@@ -99,6 +101,8 @@ def _badge(tier: str) -> str:
 
 
 def _value_html(value) -> str:
+    if isinstance(value, bool):
+        return f"<strong>{'yes' if value else 'no'}</strong>"
     if isinstance(value, int | float):
         return f"<strong>{_esc(value)}</strong>"
     rows = "".join(
@@ -166,6 +170,20 @@ def render_page(report: dict, *, anchors_url: str = f"{ROOT_URL}/anchors",
         )
 
     who = f"@{_esc(handle)} · " if handle else ""
+    input_versions = report.get("input_schema_versions", {})
+    ledger_versions = "/".join(input_versions.get("ledger", ())) or "none"
+    anchor_versions = "/".join(input_versions.get("anchor", ())) or "none"
+    input_version_html = ""
+    if input_versions:
+        input_version_html = (
+            f" · input schemas ledger {_esc(ledger_versions)}, anchor {_esc(anchor_versions)}"
+        )
+    anchored_through = report.get("anchored_through")
+    freshness_html = (
+        f'<p class="sub">anchored through {_esc(anchored_through)}</p>'
+        if anchored_through
+        else '<p class="sub">not yet anchored</p>'
+    )
     canonical = ""
     og_url = ROOT_URL
     if handle:
@@ -187,7 +205,8 @@ def render_page(report: dict, *, anchors_url: str = f"{ROOT_URL}/anchors",
 <h1>{STAMP_SVG}mybench activity report</h1>
 <p class="sub">{who}report {_esc(report["report_version"])} · schema {_esc(report["schema_version"])}
 · scorer {_esc(report["scorer_version"])} · generated {_esc(report["generated_at"])}
-· <a href="{_esc(report_json_href)}">machine-readable report</a></p>
+{input_version_html} · <a href="{_esc(report_json_href)}">machine-readable report</a></p>
+{freshness_html}
 <p>{_esc(INTRO)}</p>
 <p class="caveat">{_esc(report.get("backfill_note", ""))}</p>
 <h2>Metrics</h2>
