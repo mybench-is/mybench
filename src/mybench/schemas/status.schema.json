@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v1/status.schema.json",
+  "title": "Local mybench status summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "health",
+    "exit_code",
+    "data_dir",
+    "keys",
+    "ledger",
+    "scan",
+    "anchors",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "command": {"const": "status"},
+    "health": {"enum": ["healthy", "attention", "error"]},
+    "exit_code": {"enum": [0, 1]},
+    "data_dir": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {"enum": ["absent", "private", "insecure"]}
+      }
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected", "ready", "roles"],
+      "properties": {
+        "expected": {"const": 4},
+        "ready": {"type": "integer", "minimum": 0, "maximum": 4},
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit_signing", "device", "identity", "session_scope"],
+          "properties": {
+            "commit_signing": {"$ref": "#/$defs/key_state"},
+            "device": {"$ref": "#/$defs/key_state"},
+            "identity": {"$ref": "#/$defs/key_state"},
+            "session_scope": {"$ref": "#/$defs/key_state"}
+          }
+        }
+      }
+    },
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "rows"],
+      "properties": {
+        "state": {"enum": ["absent", "valid", "invalid"]},
+        "rows": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_state",
+        "receipt_state",
+        "last_successful_at",
+        "stale",
+        "stale_after_days",
+        "watches",
+        "repos",
+        "exclusions",
+        "unmapped_enrollments"
+      ],
+      "properties": {
+        "config_state": {"enum": ["absent", "valid", "invalid"]},
+        "receipt_state": {"enum": ["absent", "valid", "invalid"]},
+        "last_successful_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "stale": {"type": "boolean"},
+        "stale_after_days": {"const": 7},
+        "watches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "source", "state", "last_scanned_at"],
+            "properties": {
+              "path": {"$ref": "#/$defs/path"},
+              "source": {"enum": ["claude-code", "codex"]},
+              "state": {"enum": ["present", "missing", "symlink"]},
+              "last_scanned_at": {"$ref": "#/$defs/nullable_timestamp"}
+            }
+          }
+        },
+        "repos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "state", "last_scanned_at", "unbound_commits"],
+            "properties": {
+              "path": {"$ref": "#/$defs/path"},
+              "state": {
+                "enum": ["ready", "missing", "not_repo", "not_enrolled", "invalid"]
+              },
+              "last_scanned_at": {"$ref": "#/$defs/nullable_timestamp"},
+              "unbound_commits": {
+                "oneOf": [
+                  {"type": "integer", "minimum": 0},
+                  {"type": "null"}
+                ]
+              }
+            }
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000-\\u001f]+$"
+          }
+        },
+        "unmapped_enrollments": {"type": "integer", "minimum": 0}
+      }
+    },
+    "anchors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anchored_through", "proofs"],
+      "properties": {
+        "anchored_through": {
+          "oneOf": [
+            {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+            {"type": "null"}
+          ]
+        },
+        "proofs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["confirmed", "pending", "invalid"],
+          "properties": {
+            "confirmed": {"type": "integer", "minimum": 0},
+            "pending": {"type": "integer", "minimum": 0},
+            "invalid": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "data_tree_insecure",
+          "enrollment_invalid",
+          "enrollment_unmapped",
+          "internal_error",
+          "keys_missing",
+          "ledger_invalid",
+          "not_initialized",
+          "proof_invalid",
+          "proof_pending",
+          "repo_not_enrolled",
+          "repo_unavailable",
+          "scan_config_invalid",
+          "scan_never_completed",
+          "scan_receipt_invalid",
+          "scan_stale",
+          "source_missing",
+          "unbound_commits"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "key_state": {"enum": ["present", "missing", "insecure"]},
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^/[^\\u0000-\\u001f]*$"
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 20,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "nullable_timestamp": {
+      "oneOf": [
+        {"$ref": "#/$defs/timestamp"},
+        {"type": "null"}
+      ]
+    }
+  }
+}

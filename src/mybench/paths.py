@@ -11,6 +11,8 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     archive/      byte-exact transcript preimages     — asset A9
     reports/      private local report artifacts       — asset A10
     scan-config.json confirmed local scan locations (0600)
+    scan-health.json successful scan times + opaque source ids (0600)
+    scan-health.lock serializes health receipt replacement (0600)
     queue/        whitelisted hook tuples (0600)       — asset A3 ingress
     capture.lock  whole-scan daemon flock (0600)
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
@@ -105,6 +107,16 @@ def reports_dir() -> Path:
 def scan_config_path() -> Path:
     """Confirmed local source locations and exclusions (0600, private)."""
     return data_dir() / "scan-config.json"
+
+
+def scan_health_path() -> Path:
+    """Successful-scan receipt with opaque location fingerprints (0600)."""
+    return data_dir() / "scan-health.json"
+
+
+def scan_health_lock_path() -> Path:
+    """Writer lock for atomic scan-health receipt updates (0600)."""
+    return data_dir() / "scan-health.lock"
 
 
 def report_dir(report_id: str) -> Path:

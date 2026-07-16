@@ -157,7 +157,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     _add_json(enable)
 
-    status = sub.add_parser("status", help="reserved local health summary")
+    status = sub.add_parser("status", help="read-only offline local health summary")
     _add_json(status)
 
     publish = sub.add_parser("publish", help="reserved publication surface")
@@ -366,6 +366,7 @@ def _scan(args: argparse.Namespace) -> int:
         from mybench.daemon.capture import Daemon, DaemonConfig, default_config
         from mybench.hooks.binding import reconcile
         from mybench.scan_config import load
+        from mybench.scan_health import record_full_success
 
         stored = load()
         if args.watch:
@@ -384,13 +385,16 @@ def _scan(args: argparse.Namespace) -> int:
                 archive_enabled=args.archive,
                 exclusions=exclusions,
             )
-            rows = Daemon(config).scan_once()
+            # Unified scan records one completion only after capture, repo
+            # reconciliation, and any explicit proof upgrade all succeed.
+            rows = Daemon(config).scan_once(record_health=False)
         else:
             config = None
             rows = 0
         repos = args.repo or ([str(repo) for repo in stored.repos] if stored else [str(Path.cwd())])
         bindings = sum(reconcile(Path(repo)) for repo in repos)
         proofs, confirmed = _upgrade_proofs() if args.upgrade else (0, 0)
+        record_full_success(watches, repos)
     except Exception:  # noqa: BLE001 - source paths and internals are a leak surface
         return _failed("scan", as_json=args.json)
     payload = {
@@ -548,6 +552,20 @@ def _capture_enable(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _status(args: argparse.Namespace) -> int:
+    from mybench.status import collect, failure, render
+
+    try:
+        result = collect()
+    except Exception:  # noqa: BLE001 - status failures must remain path/content-free
+        result = failure()
+    if args.json:
+        print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    else:
+        print(render(result))
+    return result["exit_code"]
+
+
 def _verify(args: argparse.Namespace) -> int:
     try:
         from mybench.verify.cli import verify_anchors
@@ -581,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "capture":
         return _capture_enable(args)
     if args.command == "status":
-        return _unavailable("status", as_json=args.json)
+        return _status(args)
     if args.command == "publish":
         return _unavailable("publish --preview" if args.preview else "publish", as_json=args.json)
     return _verify(args)
