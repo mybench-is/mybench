@@ -1,4 +1,4 @@
-"""Deterministic, content-opaque Claude and Codex normalization."""
+"""Deterministic, content-opaque Claude, Codex, and Git normalization."""
 
 from mybench.normalizer.claude import (
     CLAUDE_ADAPTER_VERSION,
@@ -20,11 +20,23 @@ from mybench.normalizer.contract import (
     validate_corpus_artifact,
 )
 from mybench.normalizer.codex import CODEX_ADAPTER_VERSION, normalize_codex
+from mybench.normalizer.repo import (
+    GIT_ADAPTER_VERSION,
+    REPO_NORMALIZER_VERSION,
+    CommitEvidence,
+    RefEvidence,
+    RepoTarget,
+    VerifiedRepoSnapshot,
+    WorktreeEvidence,
+    normalize_repo_evidence,
+    validate_repo_corpus_artifact,
+)
 
 __all__ = [
     "AUTHORSHIP_POLICY_VERSION",
     "CLAUDE_ADAPTER_VERSION",
     "CODEX_ADAPTER_VERSION",
+    "CommitEvidence",
     "ContentResolution",
     "EPISODE_STITCHER_VERSION",
     "NORMALIZER_VERSION",
@@ -32,11 +44,19 @@ __all__ = [
     "NormalizationError",
     "ResolutionIntegrityError",
     "ResolutionRecord",
+    "GIT_ADAPTER_VERSION",
+    "REPO_NORMALIZER_VERSION",
+    "RefEvidence",
+    "RepoTarget",
     "VerifiedRecord",
+    "VerifiedRepoSnapshot",
     "VerifiedSession",
+    "WorktreeEvidence",
     "normalize_claude",
     "normalize_codex",
+    "normalize_repo_evidence",
     "resolve_content_pointer",
     "resolution_coverage",
     "validate_corpus_artifact",
+    "validate_repo_corpus_artifact",
 ]

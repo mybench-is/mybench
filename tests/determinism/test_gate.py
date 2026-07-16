@@ -99,6 +99,29 @@ def test_codex_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_path)
     )
 
 
+def test_git_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_path):
+    from tests.normalizer.repo_synthetic import synthetic_repo_evidence_input
+
+    stage = next(stage for stage in STAGES if stage.name == "git-normalized-corpus")
+    artifact = _run_once(
+        stage,
+        {
+            "PYTHONHASHSEED": "505",
+            "TZ": "Pacific/Auckland",
+            "LC_ALL": "C.UTF-8",
+            "LANG": "C.UTF-8",
+            "MYBENCH_DETERMINISM_SENTINEL": "git-privacy-run",
+        },
+        tmp_path,
+        1,
+    )
+    artifact_path = tmp_path / stage.name / "run-1" / "artifact.bin"
+    assert artifact_path.read_bytes() == artifact
+    assert assert_no_canaries([artifact_path], list(synthetic_repo_evidence_input().canaries)) == 1
+    data_root = tmp_path / stage.name / "run-1" / "data" / "mybench"
+    assert not any((data_root / name).exists() for name in ("normalized", "ledger", "anchors"))
+
+
 def test_manifest_runner_registration_and_current_discovery_are_exact():
     validate_registration()
     assert {stage.name for stage in STAGES} == set(RUNNERS)
@@ -106,6 +129,7 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
     assert discover_pipeline_modules() == {
         "mybench.normalizer.codex",
         "mybench.normalizer.claude",
+        "mybench.normalizer.repo",
         "mybench.report.page",
         "mybench.scorer.score",
     }
