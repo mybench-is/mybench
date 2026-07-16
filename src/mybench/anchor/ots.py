@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import io
 import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from opentimestamps.core.notary import BitcoinBlockHeaderAttestation, PendingAttestation
@@ -50,6 +53,24 @@ class OtsError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class StampResult:
+    """A pending proof plus the private first-successful-response observation."""
+
+    proof: bytes
+    receipt_ts: str
+
+
+def _clock_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _utc_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+        raise OtsError("receipt clock must return a UTC-aware datetime")
+    return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
 def _http(url: str, data: bytes | None = None, timeout: float = 15.0) -> bytes:
     req = urllib.request.Request(url, data=data, headers=_HEADERS)
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — caller pins URLs
@@ -62,24 +83,46 @@ def _subs(ts: Timestamp):
         yield from _subs(sub)
 
 
-def stamp_root(root: bytes, calendars=DEFAULT_CALENDARS, timeout: float = 15.0) -> bytes:
-    """Submit the root digest to calendars; return serialized pending .ots proof."""
+def stamp_root_observed(
+    root: bytes,
+    calendars=DEFAULT_CALENDARS,
+    timeout: float = 15.0,
+    *,
+    clock: Callable[[], datetime] = _clock_now,
+) -> StampResult:
+    """Stamp a root and remember the first successfully merged response time.
+
+    Calendars remain sequential and best-effort.  The clock is sampled exactly
+    once, immediately after the first response successfully deserializes and
+    merges; later attempts cannot move the observation.
+    """
     if len(root) != 32:
         raise OtsError(f"root must be a 32-byte digest, got {len(root)} bytes")
     ts = Timestamp(root)
     failures = []
-    for calendar in calendars:
+    receipt_ts = None
+    for attempt, calendar in enumerate(calendars, start=1):
         try:
             resp = _http(calendar.rstrip("/") + "/digest", data=root, timeout=timeout)
             ts.merge(Timestamp.deserialize(BytesDeserializationContext(resp), root))
         except Exception as exc:  # noqa: BLE001 — any one calendar may be down
-            failures.append(f"{calendar}: {type(exc).__name__}")
+            failures.append(f"attempt {attempt}: {type(exc).__name__}")
+            continue
+        if receipt_ts is None:
+            receipt_ts = _utc_timestamp(clock())
     if not ts.attestations and not ts.ops:
         raise OtsError("no calendar accepted the digest — " + "; ".join(failures))
+    if receipt_ts is None:  # defensive: a merged response must have sampled the clock
+        raise OtsError("calendar proof was created without a receipt observation")
     dtf = DetachedTimestampFile(OpSHA256(), ts)
     ctx = BytesSerializationContext()
     dtf.serialize(ctx)
-    return ctx.getbytes()
+    return StampResult(ctx.getbytes(), receipt_ts)
+
+
+def stamp_root(root: bytes, calendars=DEFAULT_CALENDARS, timeout: float = 15.0) -> bytes:
+    """Submit the root digest to calendars; return serialized pending .ots proof."""
+    return stamp_root_observed(root, calendars, timeout).proof
 
 
 def upgrade_proof(ots_bytes: bytes, timeout: float = 15.0) -> tuple[bytes, bool]:
