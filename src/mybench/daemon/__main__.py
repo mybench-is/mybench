@@ -1,8 +1,8 @@
 """Run the capture daemon: ``python -m mybench.daemon --watch DIR:SOURCE …``.
 
 Owner entry point and the subprocess target for the MYB-2.6 crash-recovery
-harness. Watches are always explicit (see capture.default_config for the
-owner's real-location shortcut, which is refused in test mode).
+harness. Watches come from explicit arguments or the consented private scan
+config; there is no implicit home-directory discovery here.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from mybench.daemon.capture import Daemon, DaemonConfig, WatchSpec
+from mybench.scan_config import load
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--watch",
         action="append",
-        required=True,
+        default=[],
         metavar="DIR:SOURCE",
         help="transcript dir and source kind (repeatable)",
     )
@@ -38,11 +39,27 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+    try:
+        stored = load()
+    except Exception:  # noqa: BLE001 - never echo a private config path/value
+        parser.error("private scan config could not be loaded")
     watches = []
     for spec in args.watch:
-        directory, _, source = spec.rpartition(":")
+        directory, separator, source = spec.rpartition(":")
+        if not separator or not directory or not source:
+            parser.error("invalid --watch; expected DIR:SOURCE")
         watches.append(WatchSpec(Path(directory), source))
-    daemon = Daemon(DaemonConfig(watches=tuple(watches), archive_enabled=args.archive))
+    if not watches:
+        if stored is None or not stored.watches:
+            parser.error("no watches configured; pass --watch or accept discovery proposals")
+        watches = list(stored.watches)
+    daemon = Daemon(
+        DaemonConfig(
+            watches=tuple(watches),
+            archive_enabled=args.archive,
+            exclusions=stored.exclusions if stored is not None else (),
+        )
+    )
     if args.once:
         daemon.scan_once()
     else:

@@ -75,10 +75,16 @@ class WatchSpec:
 class DaemonConfig:
     watches: tuple[WatchSpec, ...]
     archive_enabled: bool = False
+    exclusions: tuple[str, ...] = ()
 
     def __post_init__(self):
         if type(self.archive_enabled) is not bool:
             raise ConfigError("archive_enabled must be an explicit boolean")
+        if not isinstance(self.exclusions, tuple) or any(
+            not isinstance(pattern, str) or not pattern or "\x00" in pattern
+            for pattern in self.exclusions
+        ):
+            raise ConfigError("exclusions must be non-empty path patterns")
         if not self.watches:
             raise ConfigError("daemon config needs at least one explicit watch dir")
         for w in self.watches:
@@ -149,6 +155,32 @@ def default_config() -> DaemonConfig:
     if "PYTEST_CURRENT_TEST" in os.environ:
         raise ConfigError("default_config() is forbidden in test mode — pass explicit fixture dirs")
     return DaemonConfig(watches=production_watches(Path.home()))
+
+
+def _source_files(watch: WatchSpec, exclusions: tuple[str, ...]):
+    """Yield JSONL candidates without opening excluded or symlinked directories."""
+    from mybench.scan_config import is_excluded
+
+    for directory, dirnames, filenames in os.walk(watch.path, topdown=True, followlinks=False):
+        current = Path(directory)
+        descend = []
+        candidate_dirs = []
+        for name in sorted(dirnames):
+            child = current / name
+            if is_excluded(child, exclusions, root=watch.path):
+                continue
+            if name.endswith(".jsonl"):
+                candidate_dirs.append(child)
+            elif not child.is_symlink():
+                descend.append(name)
+        dirnames[:] = descend
+        candidates = candidate_dirs + [
+            current / name
+            for name in sorted(filenames)
+            if name.endswith(".jsonl")
+            and not is_excluded(current / name, exclusions, root=watch.path)
+        ]
+        yield from sorted(candidates)
 
 
 def session_id_for(f: Path, watch: WatchSpec, scope_key: bytes) -> str:
@@ -236,6 +268,10 @@ class Daemon:
         appended = lifecycle_appended
         sessions_seen = archive_covered = archive_failed = archive_bytes = 0
         for watch in self.config.watches:
+            from mybench.scan_config import is_excluded
+
+            if is_excluded(watch.path, self.config.exclusions, root=watch.path):
+                continue
             if watch.path.is_symlink():
                 log.error("symlinked watch dir rejected (event=watch_symlink); skipping")
                 continue
@@ -243,7 +279,7 @@ class Daemon:
                 log.warning("watch dir missing (event=missing_dir); skipping")
                 continue
             watch_root = watch.path.resolve()
-            for f in sorted(watch.path.rglob("*.jsonl")):
+            for f in _source_files(watch, self.config.exclusions):
                 sessions_seen += 1
                 if f.is_symlink():
                     log.error("symlinked transcript rejected (event=source_symlink); skipping")

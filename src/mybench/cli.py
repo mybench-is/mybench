@@ -58,8 +58,31 @@ def _parser() -> argparse.ArgumentParser:
     )
     init.add_argument(
         "--detect",
-        action="store_true",
-        help="reserved for source discovery (not yet available)",
+        nargs="?",
+        const="claude,codex",
+        metavar="KINDS",
+        help="propose comma-separated sources: claude,codex,git",
+    )
+    init.add_argument(
+        "--root",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="explicit git discovery root (repeatable; required for git)",
+    )
+    decision = init.add_mutually_exclusive_group()
+    decision.add_argument(
+        "--accept-all", action="store_true", help="confirm every non-excluded proposal"
+    )
+    decision.add_argument(
+        "--decline", action="store_true", help="decline every proposal and write nothing"
+    )
+    init.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="exclude an absolute path prefix or glob (repeatable)",
     )
     _add_json(init)
 
@@ -202,8 +225,8 @@ def _failed(command: str, *, as_json: bool, error: str = "operation_failed") -> 
 
 
 def _init(args: argparse.Namespace) -> int:
-    if args.detect:
-        return _unavailable("init --detect", as_json=args.json)
+    if args.detect is not None:
+        return _init_detect(args)
     try:
         from mybench import paths
 
@@ -216,6 +239,105 @@ def _init(args: argparse.Namespace) -> int:
         return _failed("init", as_json=args.json)
     payload = {"command": "init", "keys_ready": 4, "status": "ok"}
     _emit(payload, as_json=args.json, human="mybench initialized locally (4 key roles ready)")
+    return EXIT_OK
+
+
+def _proposal_payload(proposals, exclusions: tuple[str, ...]) -> dict:
+    return {
+        "command": "init --detect",
+        "configured": False,
+        "exclusions": list(exclusions),
+        "proposals": [proposal.as_dict() for proposal in proposals],
+        "status": "proposed",
+    }
+
+
+def _emit_proposals(payload: dict, *, as_json: bool) -> None:
+    if as_json:
+        _emit(payload, as_json=True, human="")
+        return
+    print("Proposed local scan locations (no capture data has been read):")
+    if not payload["proposals"]:
+        print("  (none)")
+    for proposal in payload["proposals"]:
+        print(f"  {proposal['kind']}: {proposal['path']}")
+    if payload["exclusions"]:
+        print("Exclusions:")
+        for exclusion in payload["exclusions"]:
+            print(f"  {exclusion}")
+    print("Nothing has been configured.")
+
+
+def _init_detect(args: argparse.Namespace) -> int:
+    try:
+        from mybench import paths
+        from mybench.scan_config import (
+            ScanConfig,
+            discover,
+            parse_detect_kinds,
+            store,
+        )
+
+        kinds = parse_detect_kinds(args.detect)
+        exclusions = tuple(sorted(set(args.exclude)))
+        if any(not exclusion or "\x00" in exclusion for exclusion in exclusions):
+            raise ValueError("invalid exclusion")
+        proposals = discover(
+            kinds,
+            home=Path.home(),
+            git_roots=tuple(Path(root) for root in args.root),
+            exclusions=exclusions,
+        )
+    except Exception:  # noqa: BLE001 - discovery paths stay out of closed errors
+        return _failed("init --detect", as_json=args.json, error="discovery_failed")
+
+    payload = _proposal_payload(proposals, exclusions)
+    if args.decline:
+        payload.update({"status": "declined"})
+        _emit(
+            payload,
+            as_json=args.json,
+            human="Source proposals declined; nothing was configured.",
+        )
+        return EXIT_OK
+    if not args.accept_all:
+        _emit_proposals(payload, as_json=args.json)
+        if args.json or not sys.stdin.isatty():
+            return EXIT_OK
+        try:
+            confirmed = input("Confirm all non-excluded locations? [y/N] ").strip().lower()
+        except EOFError:
+            confirmed = ""
+        if confirmed not in {"y", "yes"}:
+            print("Source proposals declined; nothing was configured.")
+            return EXIT_OK
+
+    try:
+        paths.ensure_data_dir()
+        paths.ensure_session_scope_key()
+        paths.ensure_device_key()
+        paths.ensure_identity_key()
+        paths.ensure_commit_signing_key()
+        store(ScanConfig.from_proposals(proposals, exclusions))
+    except Exception:  # noqa: BLE001 - never relay a confirmed local path or key detail
+        return _failed("init --detect", as_json=args.json)
+    accepted = {
+        "command": "init --detect",
+        "configured": True,
+        "exclusions": len(exclusions),
+        "keys_ready": 4,
+        "repos": sum(proposal.kind == "git" for proposal in proposals),
+        "status": "ok",
+        "watches": sum(proposal.source is not None for proposal in proposals),
+    }
+    _emit(
+        accepted,
+        as_json=args.json,
+        human=(
+            f"Configured {accepted['watches']} watch(es), {accepted['repos']} repo(s), "
+            f"and {accepted['exclusions']} exclusion(s) locally."
+        ),
+    )
     return EXIT_OK
 
 
@@ -243,14 +365,30 @@ def _scan(args: argparse.Namespace) -> int:
     try:
         from mybench.daemon.capture import Daemon, DaemonConfig, default_config
         from mybench.hooks.binding import reconcile
+        from mybench.scan_config import load
 
-        watches = _watch_specs(args.watch) if args.watch else default_config().watches
-        config = DaemonConfig(watches=watches, archive_enabled=args.archive)
+        stored = load()
+        if args.watch:
+            watches = _watch_specs(args.watch)
+        elif stored is not None:
+            watches = stored.watches
+        else:
+            watches = default_config().watches
+        exclusions = stored.exclusions if stored is not None else ()
         logging.basicConfig(
             stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(message)s"
         )
-        rows = Daemon(config).scan_once()
-        repos = args.repo or [str(Path.cwd())]
+        if watches:
+            config = DaemonConfig(
+                watches=watches,
+                archive_enabled=args.archive,
+                exclusions=exclusions,
+            )
+            rows = Daemon(config).scan_once()
+        else:
+            config = None
+            rows = 0
+        repos = args.repo or ([str(repo) for repo in stored.repos] if stored else [str(Path.cwd())])
         bindings = sum(reconcile(Path(repo)) for repo in repos)
         proofs, confirmed = _upgrade_proofs() if args.upgrade else (0, 0)
     except Exception:  # noqa: BLE001 - source paths and internals are a leak surface
@@ -263,13 +401,13 @@ def _scan(args: argparse.Namespace) -> int:
         "rows_appended": rows,
         "status": "ok",
         "upgrade_requested": args.upgrade,
-        "watches": len(config.watches),
+        "watches": len(watches),
     }
     _emit(
         payload,
         as_json=args.json,
         human=(
-            f"scan complete: watches={len(config.watches)} rows_appended={rows} "
+            f"scan complete: watches={len(watches)} rows_appended={rows} "
             f"bindings_appended={bindings} proofs_confirmed={confirmed}/{proofs}"
         ),
     )
