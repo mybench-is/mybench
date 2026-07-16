@@ -60,7 +60,6 @@ def test_wheel_installs_the_channel_agnostic_console_script(tmp_path):
             "pip",
             "wheel",
             "--no-deps",
-            "--no-build-isolation",
             "--wheel-dir",
             str(wheelhouse),
             str(source),
