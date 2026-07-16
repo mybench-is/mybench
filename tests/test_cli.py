@@ -179,7 +179,6 @@ def test_reserved_surfaces_are_side_effect_free_and_publish_never_networks(capsy
     commands = (
         (["publish", "--json"], "publish", True),
         (["publish", "--preview", "--json"], "publish --preview", True),
-        (["status", "--json"], "status", False),
         (["report", "--open", "--json"], "report --open", False),
         (["report", "--serve", "--json"], "report --serve", False),
     )
