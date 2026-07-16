@@ -115,6 +115,13 @@ labeled **pending (calendar-attested, not yet Bitcoin-confirmed)** — the
 proof file is only published once confirmed, so a missing proof simply
 means "check back in a few hours."
 
+For local capture-health measurement, mybench privately remembers the clock
+time immediately after the first calendar response successfully merges. That
+self-attested observation is appended to the private ledger only after the
+event and proof stage succeeds. It never enters the public event, proof, or
+publish output, and it is deliberately distinct from the independently
+verifiable Bitcoin block time. See [Private anchor receipts](private-anchor-receipts.md).
+
 The two channels back each other up: the public log stops an author from
 cherry-picking their own history; the author's locally-held Bitcoin proofs
 stop the log's operator from censoring or losing it. Neither party needs

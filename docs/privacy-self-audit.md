@@ -98,6 +98,10 @@ rather than by the `src/mybench` grep.
   is `root`; re-run the capture test:
   `$V -m pytest tests/anchor/test_ots.py::test_wire_payload_is_exactly_the_root_digest -q`.
 - **Pass:** single POST call site whose body is the digest; test green.
+- **Receipt check:**
+  `$V -m pytest tests/anchor/test_ots.py::test_observed_stamp_freezes_first_success_while_later_attempts_finish tests/anchor/test_receipt.py::test_cut_receipt_surface_is_canary_clean_and_scanner_fires -q`.
+  The first successfully merged response time is retained only for the private
+  ledger receipt; calendar URLs are absent from receipt rows and cut logs.
 
 ### S8 — Anchor staging (`$DD/anchors`)
 - **Check (layout v1, ADR-0004):** staged paths match the whitelist:
@@ -106,6 +110,9 @@ rather than by the `src/mybench` grep.
   + secret-corpus scan; archives under anchors/archive* are excluded).
 - **Pass:** zero non-whitelisted filenames; every artifact schema-valid and
   signature-verified.
+- **Receipt boundary:** staged event/proof bytes remain unchanged and date-only;
+  `receipt_ts`, `receipt_id`, and derived latency are structurally absent. A
+  staged event without its private receipt remains `unknown` after recovery.
 
 ### S9 — Published anchors repo (the public surface)
 - **Risk:** the one surface where a leak is product-ending.

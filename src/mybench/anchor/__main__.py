@@ -14,6 +14,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,7 +25,19 @@ from mybench.anchor.batch import AnchorError, build_batch
 from mybench.anchor.event import EventError, build_event, event_relpaths, stage_event
 from mybench.anchor.publish import PublishError, publish, staged_files
 from mybench.identity import local_identity_id
-from mybench.ledger import Ledger
+from mybench.ledger import Ledger, LedgerError
+
+
+@dataclass(frozen=True)
+class CutResult:
+    event: dict
+    event_path: Path
+    proof_path: Path
+    receipt: dict
+
+
+def _append_now() -> str:
+    return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _known_row_end(identity_id: str, staging: Path, clone: Path) -> int:
@@ -34,6 +48,46 @@ def _known_row_end(identity_id: str, staging: Path, clone: Path) -> int:
                 if p.suffix == ".json":
                     last = max(last, json.loads(p.read_bytes())["row_end"])
     return last
+
+
+def cut(
+    date: str,
+    calendars: Sequence[str],
+    *,
+    ledger: Ledger | None = None,
+    receipt_clock: Callable[[], datetime] | None = None,
+    append_ts: str | None = None,
+) -> CutResult:
+    """Build, stamp, stage, then append one private receipt observation.
+
+    The stage-before-append order is intentional.  If the process stops after
+    staging, the absent receipt remains unknown; this function never recovers
+    one from a filesystem, Git, event-date, or retry clock.
+    """
+    staging = paths.anchors_dir()
+    clone = paths.data_dir() / "anchors-repo"
+    identity_id = local_identity_id()
+    rel_event, _ = event_relpaths(identity_id, date)
+    if (staging / rel_event).exists() or (clone / rel_event).exists():
+        raise EventError(f"{rel_event} exists — one event per identity per UTC day")
+
+    last = _known_row_end(identity_id, staging, clone)
+    ledger = ledger if ledger is not None else Ledger()
+    batch = build_batch(ledger, previous={"row_end": last} if last else None)
+    event = build_event(batch, ledger.rows(), date=date)
+    stamp_kwargs = {"clock": receipt_clock} if receipt_clock is not None else {}
+    stamped = ots.stamp_root_observed(
+        bytes.fromhex(event["root"]), calendars=calendars, **stamp_kwargs
+    )
+    event_path, proof_path = stage_event(event, stamped.proof, staging)
+    receipt = ledger.append_anchor_receipt(
+        staged_event=event,
+        receipt_ts=stamped.receipt_ts,
+        ts=append_ts if append_ts is not None else _append_now(),
+    )
+    if receipt is None:  # pre-existing daily-event guard makes this defensive only
+        raise LedgerError("anchor cut unexpectedly replayed an existing receipt")
+    return CutResult(event, event_path, proof_path, receipt)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -49,25 +103,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     staging = paths.anchors_dir()
-    clone = paths.data_dir() / "anchors-repo"
     try:
         if args.command == "cut":
             date = args.date or datetime.now(UTC).strftime("%Y-%m-%d")
-            identity_id = local_identity_id()
-            rel_event, _ = event_relpaths(identity_id, date)
-            if (staging / rel_event).exists() or (clone / rel_event).exists():
-                raise EventError(f"{rel_event} exists — one event per identity per UTC day")
-            last = _known_row_end(identity_id, staging, clone)
-            ledger = Ledger()
-            batch = build_batch(ledger, previous={"row_end": last} if last else None)
-            event = build_event(batch, ledger.rows(), date=date)
             calendars = tuple(args.calendar) if args.calendar else ots.DEFAULT_CALENDARS
-            proof = ots.stamp_root(bytes.fromhex(event["root"]), calendars=calendars)
-            event_path, _proof_path = stage_event(event, proof, staging)
+            result = cut(date, calendars)
+            event = result.event
             print(
                 f"cut rows [{event['row_start']}, {event['row_end']}) "
                 f"sessions={event['session_count']} items={event['item_count']}\n"
-                f"staged {event_path.relative_to(staging)} (+ pending proof)"
+                f"staged {result.event_path.relative_to(staging)} (+ pending proof); "
+                "private receipt appended"
             )
         elif args.command == "upgrade":
             proofs = [p for p, rel in staged_files(staging) if rel.endswith(".json.ots")]
@@ -84,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
                       f"{len(result['commits'])} signed commit(s)")
                 for rel in result["pending"]:
                     print(f"withheld (pending Bitcoin confirmation): {rel}")
-    except (AnchorError, EventError, ots.OtsError, PublishError) as exc:
+    except (AnchorError, EventError, LedgerError, ots.OtsError, PublishError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0

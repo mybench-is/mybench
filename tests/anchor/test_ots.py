@@ -3,8 +3,12 @@
 import hashlib
 import os
 import stat
+from datetime import UTC, datetime
 
 import pytest
+from opentimestamps.core.notary import PendingAttestation
+from opentimestamps.core.serialize import BytesSerializationContext
+from opentimestamps.core.timestamp import Timestamp
 
 from mybench import paths
 from mybench.anchor import ots
@@ -12,6 +16,14 @@ from mybench.anchor.batch import build_batch
 from tests.anchor.conftest import BLOCK_HEIGHT
 from tests.fixtures import assert_no_canaries, generate_fixtures
 from tests.fixtures.ledgers import build_canary_ledger
+
+
+def calendar_response(root: bytes, uri: str) -> bytes:
+    timestamp = Timestamp(root)
+    timestamp.attestations.add(PendingAttestation(uri))
+    context = BytesSerializationContext()
+    timestamp.serialize(context)
+    return context.getbytes()
 
 
 @pytest.fixture
@@ -53,9 +65,84 @@ def test_one_dead_calendar_does_not_block_stamping(calendar):
     assert ots.proof_info(root, proof)["pending"] == [calendar.base_url]
 
 
+def test_observed_stamp_freezes_first_success_while_later_attempts_finish(monkeypatch):
+    root = hashlib.sha256(b"synthetic observed root").digest()
+    calendars = [
+        "https://synthetic-first.invalid",
+        "https://synthetic-later.invalid",
+        "https://synthetic-failure.invalid",
+        "https://synthetic-timeout.invalid",
+    ]
+    calls = []
+
+    def fake_http(url, data=None, timeout=15.0):
+        calls.append((url, data, timeout))
+        if "first" in url:
+            return calendar_response(root, calendars[0])
+        if "later" in url:
+            return calendar_response(root, calendars[1])
+        if "timeout" in url:
+            raise TimeoutError("synthetic timeout")
+        raise RuntimeError("synthetic failure")
+
+    clock_calls = []
+
+    def clock():
+        clock_calls.append(len(calls))
+        return datetime(2026, 7, 16, 12, 1, 2, 345678, tzinfo=UTC)
+
+    monkeypatch.setattr(ots, "_http", fake_http)
+    result = ots.stamp_root_observed(root, calendars=calendars, clock=clock)
+
+    assert result.receipt_ts == "2026-07-16T12:01:02.345678Z"
+    assert clock_calls == [1]
+    assert len(calls) == 4  # later success/failure/timeout attempts still ran
+    assert ots.proof_info(root, result.proof)["pending"] == calendars[:2]
+
+
+def test_observed_stamp_ignores_responses_that_do_not_deserialize(monkeypatch):
+    root = hashlib.sha256(b"synthetic deserialize root").digest()
+    calendars = ["https://synthetic-bad.invalid", "https://synthetic-good.invalid"]
+    calls = []
+
+    def fake_http(url, data=None, timeout=15.0):
+        calls.append(url)
+        if "bad" in url:
+            return b"not-an-ots-timestamp"
+        return calendar_response(root, calendars[1])
+
+    observed_after_attempt = []
+
+    def clock():
+        observed_after_attempt.append(len(calls))
+        return datetime(2026, 7, 16, 12, 2, tzinfo=UTC)
+
+    monkeypatch.setattr(ots, "_http", fake_http)
+    result = ots.stamp_root_observed(root, calendars=calendars, clock=clock)
+    assert observed_after_attempt == [2]
+    assert result.receipt_ts == "2026-07-16T12:02:00.000000Z"
+
+
 def test_all_calendars_dead_is_an_error():
+    private_url = "http://127.0.0.1:1/synthetic-private-calendar"
+    with pytest.raises(ots.OtsError, match="no calendar") as raised:
+        ots.stamp_root(bytes(32), calendars=[private_url], timeout=2.0)
+    assert private_url not in str(raised.value)
+
+
+def test_all_calendar_failures_never_sample_receipt_clock(monkeypatch):
+    def fail(*args, **kwargs):
+        raise TimeoutError("synthetic")
+
+    calls = []
+    monkeypatch.setattr(ots, "_http", fail)
     with pytest.raises(ots.OtsError, match="no calendar"):
-        ots.stamp_root(bytes(32), calendars=["http://127.0.0.1:1"], timeout=2.0)
+        ots.stamp_root_observed(
+            bytes(32),
+            calendars=["https://one.invalid", "https://two.invalid"],
+            clock=lambda: calls.append(True),
+        )
+    assert calls == []
 
 
 def test_bad_digest_length_rejected():
