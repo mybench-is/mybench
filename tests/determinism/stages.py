@@ -141,10 +141,19 @@ def _codex_normalized_corpus() -> Invocation:
     return Invocation(args=(synthetic_codex_normalizer_input().sessions,), kwargs={})
 
 
+def _git_normalized_corpus() -> Invocation:
+    # Fixed, path-free subject-only repository records. The production stage
+    # receives no Git, enrollment, filesystem, or author-identity authority.
+    from tests.normalizer.repo_synthetic import synthetic_repo_evidence_input
+
+    return Invocation(args=(synthetic_repo_evidence_input().snapshots,), kwargs={})
+
+
 RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
+    "git-normalized-corpus": _git_normalized_corpus,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
@@ -174,6 +183,13 @@ STAGES = (
         ResultEncoding.BYTES,
         True,
         ("mybench.normalizer.codex",),
+    ),
+    Stage(
+        "git-normalized-corpus",
+        EntryPoint("mybench.normalizer.repo", "normalize_repo_evidence"),
+        ResultEncoding.BYTES,
+        True,
+        ("mybench.normalizer.repo",),
     ),
     Stage(
         "signed-claim",

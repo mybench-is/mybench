@@ -100,6 +100,9 @@ REVIEWED_NON_STAGE_MODULES = frozenset(
         # Trusted A2/A3/A9 filesystem boundary. It supplies explicit verified
         # inputs to the pure Claude stage and is not itself compute/render.
         "mybench.normalizer.loader",
+        # Trusted enrolled-Git filesystem boundary. It reduces raw repository
+        # state to explicit subject-only inputs for the pure repo stage.
+        "mybench.normalizer.repo_loader",
     }
 )
 

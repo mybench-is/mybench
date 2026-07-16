@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v1/repo_evidence.schema.json",
+  "title": "Mybench Normalized Repository Evidence Corpus",
+  "description": "Closed local-only A8 schema for subject-authored enrolled-repository structure. It admits opaque repository/worktree ids, Git object addresses and commitments, structural counts, and IMPORTED/LIVE provenance; filenames, paths, author identities, messages, branches, source bytes, and config bytes have no field.",
+  "$defs": {
+    "hex16": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "minLength": 16,
+      "maxLength": 16
+    },
+    "hex40": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "minLength": 40,
+      "maxLength": 40
+    },
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "provenance": {"enum": ["IMPORTED", "LIVE"]},
+    "sha1Pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_id", "object_type", "object_id", "target_commitment"],
+      "properties": {
+        "repo_id": {"$ref": "#/$defs/hex16"},
+        "object_type": {"enum": ["blob", "commit"]},
+        "object_id": {"$ref": "#/$defs/hex40"},
+        "subject_commit_id": {"$ref": "#/$defs/hex40"},
+        "target_commitment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "digest"],
+          "properties": {
+            "algorithm": {"const": "git-sha1"},
+            "digest": {"$ref": "#/$defs/hex40"}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"object_type": {"const": "blob"}}},
+          "then": {"required": ["subject_commit_id"]},
+          "else": {"not": {"required": ["subject_commit_id"]}}
+        }
+      ]
+    },
+    "sha256Pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_id", "object_type", "object_id", "target_commitment"],
+      "properties": {
+        "repo_id": {"$ref": "#/$defs/hex16"},
+        "object_type": {"enum": ["blob", "commit"]},
+        "object_id": {"$ref": "#/$defs/hex64"},
+        "subject_commit_id": {"$ref": "#/$defs/hex64"},
+        "target_commitment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "digest"],
+          "properties": {
+            "algorithm": {"const": "git-sha256"},
+            "digest": {"$ref": "#/$defs/hex64"}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"object_type": {"const": "blob"}}},
+          "then": {"required": ["subject_commit_id"]},
+          "else": {"not": {"required": ["subject_commit_id"]}}
+        }
+      ]
+    },
+    "pointer": {
+      "oneOf": [
+        {"$ref": "#/$defs/sha1Pointer"},
+        {"$ref": "#/$defs/sha256Pointer"}
+      ]
+    },
+    "changeCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["added", "modified", "deleted", "type_changed", "other"],
+      "properties": {
+        "added": {"type": "integer", "minimum": 0},
+        "modified": {"type": "integer", "minimum": 0},
+        "deleted": {"type": "integer", "minimum": 0},
+        "type_changed": {"type": "integer", "minimum": 0},
+        "other": {"type": "integer", "minimum": 0}
+      }
+    },
+    "fileClassCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "lockfile", "ci", "other"],
+      "properties": {
+        "manifest": {"type": "integer", "minimum": 0},
+        "lockfile": {"type": "integer", "minimum": 0},
+        "ci": {"type": "integer", "minimum": 0},
+        "other": {"type": "integer", "minimum": 0}
+      }
+    },
+    "eventBase": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "kind",
+        "source",
+        "session_id",
+        "record_index",
+        "subevent_index",
+        "event_kind",
+        "provenance",
+        "pointer"
+      ],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "kind": {"const": "normalized-repo-event"},
+        "source": {"const": "git"},
+        "session_id": {"$ref": "#/$defs/hex16"},
+        "record_index": {"type": "integer", "minimum": 0},
+        "subevent_index": {"const": 0},
+        "event_kind": {"enum": ["commit", "branch-tip", "reflog", "worktree"]},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "pointer": {"$ref": "#/$defs/pointer"}
+      }
+    },
+    "commitEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["subject_parents", "structure_status"],
+          "properties": {
+            "event_kind": {"const": "commit"},
+            "subject_parents": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/pointer"}
+            },
+            "structure_status": {"enum": ["observed", "unknown"]},
+            "change_counts": {"$ref": "#/$defs/changeCounts"},
+            "file_class_counts": {"$ref": "#/$defs/fileClassCounts"},
+            "targets": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["file_class", "pointer"],
+                "properties": {
+                  "file_class": {"enum": ["manifest", "lockfile", "ci", "other"]},
+                  "pointer": {"$ref": "#/$defs/pointer"}
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": ["structure_status"],
+                "properties": {"structure_status": {"const": "observed"}}
+              },
+              "then": {"required": ["change_counts", "file_class_counts", "targets"]},
+              "else": {
+                "not": {
+                  "anyOf": [
+                    {"required": ["change_counts"]},
+                    {"required": ["file_class_counts"]},
+                    {"required": ["targets"]}
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "refEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "properties": {"event_kind": {"enum": ["branch-tip", "reflog"]}}
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "worktreeEvent": {
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["worktree_id"],
+          "properties": {
+            "event_kind": {"const": "worktree"},
+            "worktree_id": {"$ref": "#/$defs/hex16"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "event": {
+      "oneOf": [
+        {"$ref": "#/$defs/commitEvent"},
+        {"$ref": "#/$defs/refEvent"},
+        {"$ref": "#/$defs/worktreeEvent"}
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "corpus_commitment", "manifest", "events"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "normalized-repo-corpus-artifact"},
+    "corpus_commitment": {"$ref": "#/$defs/hex64"},
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "normalizer",
+        "adapters",
+        "repositories",
+        "coverage",
+        "event_count"
+      ],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "kind": {"const": "normalized-repo-corpus-manifest"},
+        "normalizer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "authorship_policy_version"],
+          "properties": {
+            "name": {"const": "mybench.normalizer.repo"},
+            "version": {"const": "1.0.0"},
+            "authorship_policy_version": {"const": "1.0.0"}
+          }
+        },
+        "adapters": {
+          "const": [{"source": "git", "version": "1.0.0"}]
+        },
+        "repositories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["repo_id", "object_format", "admitted_commit_count", "event_count"],
+            "properties": {
+              "repo_id": {"$ref": "#/$defs/hex16"},
+              "object_format": {"enum": ["sha1", "sha256"]},
+              "admitted_commit_count": {"type": "integer", "minimum": 0},
+              "event_count": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repositories_admitted",
+            "commits_admitted",
+            "commits_imported",
+            "commits_live",
+            "branch_tips_admitted",
+            "reflog_targets_admitted",
+            "worktrees_admitted",
+            "blob_targets_referenced",
+            "structures_unknown"
+          ],
+          "properties": {
+            "repositories_admitted": {"type": "integer", "minimum": 0},
+            "commits_admitted": {"type": "integer", "minimum": 0},
+            "commits_imported": {"type": "integer", "minimum": 0},
+            "commits_live": {"type": "integer", "minimum": 0},
+            "branch_tips_admitted": {"type": "integer", "minimum": 0},
+            "reflog_targets_admitted": {"type": "integer", "minimum": 0},
+            "worktrees_admitted": {"type": "integer", "minimum": 0},
+            "blob_targets_referenced": {"type": "integer", "minimum": 0},
+            "structures_unknown": {"type": "integer", "minimum": 0}
+          }
+        },
+        "event_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/event"}
+    }
+  }
+}

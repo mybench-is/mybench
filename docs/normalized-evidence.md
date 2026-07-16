@@ -1,8 +1,9 @@
 # Normalized evidence
 
-The normalizer turns supported transcript records into deterministic,
-content-opaque structure. It does not copy prompts, responses, commands,
-paths, tool results, source files, or test output into its artifact.
+The normalizer turns supported transcript records and explicitly enrolled Git
+repositories into deterministic, content-opaque structure. It does not copy
+prompts, responses, commands, paths, tool results, source files, config bytes,
+commit messages, ref names, or test output into its artifacts.
 
 ## What is stored
 
@@ -24,6 +25,47 @@ ${XDG_DATA_HOME:-~/.local/share}/mybench/
 The directories are mode 0700 and the artifact is mode 0600. The store refuses
 symlinks, hard-linked artifacts, loose existing permissions, non-canonical
 bytes, and content-address mismatches.
+
+## Enrolled-repository adapter
+
+`mybench.normalizer.repo_loader` is the trusted Git boundary. It accepts one
+worktree only when both the `.mybench/commit-binding-enabled` marker and its
+matching private enrollment record exist. The caller supplies the
+credentialed subject's declared author-email identity set; identities are used
+only for comparison inside the loader and are never serialized or logged.
+ADR-0018 filtering happens before a `VerifiedRepoSnapshot` exists.
+
+The pure `mybench.normalizer.repo` stage emits four record classes:
+
+- subject-authored commits, their direct subject-authored parent links, and
+  first-parent change structure;
+- unique subject-authored local branch tips;
+- unique subject-authored commits retained by any reflog; and
+- opaque keyed-HMAC worktree ids whose HEAD is subject-authored.
+
+Commit structure contains fixed change-kind counts and fixed file-class counts
+(`manifest`, `lockfile`, `ci`, `other`). Filenames and paths are inspected only
+long enough to assign one of those classes. A subject-authored merge is kept as
+a commit pointer but its tree structure is `unknown`: a merge diff may carry
+third-party branch content. Non-subject commits create no record, parent,
+pointer, commitment, counter, or failure and a non-subject side branch is
+artifact-byte-invisible.
+
+Each eligible Git target uses a closed pointer containing only the keyed-HMAC
+`repo_id`, Git object type, object id, the matching `git-sha1` or `git-sha256`
+object commitment, and—for a blob—the admitted subject commit from which it was
+derived. Git object ids are existing local repository commitments and remain
+inside A8; they are never a publication field. Live resolution rechecks
+enrollment, the opaque repo id, declared-subject authorship, blob membership in
+the origin commit's admitted change set, object type, and Git object hash. A
+pruned object returns `unknown / target-missing`, never empty bytes,
+reconstruction, or a pipeline error.
+
+Provenance is reachability-based and deterministic. With a recorded enrollment
+commit, that commit and subject commits not descended from it are `IMPORTED`;
+strict descendants are `LIVE`. An empty enrollment boundary means the repo was
+enrolled before its first commit, so admitted commits are `LIVE`. IMPORTED is
+an evidence annotation, not a trust tier.
 
 ## Transcript adapters
 
@@ -57,7 +99,7 @@ Reference and test events in the Claude adapter point to the subject agent's
 tool invocation. This proves which committed invocation was classified; it
 does not claim to commit the bytes of a file named by that invocation or any
 pasted tool output. Enrolled-repository target pointers are a separate
-extractor contract.
+extractor contract described above.
 
 ## Consent and authorship
 
@@ -71,8 +113,8 @@ Filtering happens before normalized derivation:
 - pasted/tool-result bytes never receive a pointer or commitment in the
   artifact.
 
-The synthetic tests add, remove, reorder, and corrupt excluded records to
-prove that the known non-subject view is presence-insensitive.
+The synthetic tests add, remove, reorder, and corrupt excluded records and Git
+commits to prove that the known non-subject view is presence-insensitive.
 
 ## Corpus commitment
 
@@ -83,8 +125,11 @@ big-endian length framing. The existing RFC-6962-shaped tree uses
 `mybench:v1:node` without duplicating odd leaves, and the result is wrapped by
 `mybench:v1:normalized-corpus`.
 
-Zero input sessions produce no artifact. A nonempty input whose consent filter
-admits no records produces a valid manifest-only commitment.
+Zero transcript sessions or zero verified repository snapshots produce no
+artifact. A nonempty input whose consent filter admits no records produces a
+valid manifest-only commitment. Transcript and repository records use separate
+closed schemas but the identical manifest/event domains, u64BE framing,
+manifest-first ordering, tree reduction, and final corpus wrapper.
 
 ## Owner-supervised ingestion
 
@@ -110,3 +155,7 @@ The supervised loader currently admits Claude rows only. Production Codex
 discovery and loading remain a separate capture-adapter task; MYB-10.18 adds no
 ambient access to Codex rollout directories. Codex adapter validation uses
 seeded synthetic rollout-v1 records and the same two-process determinism gate.
+The repository loader likewise has no ambient scan-all-repos entry point: a
+caller must name an already enrolled worktree and declare the subject identity
+set. MYB-10.5 validation uses synthetic Git repositories only; no owner
+repository is scanned by its automated path.

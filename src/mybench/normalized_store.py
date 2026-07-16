@@ -2,13 +2,15 @@
 
 The normalizer is pure and returns canonical bytes.  This module validates
 those bytes before touching the filesystem, then installs them exactly once at
-``normalized/<corpus-commitment>/corpus.json``.  Content, source filenames,
-and data-directory paths never enter an error message.
+``normalized/<corpus-commitment>/corpus.json``. Transcript and repository
+artifacts share this content-addressed layout. Content, source filenames, and
+data-directory paths never enter an error message.
 """
 
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import re
 import secrets
@@ -56,10 +58,24 @@ def _validated_commitment(artifact: bytes) -> str:
         NormalizationError,
         validate_corpus_artifact,
     )
+    from mybench.normalizer.repo import validate_repo_corpus_artifact
 
     try:
-        commitment = validate_corpus_artifact(artifact)
-    except NormalizationError:
+        kind = json.loads(artifact).get("kind")
+        if kind == "normalized-corpus-artifact":
+            commitment = validate_corpus_artifact(artifact)
+        elif kind == "normalized-repo-corpus-artifact":
+            commitment = validate_repo_corpus_artifact(artifact)
+        else:
+            raise NormalizationError("unsupported normalized artifact kind")
+    except (
+        AttributeError,
+        NormalizationError,
+        RecursionError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+    ):
         raise NormalizedStoreError("normalized corpus artifact is invalid") from None
     try:
         paths.normalized_corpus_dir(commitment)
