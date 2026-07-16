@@ -10,7 +10,7 @@ ledger. Transcript text does not enter the ledger.
 | Plain-language name | Threat-model label | Contents and purpose |
 |---|---|---|
 | Saved nonce records | A2 | One secret random value per committed transcript record. These secrets make the commitments resistant to guessing. |
-| Private commitment ledger | A3 | Salted commitments, counts, timestamps, and hash-chain metadata. It does not contain transcript text. |
+| Private commitment ledger | A3 | Salted commitments, counts, timestamps, closed capture observations, and hash-chain metadata. Session observations may include model/provider/effort/harness identifiers and provider-reported token aggregates. It does not contain transcript text. |
 | Private transcript archive | A9 | An optional byte-for-byte plaintext copy of committed transcript records, kept so later verification or selective disclosure is possible after the agent harness deletes its original log. |
 
 All three stores live outside repositories in the mode-0700 mybench data
@@ -46,6 +46,10 @@ can also backfill visible sessions committed while archiving was off.
   before later state may rely on them.
 - Raw content, transcript filenames, archive paths, and data-directory paths
   never enter logs, ledger rows, anchor staging, or any repository.
+- The Claude Code and Codex metadata adapters deserialize complete JSONL
+  records but inspect only the paths pinned in
+  [`docs/session-metadata-adapters.md`](../../docs/session-metadata-adapters.md).
+  Missing or malformed metadata is omitted rather than zeroed or guessed.
 
 The A2/A3/A9 labels above are cross-references to `THREAT_MODEL.md` §2; the
 plain-language store names describe the runtime behavior.

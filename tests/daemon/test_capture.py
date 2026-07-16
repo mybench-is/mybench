@@ -311,8 +311,8 @@ def test_codex_nested_dates_same_stem_are_distinct_sessions(fx, config):
 
 
 def test_binary_line_is_committed_opaquely_without_crash(fx, config):
-    # Capture never parses items: an unknown/binary line is still exactly one
-    # committed record (ADR-0002 §2 exact-raw-bytes), never a crash or a skip.
+    # Commitment capture is independent of metadata parsing: an unknown/binary
+    # record (ADR-0002 §2 exact raw bytes) is never a crash or a skipped item.
     target = next(s for s in fx.sessions if "codex" in s.parts)
     daemon = capture.Daemon(config)
     daemon.scan_once()

@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import stat
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,6 +40,17 @@ DOMAIN_ROW = b"mybench:v1:ledgerrow"
 GENESIS_PREV = "0" * 64
 SCHEMA_VERSION = "1"
 EVENT_SCHEMA_VERSION = "2"
+SESSION_SCHEMA_VERSION = "2"
+ANCHOR_RECEIPT_SCHEMA_VERSION = "2"
+ANCHOR_RECEIPT_DOMAIN = b"anchor-receipt:v1:"
+ANCHOR_RECEIPT_EVENT_FIELDS = (
+    "identity_id",
+    "date",
+    "row_start",
+    "row_end",
+    "root",
+    "chain_tip",
+)
 _FILE_MODE = 0o600
 _LOOSE_BITS = 0o077
 
@@ -62,6 +75,30 @@ def row_hash(row: dict) -> str:
 
 def _utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_utc_timestamp(value: object, context: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise LedgerError(f"{context} is not a UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise LedgerError(f"{context} is not a valid UTC timestamp") from exc
+    if parsed.tzinfo != UTC:
+        raise LedgerError(f"{context} is not a UTC timestamp")
+    return parsed
+
+
+def anchor_receipt_id(staged_event: Mapping[str, object], scope_key: bytes) -> str:
+    """Derive ADR-0013's opaque local id from exactly six public event fields."""
+    if not isinstance(scope_key, bytes) or len(scope_key) != 32:
+        raise LedgerError("anchor receipt requires the existing 32-byte session scope key")
+    try:
+        identity = {name: staged_event[name] for name in ANCHOR_RECEIPT_EVENT_FIELDS}
+    except (KeyError, TypeError) as exc:
+        raise LedgerError("anchor receipt event identity is incomplete") from exc
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    return hmac.new(scope_key, ANCHOR_RECEIPT_DOMAIN + encoded, hashlib.sha256).hexdigest()[:16]
 
 
 def _fsync_file(fd: int) -> None:
@@ -250,8 +287,22 @@ class Ledger:
         item_count: int,
         source: str,
         ts: str | None = None,
+        models_seen: Sequence[str] | None = None,
+        provider: str | None = None,
+        effort: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        cache_creation_input_tokens: int | None = None,
+        cache_read_input_tokens: int | None = None,
+        harness_version: str | None = None,
     ) -> dict:
-        """Append one session row (creating the genesis row first if needed)."""
+        """Append one v2 session observation (creating a frozen-v1 genesis first).
+
+        Metadata parameters are the complete whitelist: there is no content,
+        path, filename, or arbitrary metadata mapping that a caller could pass.
+        ``None`` means unknown and is omitted; an explicit zero token count is
+        retained as a provider observation.
+        """
         if self.path == paths.ledger_dir() / "ledger.jsonl":
             paths.ensure_data_dir()
         ts = ts if ts is not None else _utc_now()
@@ -264,19 +315,30 @@ class Ledger:
                          "prev": GENESIS_PREV}
                     )
                 ]
-            return self._append_row(
-                {
-                    "schema_version": SCHEMA_VERSION,
-                    "i": existing[-1]["i"] + 1,
-                    "type": "session",
-                    "ts": ts,
-                    "prev": existing[-1]["h"],
-                    "session_id": session_id,
-                    "session_root": session_root.hex(),
-                    "item_count": item_count,
-                    "source": source,
-                }
-            )
+            row = {
+                "schema_version": SESSION_SCHEMA_VERSION,
+                "i": existing[-1]["i"] + 1,
+                "type": "session",
+                "ts": ts,
+                "prev": existing[-1]["h"],
+                "session_id": session_id,
+                "session_root": session_root.hex(),
+                "item_count": item_count,
+                "source": source,
+            }
+            optional = {
+                "provider": provider,
+                "effort": effort,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_creation_input_tokens": cache_creation_input_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "harness_version": harness_version,
+            }
+            if models_seen:
+                row["models_seen"] = sorted(set(models_seen))
+            row.update({name: value for name, value in optional.items() if value is not None})
+            return self._append_row(row)
 
     def append_binding(
         self, *, commit_hash: str, commit_ts: str, repo_id: str, ts: str | None = None
@@ -384,3 +446,109 @@ class Ledger:
             }
             row.update({key: value for key, value in optional.items() if value is not None})
             return self._append_row(row)
+
+    def append_anchor_receipt(
+        self,
+        *,
+        staged_event: dict,
+        receipt_ts: str,
+        ts: str | None = None,
+        scope_key: bytes | None = None,
+    ) -> dict | None:
+        """Validate and append MYB-9.5's reserved private receipt observation.
+
+        This pins the row shape and semantic boundary only.  MYB-9.5 owns the
+        cut-path call site, including sampling the first successful calendar
+        response and invoking this method only after event/proof staging.
+
+        The staged event's signature, range, session-root aggregate, chain tip,
+        and counts are recomputed against the current ledger.  The private
+        receipt time must be no earlier than any covered row and no later than
+        the append-time envelope.  Replays of the exact receipt are idempotent;
+        a conflicting second receipt for the same range/root fails closed.
+        """
+        from mybench.anchor.event import EventError, verify_event
+        from mybench.commitments import day_root
+
+        if self.path == paths.ledger_dir() / "ledger.jsonl":
+            paths.ensure_data_dir()
+        scope_key = scope_key if scope_key is not None else paths.ensure_session_scope_key()
+        try:
+            verify_event(staged_event)
+        except EventError as exc:
+            raise LedgerError("anchor receipt staged event is invalid") from exc
+
+        ts = ts if ts is not None else _utc_now()
+        receipt_time = _parse_utc_timestamp(receipt_ts, "receipt_ts")
+        append_time = _parse_utc_timestamp(ts, "anchor receipt append ts")
+        receipt_id = anchor_receipt_id(staged_event, scope_key)
+
+        with self._writer_lock():
+            self.verify_chain()
+            existing = self.rows()
+            row_start = staged_event["row_start"]
+            row_end = staged_event["row_end"]
+            if row_start < 0 or row_end > len(existing) or row_end <= row_start:
+                raise LedgerError("anchor receipt event range is outside the ledger")
+            covered = existing[row_start:row_end]
+            leaves = [bytes.fromhex(row["session_root"]) for row in covered
+                      if row["type"] == "session"]
+            if not leaves or day_root(leaves).hex() != staged_event["root"]:
+                raise LedgerError("anchor receipt root does not match the ledger slice")
+            if covered[-1]["h"] != staged_event["chain_tip"]:
+                raise LedgerError("anchor receipt chain tip does not match the ledger slice")
+            if len(leaves) != staged_event["session_count"]:
+                raise LedgerError("anchor receipt session count does not match the ledger slice")
+            item_count = sum(
+                row["item_count"] for row in covered if row["type"] == "session"
+            )
+            if item_count != staged_event["item_count"]:
+                raise LedgerError("anchor receipt item count does not match the ledger slice")
+
+            newest_covered = max(
+                _parse_utc_timestamp(row["ts"], "covered ledger row ts") for row in covered
+            )
+            if receipt_time < newest_covered:
+                raise LedgerError("receipt_ts predates a covered ledger row")
+            if append_time < receipt_time:
+                raise LedgerError("anchor receipt append ts predates receipt_ts")
+
+            identity = (
+                row_start,
+                row_end,
+                staged_event["root"],
+                staged_event["chain_tip"],
+            )
+            for row in existing:
+                if row["type"] != "anchor_receipt":
+                    continue
+                row_identity = (
+                    row["anchor_row_start"],
+                    row["anchor_row_end"],
+                    row["anchor_root"],
+                    row["anchor_chain_tip"],
+                )
+                if row["receipt_id"] == receipt_id or row_identity == identity:
+                    if (
+                        row["receipt_id"] == receipt_id
+                        and row_identity == identity
+                        and row["receipt_ts"] == receipt_ts
+                    ):
+                        return None
+                    raise LedgerError("conflicting anchor receipt already exists")
+
+            return self._append_row(
+                {
+                    "schema_version": ANCHOR_RECEIPT_SCHEMA_VERSION,
+                    "i": existing[-1]["i"] + 1,
+                    "type": "anchor_receipt",
+                    "ts": ts,
+                    "prev": existing[-1]["h"],
+                    "anchor_row_start": row_start,
+                    "anchor_row_end": row_end,
+                    "anchor_root": staged_event["root"],
+                    "anchor_chain_tip": staged_event["chain_tip"],
+                    "receipt_ts": receipt_ts,
+                    "receipt_id": receipt_id,
+                }
+            )
