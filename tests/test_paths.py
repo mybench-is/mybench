@@ -42,6 +42,7 @@ def test_fresh_bootstrap_fsyncs_managed_directory_entries_to_existing_parent(
         paths.nonces_dir(),
         paths.ledger_dir(),
         paths.archive_dir(),
+        paths.reports_dir(),
         paths.queue_dir(),
         paths.keys_dir(),
         paths.anchors_dir(),
@@ -63,6 +64,7 @@ def test_precreated_visible_data_tree_gets_restart_durability_barrier(
         paths.nonces_dir(),
         paths.ledger_dir(),
         paths.archive_dir(),
+        paths.reports_dir(),
         paths.queue_dir(),
         paths.keys_dir(),
         paths.anchors_dir(),
@@ -92,6 +94,7 @@ def test_ensure_creates_tree_0700():
         paths.nonces_dir(),
         paths.ledger_dir(),
         paths.archive_dir(),
+        paths.reports_dir(),
         paths.queue_dir(),
         paths.keys_dir(),
     ):

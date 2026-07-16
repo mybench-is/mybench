@@ -9,6 +9,7 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     ledger/       hash-chained ledger                 — asset A3
     normalized/   content-free normalized artifacts   — asset A8
     archive/      byte-exact transcript preimages     — asset A9
+    reports/      private local report artifacts       — asset A10
     queue/        whitelisted hook tuples (0600)       — asset A3 ingress
     capture.lock  whole-scan daemon flock (0600)
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
@@ -34,6 +35,7 @@ _LOOSE_BITS = 0o077
 ARCHIVE_SOURCES = ("claude-code", "codex", "synthetic")
 _OPAQUE_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _CORPUS_COMMITMENT_RE = re.compile(r"[0-9a-f]{64}")
+_REPORT_ID_RE = re.compile(r"[0-9a-f]{64}")
 _DURABLE_DIRS: set[tuple[str, int, int]] = set()
 _DURABLE_ROOT_CHAINS: set[tuple[str, int, int]] = set()
 
@@ -92,6 +94,18 @@ def normalized_corpus_path(commitment: str) -> Path:
 def archive_dir() -> Path:
     """A9 root: local-only, session-addressed transcript preimages."""
     return data_dir() / "archive"
+
+
+def reports_dir() -> Path:
+    """A10 root: private local reports that are never published implicitly."""
+    return data_dir() / "reports"
+
+
+def report_dir(report_id: str) -> Path:
+    """Return one content-addressed private report directory without creating it."""
+    if not isinstance(report_id, str) or not _REPORT_ID_RE.fullmatch(report_id):
+        raise PathsError("invalid local report id")
+    return reports_dir() / report_id
 
 
 def queue_dir() -> Path:
@@ -379,6 +393,7 @@ def ensure_data_dir() -> Path:
         nonces_dir(),
         ledger_dir(),
         archive_dir(),
+        reports_dir(),
         queue_dir(),
         keys_dir(),
         anchors_dir(),
@@ -393,6 +408,19 @@ def ensure_archive_source_dir(source: str) -> Path:
     """Create/validate one 0700 source namespace below the A9 archive root."""
     ensure_data_dir()
     return _ensure_dir(archive_source_dir(source))
+
+
+def ensure_reports_dir() -> Path:
+    """Create/validate the 0700 A10 local-report root."""
+    ensure_data_dir()
+    return _ensure_dir(reports_dir())
+
+
+def ensure_report_dir(report_id: str) -> Path:
+    """Create/validate one 0700 content-addressed local-report directory."""
+    directory = report_dir(report_id)
+    ensure_reports_dir()
+    return _ensure_dir(directory)
 
 
 def ensure_queue_dir() -> Path:

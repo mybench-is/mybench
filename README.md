@@ -21,6 +21,9 @@ roadmap, and decisions live in the sibling repo `../mybench-ops`.
 
 How it all fits together: [docs/how-anchoring-works.md](docs/how-anchoring-works.md).
 
+The installed local-first command surface, its network boundaries, and stable
+exit codes are documented in [docs/cli.md](docs/cli.md).
+
 ## Verify someone's anchors (zero trust required)
 
 ```
