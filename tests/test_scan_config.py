@@ -46,8 +46,23 @@ def test_proposals_are_complete_consent_output_and_proposal_or_decline_writes_no
     tmp_path, monkeypatch, capsys
 ):
     _, home = _home_fixtures(tmp_path, monkeypatch)
+    git_root = tmp_path / "explicit-git-root"
+    git_repo = git_root / "synthetic-repo"
+    (git_repo / ".git").mkdir(parents=True)
 
-    assert cli.main(["init", "--detect", "claude,codex", "--json"]) == 0
+    assert (
+        cli.main(
+            [
+                "init",
+                "--detect",
+                "claude,codex,git",
+                "--root",
+                str(git_root),
+                "--json",
+            ]
+        )
+        == 0
+    )
     proposed = capsys.readouterr()
     payload = json.loads(proposed.out)
     assert payload == {
@@ -65,6 +80,7 @@ def test_proposals_are_complete_consent_output_and_proposal_or_decline_writes_no
                 "path": str(home / ".codex" / "sessions"),
                 "source": "codex",
             },
+            {"kind": "git", "path": str(git_repo)},
         ],
         "status": "proposed",
     }
@@ -235,3 +251,9 @@ def test_config_schema_is_closed_and_leak_scanner_fires_on_repo_copy(tmp_path):
     malformed["transcript_content"] = "must never fit"
     with pytest.raises(Exception):
         scan_config._validate_dict(malformed)
+
+    noncanonical = json.loads(planted.read_text())
+    second = str(tmp_path / "CANARY-second-private-location")
+    noncanonical["watches"].insert(0, {"path": second, "source": "codex"})
+    with pytest.raises(scan_config.ScanConfigError, match="canonical"):
+        scan_config._validate_dict(noncanonical)

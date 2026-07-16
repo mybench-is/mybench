@@ -177,12 +177,15 @@ def _validate_dict(value: object) -> dict:
     load_validator("scan_config.schema.json").validate(value)
     if not isinstance(value, dict):  # schema already enforces this; keeps typing honest
         raise ScanConfigError("invalid scan config")
+    watches = tuple(
+        WatchSpec(_absolute(item["path"]), item["source"]) for item in value["watches"]
+    )
+    repos = tuple(_absolute(repo) for repo in value["repos"])
+    exclusions = tuple(value["exclusions"])
     config = ScanConfig(
-        watches=tuple(
-            WatchSpec(_absolute(item["path"]), item["source"]) for item in value["watches"]
-        ),
-        repos=tuple(_absolute(repo) for repo in value["repos"]),
-        exclusions=tuple(value["exclusions"]),
+        watches=tuple(sorted(watches, key=lambda watch: (str(watch.path), watch.source))),
+        repos=tuple(sorted(repos, key=str)),
+        exclusions=tuple(sorted(exclusions)),
     )
     if value != config.as_dict():
         raise ScanConfigError("scan config is not canonical")
