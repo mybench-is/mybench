@@ -32,6 +32,7 @@ from pathlib import Path
 from mybench import archive as archive_store
 from mybench import commitments, nonces, paths
 from mybench.capture_identity import session_id_for_path
+from mybench.daemon.session_metadata import SessionMetadata, extract_session_metadata
 from mybench.hooks import lifecycle
 from mybench.ledger import Ledger
 
@@ -49,9 +50,10 @@ log = logging.getLogger("mybench.daemon")
 #     object per line). The nested date layout needs no special handling:
 #     session_id_for HMACs the watch-relative path, so equal stems on
 #     different dates stay distinct sessions (MYB-12.2).
-# Validity of the bytes is deliberately irrelevant: capture is content-opaque
-# and never parses items, so an unknown or binary line is still exactly one
-# committed record — malformed input cannot crash or skip capture.
+# Validity of the bytes is deliberately irrelevant to commitment capture: an
+# unknown or binary line is still exactly one committed record. The MYB-12.5
+# metadata projection separately attempts closed-path JSON extraction; malformed
+# input degrades to absent metadata and cannot crash or skip the commitment.
 SOURCES = paths.ARCHIVE_SOURCES
 
 
@@ -347,11 +349,22 @@ class Daemon:
             # restart can see a complete orphan row whose prior process died
             # before file/directory fsync. A3 may reference it only afterward.
             nonces.ensure_durable(session_id)
+            try:
+                metadata = extract_session_metadata(source, items)
+            except Exception as exc:  # noqa: BLE001 — A3 commitment capture stays primary
+                # Type only: a parser failure must neither block commitment
+                # capture nor echo a transcript-derived value to logs.
+                log.error(
+                    "session metadata unavailable (event=metadata_error type=%s)",
+                    type(exc).__name__,
+                )
+                metadata = SessionMetadata()
             row = self.ledger.append_session(
                 session_id=session_id,
                 session_root=commitments.session_root(leaves),
                 item_count=len(items),
                 source=source,
+                **metadata.ledger_fields(),
             )
             covered[session_id] = row
             row_appended = 1
