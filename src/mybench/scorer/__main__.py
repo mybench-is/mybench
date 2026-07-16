@@ -13,6 +13,7 @@ import argparse
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from mybench import paths
@@ -73,6 +74,45 @@ def _anchor_events() -> list[dict]:
     return events
 
 
+def build_report(
+    *,
+    generated_at: str,
+    report_version: str = "v0",
+    enrolled_specs: Sequence[str] = (),
+    public_names: Sequence[str] = (),
+) -> bytes:
+    """Gather local scorer inputs and return one validated report artifact."""
+    enrolled = {}
+    for spec in enrolled_specs:
+        name, _, path = spec.partition("=")
+        if not name or not path or name in enrolled:
+            raise ScoreError("--enrolled-repo entries must be unique NAME=PATH values")
+        enrolled[name] = _repo_facts(Path(path))
+    unknown = sorted(set(public_names) - set(enrolled))
+    if unknown:
+        raise ScoreError(f"--public names no --enrolled-repo entry: {', '.join(unknown)}")
+    # MYB-6.11: the public+named assertion is typed per repo, never inferred —
+    # an entry without it makes score() refuse the whole report (fail-closed).
+    for name in public_names:
+        enrolled[name]["public"] = True
+    ledger = Ledger()
+    ledger.verify_chain()
+    rows = ledger.rows()
+    anchors = _anchor_events()
+    report_bytes = score(
+        rows,
+        anchors,
+        generated_at=generated_at,
+        report_version=report_version,
+        enrolled=enrolled or None,
+    )
+    report = json.loads(report_bytes)
+    errors = sorted(load_validator("report.schema.json").iter_errors(report), key=str)
+    if errors:
+        raise ScoreError(f"report failed schema validation: {errors[0].message}")
+    return report_bytes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mybench-scorer")
     parser.add_argument("--generated-at", required=True, help="UTC RFC3339; scorer has no clock")
@@ -97,38 +137,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", help="write report here (default: stdout)")
     args = parser.parse_args(argv)
 
-    enrolled = {}
-    for spec in args.enrolled_repo:
-        name, _, path = spec.partition("=")
-        enrolled[name] = _repo_facts(Path(path))
-    unknown = sorted(set(args.public) - set(enrolled))
-    if unknown:
-        print(f"error: --public names no --enrolled-repo entry: {', '.join(unknown)}",
-              file=sys.stderr)
-        return 1
-    # MYB-6.11: the public+named assertion is typed per repo, never inferred —
-    # an entry without it makes score() refuse the whole report (fail-closed).
-    for name in args.public:
-        enrolled[name]["public"] = True
     try:
-        ledger = Ledger()
-        ledger.verify_chain()
-        rows = ledger.rows()
-        anchors = _anchor_events()
-        report_bytes = score(
-            rows,
-            anchors,
+        report_bytes = build_report(
             generated_at=args.generated_at,
             report_version=args.report_version,
-            enrolled=enrolled or None,
+            enrolled_specs=args.enrolled_repo,
+            public_names=args.public,
         )
     except (LedgerError, ScoreError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 1
-    report = json.loads(report_bytes)
-    errors = sorted(load_validator("report.schema.json").iter_errors(report), key=str)
-    if errors:
-        print(f"error: report failed schema validation: {errors[0].message}", file=sys.stderr)
         return 1
     if args.out:
         Path(args.out).write_bytes(report_bytes)
