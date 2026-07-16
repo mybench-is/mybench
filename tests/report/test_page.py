@@ -200,6 +200,21 @@ def test_buckets_render_prettified_but_data_stays_sortable():
     assert "11-100" in page and "0011-0100" not in page  # display layer: human
 
 
+def test_evidence_coverage_freshness_versions_and_boolean_render():
+    page = render_page(fixed_report(), anchors_url=ANCHORS).decode()
+    assert "anchored through 2026-02-02" in page
+    assert "input schemas ledger 1/2, anchor 2" in page
+    assert "anchor chain continuity" in page and "<strong>yes</strong>" in page
+    for label in ("under 5m", "5m to 1h", "1h to 24h", "1d to 7d", "7d plus", "unknown"):
+        assert label in page
+
+
+def test_missing_anchor_renders_honest_freshness_state():
+    page = render_page(backfill_dominated_report(), anchors_url=ANCHORS).decode()
+    assert "not yet anchored" in page
+    assert "input schemas ledger 1/2, anchor none" in page
+
+
 # --- MYB-5.6: brand alignment guards --------------------------------------------------
 
 

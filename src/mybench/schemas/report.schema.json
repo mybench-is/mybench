@@ -26,6 +26,30 @@
       "type": "string",
       "minLength": 1
     },
+    "input_schema_versions": {
+      "description": "Schema versions observed in the private ledger rows and date-only anchor events used by the scorer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ledger", "anchor"],
+      "properties": {
+        "ledger": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "anchor": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "anchored_through": {
+      "description": "Latest UTC date among supplied anchor events; absent when no anchor exists.",
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
     "backfill_note": {
       "description": "Required whenever capture-time-based metrics are present: states that backfilled history is anchored as of anchor time.",
       "type": "string",
@@ -60,6 +84,7 @@
             "description": "Aggregate number, or a distribution keyed by pinned bucket labels.",
             "oneOf": [
               {"type": "number"},
+              {"type": "boolean"},
               {
                 "type": "object",
                 "additionalProperties": false,
