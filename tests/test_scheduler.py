@@ -97,6 +97,7 @@ def test_generated_jobs_match_fixtures_and_have_no_resident_process_contract():
     assert launchd == (FIXTURES / "is.mybench.scan.plist").read_bytes()
     assert b"Type=oneshot" in service and b"Restart=" not in service
     assert b"scan --quiet --scheduled" in service
+    assert b"--archive" not in service + timer + launchd
     assert b"--upgrade" not in service + timer + launchd
     assert b"--watch" not in service + timer + launchd
     assert b"--repo" not in service + timer + launchd
@@ -177,6 +178,7 @@ def test_capture_enable_and_disable_wrap_configured_repo_and_schedule(
     assert cli.main(enable) == 0
     first = json.loads(capsys.readouterr().out)
     assert first == {
+        "archive_enabled": False,
         "command": "capture enable",
         "repos_enrolled": 1,
         "schedule_backend": "systemd",
@@ -209,6 +211,50 @@ def test_capture_enable_and_disable_wrap_configured_repo_and_schedule(
     assert json.loads(capsys.readouterr().out)["schedule_removed"] is False
 
 
+def test_capture_enable_persists_explicit_archive_consent_in_generated_jobs(
+    tmp_path, monkeypatch, capsys
+):
+    _systemd_environment(tmp_path, monkeypatch)
+    repo = _repo(tmp_path)
+    store_scan_config(ScanConfig(repos=(repo,)))
+    command = ["capture", "enable", "--archive", "--repo", str(repo), "--json"]
+
+    assert cli.main(command) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["archive_enabled"] is True
+    state = scheduler.load()
+    assert state is not None and state.archive_enabled is True
+    assert state.as_dict()["schema_version"] == "2"
+    assert scheduler.inspect()["registration_state"] == "active"
+    service, timer = scheduler.systemd_paths()
+    assert b"scan --quiet --scheduled --archive" in service.read_bytes()
+    assert b"--archive" not in timer.read_bytes()
+    before = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (service, timer, paths.schedule_path())
+    }
+
+    assert cli.main(command) == 0
+    capsys.readouterr()
+    assert {
+        path: (path.read_bytes(), path.stat().st_mtime_ns) for path in before
+    } == before
+
+    launchd = plistlib.loads(
+        scheduler.render_launchd(
+            Path("/opt/mybench/bin/mybench"),
+            archive_enabled=True,
+        )
+    )
+    assert launchd["ProgramArguments"] == [
+        "/opt/mybench/bin/mybench",
+        "scan",
+        "--quiet",
+        "--scheduled",
+        "--archive",
+    ]
+
+
 def test_scheduled_mode_requires_consented_config_but_manual_fallback_does_not(
     tmp_path, monkeypatch, capsys
 ):
@@ -230,6 +276,29 @@ def test_scheduled_mode_requires_consented_config_but_manual_fallback_does_not(
     manual = json.loads(capsys.readouterr().out)
     assert manual["schedule_backend"] == manual["schedule_state"] == "manual"
     assert scheduler.inspect()["registration_state"] == "manual"
+
+
+def test_manual_fallback_refuses_archive_consent_without_writing(
+    tmp_path, monkeypatch, capsys
+):
+    _systemd_environment(tmp_path, monkeypatch)
+    repo = _repo(tmp_path)
+    command = [
+        "capture",
+        "enable",
+        "--no-schedule",
+        "--archive",
+        "--repo",
+        str(repo),
+        "--json",
+    ]
+
+    assert cli.main(command) == 1
+    assert json.loads(capsys.readouterr().err)["error"] == "archive_requires_schedule"
+    assert not (repo / ".git" / "hooks" / "post-commit").exists()
+    assert not paths.schedule_path().exists()
+    with pytest.raises(scheduler.SchedulerError, match="requires a scheduler"):
+        scheduler.enable(schedule=False, archive_enabled=True)
 
 
 def test_capture_enable_preflights_every_repo_before_any_write(
@@ -414,6 +483,25 @@ def test_real_quiet_scheduled_scan_exits_and_records_success(tmp_path, monkeypat
     assert state.last_exit_code == 0
 
 
+def test_real_quiet_scheduled_archive_scan_retains_private_preimage(
+    tmp_path, monkeypatch, capsys
+):
+    _systemd_environment(tmp_path, monkeypatch)
+    watch = tmp_path / "watch"
+    watch.mkdir()
+    (watch / "session.jsonl").write_text('{"synthetic":"archive-line"}\n')
+    store_scan_config(ScanConfig(watches=(WatchSpec(watch, "codex"),)))
+    scheduler.enable(archive_enabled=True)
+
+    assert cli.main(["scan", "--quiet", "--scheduled", "--archive", "--json"]) == 0
+    output = capsys.readouterr()
+    assert output.out == "" and output.err == ""
+    assert len(list(paths.archive_dir().glob("*/*"))) == 1
+    state = scheduler.load()
+    assert state is not None and state.archive_enabled is True
+    assert state.last_result == "success"
+
+
 def test_status_reports_inactive_or_invalid_schedule_without_repair(
     tmp_path, monkeypatch
 ):
@@ -439,11 +527,20 @@ def test_scheduler_files_are_canary_clean_and_companion_fires(tmp_path):
     fx = generate_fixtures(tmp_path / "fixtures", claude_sessions=1, codex_sessions=1)
     service, timer = scheduler.render_systemd(Path("/opt/mybench/bin/mybench"))
     launchd = scheduler.render_launchd(Path("/opt/mybench/bin/mybench"))
+    archive_service, archive_timer = scheduler.render_systemd(
+        Path("/opt/mybench/bin/mybench"), archive_enabled=True
+    )
+    archive_launchd = scheduler.render_launchd(
+        Path("/opt/mybench/bin/mybench"), archive_enabled=True
+    )
     artifacts = []
     for name, content in (
         ("service", service),
         ("timer", timer),
         ("plist", launchd),
+        ("archive-service", archive_service),
+        ("archive-timer", archive_timer),
+        ("archive-plist", archive_launchd),
     ):
         path = tmp_path / name
         path.write_bytes(content)
@@ -458,7 +555,7 @@ def test_scheduler_files_are_canary_clean_and_companion_fires(tmp_path):
         )
     ]
     canaries = fx.all_canaries() + keys + [bytes.fromhex("a5" * 32)]
-    assert assert_no_canaries(artifacts, canaries) == 3
+    assert assert_no_canaries(artifacts, canaries) == 6
 
     planted = tmp_path / "planted.service"
     planted.write_bytes(service + fx.content_canaries[0].encode())
@@ -480,6 +577,25 @@ def test_schedule_state_loader_refuses_insecure_storage(tmp_path, attack):
         target.with_suffix(".hardlink").hardlink_to(target)
     with pytest.raises((OSError, scheduler.SchedulerError)):
         scheduler.load()
+
+
+def test_v1_schedule_state_loads_archive_off_and_upgrades_on_next_write():
+    scheduler.enable(schedule=False)
+    target = paths.schedule_path()
+    legacy = json.loads(target.read_text())
+    legacy["schema_version"] = "1"
+    del legacy["archive_enabled"]
+    target.write_text(json.dumps(legacy, sort_keys=True, separators=(",", ":")) + "\n")
+
+    before = target.read_bytes()
+    loaded = scheduler.load()
+    assert loaded is not None and loaded.archive_enabled is False
+    assert scheduler.inspect()["registration_state"] == "manual"
+    assert target.read_bytes() == before
+    scheduler.enable(schedule=False)
+    upgraded = json.loads(target.read_text())
+    assert upgraded["schema_version"] == "2"
+    assert upgraded["archive_enabled"] is False
 
 
 def test_foreign_scheduler_file_is_never_overwritten(tmp_path, monkeypatch):

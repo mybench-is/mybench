@@ -1,7 +1,8 @@
 """OS-native daily scan registration with no resident mybench process.
 
-The systemd user timer and launchd agent contain only the installed CLI path
-and ``scan --quiet --scheduled``.  Backend choice and last scheduled result
+The systemd user timer and launchd agent contain only the installed CLI path,
+``scan --quiet --scheduled``, and the optional explicitly consented
+``--archive`` flag. Backend choice, archive consent, and last scheduled result
 live in one canonical private receipt so :mod:`mybench.status` can inspect the
 registration without writing or networking.
 """
@@ -43,6 +44,7 @@ class ScheduleState:
     backend: str
     executable: str | None
     xdg_data_home: str | None = None
+    archive_enabled: bool = False
     last_attempt_at: str | None = None
     last_success_at: str | None = None
     last_result: str = "never"
@@ -50,10 +52,11 @@ class ScheduleState:
 
     def as_dict(self) -> dict:
         return {
-            "schema_version": "1",
+            "schema_version": "2",
             "backend": self.backend,
             "executable": self.executable,
             "xdg_data_home": self.xdg_data_home,
+            "archive_enabled": self.archive_enabled,
             "last_attempt_at": self.last_attempt_at,
             "last_success_at": self.last_success_at,
             "last_result": self.last_result,
@@ -72,6 +75,20 @@ def _timestamp(value: datetime) -> str:
 
 
 def _validated(value: object) -> ScheduleState:
+    if isinstance(value, dict) and value.get("schema_version") == "1":
+        legacy_keys = {
+            "schema_version",
+            "backend",
+            "executable",
+            "xdg_data_home",
+            "last_attempt_at",
+            "last_success_at",
+            "last_result",
+            "last_exit_code",
+        }
+        if set(value) != legacy_keys:
+            raise SchedulerError("schedule state is invalid")
+        value = {**value, "schema_version": "2", "archive_enabled": False}
     errors = sorted(load_validator("schedule.schema.json").iter_errors(value), key=str)
     if errors or not isinstance(value, dict):
         raise SchedulerError("schedule state is invalid")
@@ -79,6 +96,7 @@ def _validated(value: object) -> ScheduleState:
         backend=value["backend"],
         executable=value["executable"],
         xdg_data_home=value["xdg_data_home"],
+        archive_enabled=value["archive_enabled"],
         last_attempt_at=value["last_attempt_at"],
         last_success_at=value["last_success_at"],
         last_result=value["last_result"],
@@ -87,8 +105,12 @@ def _validated(value: object) -> ScheduleState:
     if value != state.as_dict():
         raise SchedulerError("schedule state is not canonical")
     if state.backend == "manual":
-        if state.executable is not None or state.xdg_data_home is not None:
-            raise SchedulerError("manual schedule state cannot name execution paths")
+        if (
+            state.executable is not None
+            or state.xdg_data_home is not None
+            or state.archive_enabled
+        ):
+            raise SchedulerError("manual schedule state cannot name execution options")
     elif state.executable is None or not Path(state.executable).is_absolute():
         raise SchedulerError("scheduled backend requires an absolute executable")
     if state.xdg_data_home is not None and not Path(state.xdg_data_home).is_absolute():
@@ -311,6 +333,7 @@ def record_run(exit_code: int, *, completed_at: datetime | None = None) -> Sched
             backend=current.backend,
             executable=current.executable,
             xdg_data_home=current.xdg_data_home,
+            archive_enabled=current.archive_enabled,
             last_attempt_at=timestamp,
             last_success_at=timestamp if exit_code == 0 else current.last_success_at,
             last_result="success" if exit_code == 0 else "failed",
@@ -354,17 +377,19 @@ def render_systemd(
     executable: Path,
     *,
     xdg_data_home: Path | None = None,
+    archive_enabled: bool = False,
 ) -> tuple[bytes, bytes]:
     """Return deterministic oneshot service/timer bytes for fixture tests."""
     command = _quoted_systemd_path(executable)
     environment = _systemd_environment(xdg_data_home)
+    archive_argument = " --archive" if archive_enabled else ""
     service = f"""# {_MANAGED_SENTINEL.decode()}
 [Unit]
 Description=Run the private mybench reconciliation scan
 
 [Service]
 Type=oneshot
-{environment}ExecStart={command} scan --quiet --scheduled
+{environment}ExecStart={command} scan --quiet --scheduled{archive_argument}
 NoNewPrivileges=true
 PrivateTmp=true
 """.encode()
@@ -384,16 +409,24 @@ WantedBy=timers.target
     return service, timer
 
 
-def render_launchd(executable: Path, *, xdg_data_home: Path | None = None) -> bytes:
+def render_launchd(
+    executable: Path,
+    *,
+    xdg_data_home: Path | None = None,
+    archive_enabled: bool = False,
+) -> bytes:
     """Return a deterministic non-resident launchd agent plist."""
     value = str(executable)
     if not executable.is_absolute() or any(ord(char) < 32 for char in value):
         raise SchedulerError("scheduler executable path is invalid")
+    arguments = [value, "scan", "--quiet", "--scheduled"]
+    if archive_enabled:
+        arguments.append("--archive")
     value_dict = {
         "KeepAlive": False,
         "Label": LAUNCHD_LABEL,
         "ProcessType": "Background",
-        "ProgramArguments": [value, "scan", "--quiet", "--scheduled"],
+        "ProgramArguments": arguments,
         "RunAtLoad": False,
         "StandardErrorPath": "/dev/null",
         "StandardOutPath": "/dev/null",
@@ -601,23 +634,34 @@ def _write_backend_files(
     backend: str,
     executable: Path,
     xdg_data_home: Path | None,
+    archive_enabled: bool,
 ) -> None:
     if backend == "systemd":
-        service, timer = render_systemd(executable, xdg_data_home=xdg_data_home)
+        service, timer = render_systemd(
+            executable,
+            xdg_data_home=xdg_data_home,
+            archive_enabled=archive_enabled,
+        )
         service_path, timer_path = systemd_paths()
         _write_owned(service_path, service)
         _write_owned(timer_path, timer)
     elif backend == "launchd":
         _write_owned(
             launchd_path(),
-            render_launchd(executable, xdg_data_home=xdg_data_home),
+            render_launchd(
+                executable,
+                xdg_data_home=xdg_data_home,
+                archive_enabled=archive_enabled,
+            ),
         )
     else:
         raise SchedulerError("unknown scheduler backend")
 
 
-def enable(*, schedule: bool = True) -> ScheduleState:
+def enable(*, schedule: bool = True, archive_enabled: bool = False) -> ScheduleState:
     """Register daily capture or record the explicit manual fallback."""
+    if not schedule and archive_enabled:
+        raise SchedulerError("scheduled archive retention requires a scheduler")
     current = load()
     if not schedule:
         if current is not None and current.backend != "manual":
@@ -628,6 +672,7 @@ def enable(*, schedule: bool = True) -> ScheduleState:
             backend="manual",
             executable=None,
             xdg_data_home=None,
+            archive_enabled=False,
             last_attempt_at=current.last_attempt_at if current else None,
             last_success_at=current.last_success_at if current else None,
             last_result=current.last_result if current else "never",
@@ -644,12 +689,13 @@ def enable(*, schedule: bool = True) -> ScheduleState:
         _unregister(current.backend)
         _remove_backend_files(current.backend)
     try:
-        _write_backend_files(backend, executable, xdg_data_home)
+        _write_backend_files(backend, executable, xdg_data_home, archive_enabled)
         _register(backend)
         state = ScheduleState(
             backend=backend,
             executable=str(executable),
             xdg_data_home=str(xdg_data_home) if xdg_data_home is not None else None,
+            archive_enabled=archive_enabled,
             last_attempt_at=current.last_attempt_at if current else None,
             last_success_at=current.last_success_at if current else None,
             last_result=current.last_result if current else "never",
@@ -733,7 +779,11 @@ def inspect() -> dict:
         executable = Path(state.executable or "")
         xdg_data_home = Path(state.xdg_data_home) if state.xdg_data_home is not None else None
         if state.backend == "systemd":
-            service, timer = render_systemd(executable, xdg_data_home=xdg_data_home)
+            service, timer = render_systemd(
+                executable,
+                xdg_data_home=xdg_data_home,
+                archive_enabled=state.archive_enabled,
+            )
             service_path, timer_path = systemd_paths()
             files_valid = _external_valid(service_path, service) and _external_valid(
                 timer_path, timer
@@ -741,7 +791,11 @@ def inspect() -> dict:
         else:
             files_valid = _external_valid(
                 launchd_path(),
-                render_launchd(executable, xdg_data_home=xdg_data_home),
+                render_launchd(
+                    executable,
+                    xdg_data_home=xdg_data_home,
+                    archive_enabled=state.archive_enabled,
+                ),
             )
         if not files_valid:
             raise SchedulerError("installed scheduler files are invalid")

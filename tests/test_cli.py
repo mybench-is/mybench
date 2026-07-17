@@ -151,6 +151,7 @@ def test_capture_enable_is_explicit_idempotent_and_counts_only(tmp_path, capsys)
     assert cli.main(command) == 0
     first = capsys.readouterr()
     assert json.loads(first.out) == {
+        "archive_enabled": False,
         "command": "capture enable",
         "repos_enrolled": 1,
         "schedule_backend": "manual",

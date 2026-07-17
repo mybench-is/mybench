@@ -23,6 +23,18 @@ explicit data-home root, the job preserves that operational root so it reads
 the same private config and ledger. The hidden marker only lets the CLI record
 scheduled-run health.
 
+Private transcript preimage retention remains off by default. Owners who have
+separately approved that local retention must opt the scheduled job in:
+
+```sh
+mybench capture enable --archive --repo /path/you/accepted
+```
+
+That explicit choice is stored in the private schedule receipt and adds only
+`--archive` to the generated scan command. It changes no source paths, network
+access, or publication behavior. `--archive --no-schedule` is refused because
+there would be no scheduled scan to honor the retention choice.
+
 If no supported user scheduler is reachable, enable the explicit manual
 fallback:
 
@@ -50,9 +62,9 @@ removed. The consented scan config and append-only ledger remain intact.
 The scheduled process exits after one scan. A failed run has no shell parent
 to block and does not disable the timer/agent; the next daily activation still
 runs. The private 0600 schedule receipt records only UTC attempt/success times,
-the numeric exit code, result class, backend, installed executable path, and
-optional explicit data-home root. Status reports the failure without retrying
-or repairing it.
+the numeric exit code, result class, backend, installed executable path,
+optional explicit data-home root, and the archive-retention boolean. Status
+reports the failure without retrying or repairing it.
 
 Plain scheduled scans remain offline. OpenTimestamps network refresh requires
 the explicit `scan --upgrade` flag, which generated jobs never contain. No
