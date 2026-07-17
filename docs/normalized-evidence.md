@@ -11,6 +11,7 @@ One corpus artifact contains:
 
 - opaque session identities and conservative task-episode links;
 - closed, structurally observed lane markers and opaque parent-session links;
+- one versioned, content-opaque arrival-pattern output per stitched episode;
 - turn, paste, tool, lifecycle, model, token, reference, and test structure;
 - coarse content shapes such as `short` and `single`;
 - pointers to eligible fields in a committed transcript record; and
@@ -110,6 +111,20 @@ the parent lane's tool-result context. Sessions with absent lane evidence stay
 included in both views; absence is UNKNOWN, never permission to guess a
 duplicate. Token-field missingness and provider-reporting caveats are unchanged.
 
+### Episode arrival pattern (schema v3)
+
+Every stitched episode has one `manifest.episodes[]` record containing the
+pinned `arrival_pattern` vocabulary, `classifier_version`, and
+`taxonomy_version`. `unknown` is a first-class value. The v1 classifier reads
+only root-session lineage plus normalized `reference`, `pasted-span`,
+`content_shape`, `tool_family`, authorship, and ordering fields. It never
+resolves a pointer or reads free text. The complete pinned rule table, stability
+assessment, and defer-to-JUDGED boundary are in
+[`arrival-pattern-taxonomy.md`](arrival-pattern-taxonomy.md).
+
+Arrival-pattern output remains local A8 evidence. No conditioned public form is
+authorized before the MYB-19.7 ruling.
+
 ## What a pointer means
 
 A transcript pointer names a field and carries the salted commitment of its
@@ -153,9 +168,10 @@ big-endian length framing. The existing RFC-6962-shaped tree uses
 `mybench:v1:node` without duplicating odd leaves, and the result is wrapped by
 `mybench:v1:normalized-corpus`.
 
-Schema v2 changes the canonical manifest/event record bytes and therefore
-produces new corpus roots. It does not change any manifest, event, node, or
-corpus commitment domain, length framing, leaf order, or tree rule.
+Schema v2 changed canonical manifest/event bytes for lane evidence. Schema v3
+changes them again for the versioned episode output and classifier metadata.
+Both boundaries produce new corpus roots without changing any manifest, event,
+node, or corpus commitment domain, length framing, leaf order, or tree rule.
 
 Zero transcript sessions or zero verified repository snapshots produce no
 artifact. A nonempty input whose consent filter admits no records produces a

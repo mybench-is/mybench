@@ -1,12 +1,14 @@
 """Shared normalized-corpus contract for every transcript adapter.
 
-Claude owns the v2 contract implementation, while the Claude and Codex sibling
+Claude owns the v3 contract implementation, while the Claude and Codex sibling
 adapters both use this module for the byte contract and artifact validator.
 Keeping that public surface source-neutral prevents an adapter-specific schema
 or Merkle fork.
 """
 
 from mybench.normalizer.claude import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION as ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION as ARRIVAL_PATTERN_TAXONOMY_VERSION,
     AUTHORSHIP_POLICY_VERSION as AUTHORSHIP_POLICY_VERSION,
     DOMAIN_NORMALIZED_CORPUS as DOMAIN_NORMALIZED_CORPUS,
     DOMAIN_NORMALIZED_EVENT as DOMAIN_NORMALIZED_EVENT,
@@ -24,6 +26,8 @@ from mybench.normalizer.claude import (
 )
 
 __all__ = [
+    "ARRIVAL_PATTERN_CLASSIFIER_VERSION",
+    "ARRIVAL_PATTERN_TAXONOMY_VERSION",
     "AUTHORSHIP_POLICY_VERSION",
     "DOMAIN_NORMALIZED_CORPUS",
     "DOMAIN_NORMALIZED_EVENT",

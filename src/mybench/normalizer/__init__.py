@@ -12,6 +12,8 @@ from mybench.normalizer.claude import (
     resolution_coverage,
 )
 from mybench.normalizer.contract import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION,
     AUTHORSHIP_POLICY_VERSION,
     EPISODE_STITCHER_VERSION,
     NORMALIZER_VERSION,
@@ -35,6 +37,8 @@ from mybench.normalizer.repo import (
 )
 
 __all__ = [
+    "ARRIVAL_PATTERN_CLASSIFIER_VERSION",
+    "ARRIVAL_PATTERN_TAXONOMY_VERSION",
     "AUTHORSHIP_POLICY_VERSION",
     "CLAUDE_ADAPTER_VERSION",
     "CODEX_ADAPTER_VERSION",

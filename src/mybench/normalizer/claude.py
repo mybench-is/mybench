@@ -27,19 +27,21 @@ from datetime import datetime, timezone
 from mybench.claims.canonical import CanonicalError, canonical_bytes
 from mybench.commitment_tree import leaf_commitment, merkle_root
 
-SCHEMA_VERSION = "2"
-NORMALIZER_VERSION = "2.0.0"
+SCHEMA_VERSION = "3"
+NORMALIZER_VERSION = "3.0.0"
 AUTHORSHIP_POLICY_VERSION = "1.0.0"
-EPISODE_STITCHER_VERSION = "1.0.0"
+EPISODE_STITCHER_VERSION = "2.0.0"
 TOKEN_ACCOUNTING_POLICY_VERSION = "1.0.0"
-CLAUDE_ADAPTER_VERSION = "2.0.0"
+ARRIVAL_PATTERN_CLASSIFIER_VERSION = "1.0.0"
+ARRIVAL_PATTERN_TAXONOMY_VERSION = "1.0.0"
+CLAUDE_ADAPTER_VERSION = "3.0.0"
 
 DOMAIN_NORMALIZED_MANIFEST = b"mybench:v1:normalized-corpus-manifest"
 DOMAIN_NORMALIZED_EVENT = b"mybench:v1:normalized-event"
 DOMAIN_NORMALIZED_CORPUS = b"mybench:v1:normalized-corpus"
 
 _SOURCE = "claude-code"
-_ADAPTER_VERSIONS = {"claude-code": "2.0.0", "codex": "2.0.0"}
+_ADAPTER_VERSIONS = {"claude-code": "3.0.0", "codex": "3.0.0"}
 _OPAQUE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _HEX16 = re.compile(r"[0-9a-f]{16}\Z")
@@ -104,6 +106,9 @@ _COVERAGE_KEYS = (
     "content_unknown",
     "metadata_invalid",
     "lineage_unresolved",
+)
+_ARRIVAL_PATTERNS = frozenset(
+    {"cold-start", "prepared-spec", "iterative-emergence", "unknown"}
 )
 EPISODE_ADJACENCY_SECONDS = 30 * 60
 
@@ -539,7 +544,7 @@ def _lane_markers(
 
 
 def token_accounting_includes(session: Mapping, *, view: str) -> bool:
-    """Apply normalized-corpus v2's orchestrated-vs-deduped lane rule.
+    """Apply the pinned orchestrated-vs-deduped lane rule.
 
     The orchestrated view counts every admitted session.  The deduped view
     excludes only a session explicitly marked as a subagent; absent lane
@@ -555,6 +560,131 @@ def token_accounting_includes(session: Mapping, *, view: str) -> bool:
     if view == "deduped":
         return lane_role != "subagent"
     raise _safe_error("token accounting view is unsupported")
+
+
+def _arrival_pattern_for_episode(
+    episode_id: str,
+    sessions: Sequence[Mapping],
+    events: Sequence[Mapping],
+) -> str:
+    """Classify one stitched episode from closed structural fields only.
+
+    The root session's pre-implementation arrival window is the only input.
+    Free text, pointers, commitments, timestamps, and provider-specific raw
+    records are deliberately unavailable to this rule table.
+    """
+    members = {
+        (session.get("source"), session.get("session_id"))
+        for session in sessions
+        if session.get("task_episode_id") == episode_id
+    }
+    if not members:
+        return "unknown"
+
+    roots = []
+    for session in sessions:
+        key = (session.get("source"), session.get("session_id"))
+        if key not in members:
+            continue
+        predecessors = set()
+        parent_id = session.get("parent_session_id")
+        if parent_id is not None:
+            predecessors.add((session.get("source"), parent_id))
+        predecessor = session.get("episode_predecessor")
+        if isinstance(predecessor, Mapping):
+            predecessors.add((session.get("source"), predecessor.get("session_id")))
+        if not (predecessors & members):
+            roots.append(key)
+    if len(roots) != 1:
+        return "unknown"
+
+    root_events = sorted(
+        (
+            event
+            for event in events
+            if (event.get("source"), event.get("session_id")) == roots[0]
+        ),
+        key=lambda event: (event.get("record_index", -1), event.get("subevent_index", -1)),
+    )
+    implementation_records = [
+        event["record_index"]
+        for event in root_events
+        if event.get("event_kind") == "test"
+        or (
+            event.get("event_kind") == "tool-call"
+            and event.get("tool_family") not in {"read", "search"}
+        )
+    ]
+    boundary = min(implementation_records) if implementation_records else None
+    arrival_window = [
+        event
+        for event in root_events
+        if boundary is None or event.get("record_index", -1) <= boundary
+    ]
+    arrivals = [
+        event
+        for event in arrival_window
+        if (
+            event.get("event_kind") == "turn"
+            and event.get("authorship") == "human-turn"
+        )
+        or event.get("event_kind") == "pasted-span"
+    ]
+    if not arrivals:
+        return "unknown"
+
+    prepared_reference = any(
+        event.get("event_kind") == "reference"
+        and event.get("reference_kind") in {"plan", "instruction"}
+        for event in arrival_window
+    )
+    first_shape = arrivals[0].get("content_shape")
+    prepared_shape = isinstance(first_shape, Mapping) and (
+        first_shape.get("size_band") == "long"
+        or first_shape.get("line_band") == "many"
+    )
+    if (
+        prepared_reference
+        or prepared_shape
+        or any(event.get("event_kind") == "pasted-span" for event in arrivals)
+    ):
+        return "prepared-spec"
+
+    arrival_records = {event.get("record_index") for event in arrivals}
+    if len(arrival_records) >= 2:
+        return "iterative-emergence"
+    if (
+        len(arrivals) == 1
+        and arrivals[0].get("event_kind") == "turn"
+        and isinstance(first_shape, Mapping)
+        and first_shape.get("size_band") == "short"
+        and first_shape.get("line_band") == "single"
+    ):
+        return "cold-start"
+    return "unknown"
+
+
+def _arrival_pattern_outputs(
+    sessions: Sequence[Mapping], events: Sequence[Mapping]
+) -> list[dict]:
+    episode_ids = sorted(
+        {
+            session["task_episode_id"]
+            for session in sessions
+            if "task_episode_id" in session
+        }
+    )
+    return [
+        {
+            "task_episode_id": episode_id,
+            "arrival_pattern": _arrival_pattern_for_episode(
+                episode_id, sessions, events
+            ),
+            "classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+            "taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+        }
+        for episode_id in episode_ids
+    ]
 
 
 def _parent_links(
@@ -1318,6 +1448,7 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
 
     events.sort(key=_event_sort_key)
     manifest_sessions.sort(key=lambda item: (item["source"].encode(), item["session_id"].encode()))
+    episode_outputs = _arrival_pattern_outputs(manifest_sessions, events)
     coverage_dict = {key: coverage[key] for key in _COVERAGE_KEYS}
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -1328,9 +1459,12 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
             "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
             "episode_stitcher_version": EPISODE_STITCHER_VERSION,
             "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
+            "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+            "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CLAUDE_ADAPTER_VERSION}],
         "sessions": manifest_sessions,
+        "episodes": episode_outputs,
         "coverage": coverage_dict,
         "event_count": len(events),
     }
@@ -1572,6 +1706,7 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
         "normalizer",
         "adapters",
         "sessions",
+        "episodes",
         "coverage",
         "event_count",
     }
@@ -1588,6 +1723,8 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
         "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
         "episode_stitcher_version": EPISODE_STITCHER_VERSION,
         "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
+        "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+        "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
     }
     if manifest["normalizer"] != expected_normalizer:
         raise _safe_error("normalized manifest has an unsupported normalizer version")
@@ -1668,6 +1805,31 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
         session_keys.append((session["source"].encode(), session["session_id"].encode()))
     if session_keys != sorted(session_keys) or len(session_keys) != len(set(session_keys)):
         raise _safe_error("normalized manifest sessions are not sorted and unique")
+    episodes = manifest["episodes"]
+    if not isinstance(episodes, list):
+        raise _safe_error("normalized manifest episodes must be an array")
+    episode_ids = []
+    for episode in episodes:
+        if not _exact_keys(
+            episode,
+            {
+                "task_episode_id",
+                "arrival_pattern",
+                "classifier_version",
+                "taxonomy_version",
+            },
+        ):
+            raise _safe_error("normalized manifest episode has invalid fields")
+        if (
+            not _is_episode_id(episode["task_episode_id"])
+            or not _is_label(episode["arrival_pattern"], _ARRIVAL_PATTERNS)
+            or episode["classifier_version"] != ARRIVAL_PATTERN_CLASSIFIER_VERSION
+            or episode["taxonomy_version"] != ARRIVAL_PATTERN_TAXONOMY_VERSION
+        ):
+            raise _safe_error("normalized manifest episode has invalid classification")
+        episode_ids.append(episode["task_episode_id"])
+    if episode_ids != sorted(episode_ids) or len(episode_ids) != len(set(episode_ids)):
+        raise _safe_error("normalized manifest episodes are not sorted and unique")
     coverage = manifest["coverage"]
     if not _exact_keys(coverage, set(_COVERAGE_KEYS)) or any(
         not _is_uint(value) for value in coverage.values()
@@ -1763,6 +1925,8 @@ def _validate_identity_semantics(manifest: dict, events: Sequence[dict]) -> None
     for key, session in by_key.items():
         if session.get("task_episode_id") != expected_episodes.get(key):
             raise _safe_error("normalized manifest episode identity is inconsistent")
+    if manifest["episodes"] != _arrival_pattern_outputs(sessions, events):
+        raise _safe_error("normalized manifest arrival pattern is inconsistent")
     if manifest["coverage"]["lineage_unresolved"] != unresolved:
         raise _safe_error("normalized manifest lineage coverage is inconsistent")
 

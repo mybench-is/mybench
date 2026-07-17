@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.is/schemas/v2/normalized_corpus.schema.json",
+  "$id": "https://mybench.is/schemas/v3/normalized_corpus.schema.json",
   "title": "Mybench Normalized Evidence Corpus",
-  "description": "Closed A8 schema v2 (MYB-10.4, MYB-19.1). It can represent derived structure, opaque identities, closed lane markers, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
+  "description": "Closed A8 schema v3 (MYB-10.4, MYB-19.1, MYB-19.3). It can represent derived structure, opaque identities, closed lane markers, versioned episode arrival-pattern classifications, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
   "$defs": {
     "hex64": {
       "type": "string",
@@ -137,7 +137,7 @@
         "parent_link"
       ],
       "properties": {
-        "schema_version": {"const": "2"},
+        "schema_version": {"const": "3"},
         "kind": {"const": "normalized-event"},
         "source": {"enum": ["claude-code", "codex"]},
         "session_id": {"$ref": "#/$defs/opaqueId"},
@@ -343,26 +343,28 @@
   "additionalProperties": false,
   "required": ["schema_version", "kind", "corpus_commitment", "manifest", "events"],
   "properties": {
-    "schema_version": {"const": "2"},
+    "schema_version": {"const": "3"},
     "kind": {"const": "normalized-corpus-artifact"},
     "corpus_commitment": {"$ref": "#/$defs/hex64"},
     "manifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "kind", "normalizer", "adapters", "sessions", "coverage", "event_count"],
+      "required": ["schema_version", "kind", "normalizer", "adapters", "sessions", "episodes", "coverage", "event_count"],
       "properties": {
-        "schema_version": {"const": "2"},
+        "schema_version": {"const": "3"},
         "kind": {"const": "normalized-corpus-manifest"},
         "normalizer": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version", "token_accounting_policy_version"],
+          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version", "token_accounting_policy_version", "arrival_pattern_classifier_version", "arrival_pattern_taxonomy_version"],
           "properties": {
             "name": {"const": "mybench.normalizer"},
-            "version": {"const": "2.0.0"},
+            "version": {"const": "3.0.0"},
             "authorship_policy_version": {"const": "1.0.0"},
-            "episode_stitcher_version": {"const": "1.0.0"},
-            "token_accounting_policy_version": {"const": "1.0.0"}
+            "episode_stitcher_version": {"const": "2.0.0"},
+            "token_accounting_policy_version": {"const": "1.0.0"},
+            "arrival_pattern_classifier_version": {"const": "1.0.0"},
+            "arrival_pattern_taxonomy_version": {"const": "1.0.0"}
           }
         },
         "adapters": {
@@ -377,7 +379,7 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "claude-code"},
-                  "version": {"const": "2.0.0"}
+                  "version": {"const": "3.0.0"}
                 }
               },
               {
@@ -386,10 +388,25 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "codex"},
-                  "version": {"const": "2.0.0"}
+                  "version": {"const": "3.0.0"}
                 }
               }
             ]
+          }
+        },
+        "episodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["task_episode_id", "arrival_pattern", "classifier_version", "taxonomy_version"],
+            "properties": {
+              "task_episode_id": {"$ref": "#/$defs/episodeId"},
+              "arrival_pattern": {"enum": ["cold-start", "prepared-spec", "iterative-emergence", "unknown"]},
+              "classifier_version": {"const": "1.0.0"},
+              "taxonomy_version": {"const": "1.0.0"}
+            }
           }
         },
         "sessions": {
