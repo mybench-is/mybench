@@ -9,7 +9,8 @@ open-source scorer computes activity metrics over the local ledger and produces 
 versioned JSON report rendered as a static page with verification instructions.
 
 See [`docs/PROJECT_BRIEF.md`](docs/PROJECT_BRIEF.md) for the full brief and
-[`CLAUDE.md`](CLAUDE.md) for the non-negotiable privacy invariants. Planning,
+[`AGENTS.md`](AGENTS.md) for the non-negotiable privacy invariants. Claude Code
+loads the same source through [`CLAUDE.md`](CLAUDE.md). Planning,
 roadmap, and decisions live in the sibling repo `../mybench-ops`.
 
 ## Layout

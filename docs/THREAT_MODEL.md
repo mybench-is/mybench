@@ -315,7 +315,7 @@ leaves only as artifacts of §3-admitted classes (the §3.1 trust substrate and
 
 **Local-store widening (v0.1.3) changes no egress rule:** assets A8–A10 are
 local-only. P1's raw-content core, the §3 whitelist, this section's
-zero-content-egress statement, and CLAUDE.md invariant #1 were not widened by
+zero-content-egress statement, and AGENTS.md invariant #1 were not widened by
 that revision; nothing stored in A8–A10 leaves the machine except as an
 artifact of a §3-admitted class through a user-initiated publication act —
 the class rulings themselves are the v0.2.0 §3 revision, adopted at the same

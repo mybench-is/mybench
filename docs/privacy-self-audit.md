@@ -138,7 +138,7 @@ rather than by the `src/mybench` grep.
 ### S11 — Git histories of mybench + mybench-ops (accidental data commits)
 - **Risk:** real transcript content, nonces, ledger fragments, or real
   session ids committed at any point in history.
-- **Check:** `git -C <repo> log --all --name-only --format= | sort -u | grep -vE '^(src/|tests/|docs/|ops/|epics/|backlog/|decisions/|reviews/|ideas/|\.mybench/|\.github/|\.gitignore|schemas/|README|CLAUDE|ROADMAP|SETUP_TODO|pyproject|pytest|requirements)'`
+- **Check:** `git -C <repo> log --all --name-only --format= | sort -u | grep -vE '^(src/|tests/|docs/|ops/|epics/|backlog/|decisions/|reviews/|ideas/|\.mybench/|\.github/|\.gitignore|schemas/|README|AGENTS|CLAUDE|ROADMAP|SETUP_TODO|pyproject|pytest|requirements)'`
   (any unexplained path fails); then keyword sweep over all blobs:
   `git -C <repo> grep -I -l -E "MYBENCH-CANARY|BEGIN (OPENSSH|EC|RSA) PRIVATE" $(git -C <repo> rev-list --all) | head` — canaries may
   legitimately appear in test SOURCE files only; private-key markers never.
