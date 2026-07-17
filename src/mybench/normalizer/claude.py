@@ -27,18 +27,19 @@ from datetime import datetime, timezone
 from mybench.claims.canonical import CanonicalError, canonical_bytes
 from mybench.commitment_tree import leaf_commitment, merkle_root
 
-SCHEMA_VERSION = "1"
-NORMALIZER_VERSION = "1.0.0"
+SCHEMA_VERSION = "2"
+NORMALIZER_VERSION = "2.0.0"
 AUTHORSHIP_POLICY_VERSION = "1.0.0"
 EPISODE_STITCHER_VERSION = "1.0.0"
-CLAUDE_ADAPTER_VERSION = "1.0.0"
+TOKEN_ACCOUNTING_POLICY_VERSION = "1.0.0"
+CLAUDE_ADAPTER_VERSION = "2.0.0"
 
 DOMAIN_NORMALIZED_MANIFEST = b"mybench:v1:normalized-corpus-manifest"
 DOMAIN_NORMALIZED_EVENT = b"mybench:v1:normalized-event"
 DOMAIN_NORMALIZED_CORPUS = b"mybench:v1:normalized-corpus"
 
 _SOURCE = "claude-code"
-_ADAPTER_VERSIONS = {"claude-code": "1.0.0", "codex": "1.0.0"}
+_ADAPTER_VERSIONS = {"claude-code": "2.0.0", "codex": "2.0.0"}
 _OPAQUE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _HEX16 = re.compile(r"[0-9a-f]{16}\Z")
@@ -508,6 +509,52 @@ def _sidechain_mode(decoded: Mapping[int, dict], records: Sequence[VerifiedRecor
             return None
         markers.append(marker)
     return markers[0] if markers and len(set(markers)) == 1 else None
+
+
+def _lane_markers(
+    decoded: Mapping[int, dict], records: Sequence[VerifiedRecord]
+) -> tuple[dict, set[int]]:
+    """Return closed structural lane evidence and consumed launcher records.
+
+    Claude's boolean ``isSidechain`` marker is admitted only when every
+    subject-authored message record agrees.  A queue-operation record proves
+    only that the headless launcher participated; none of its other fields are
+    copied or interpreted.  Missing or contradictory markers stay absent.
+    """
+    markers = {}
+    sidechain = _sidechain_mode(decoded, records)
+    if sidechain is not None:
+        markers["lane_role"] = "subagent" if sidechain else "primary"
+
+    launcher_records = {
+        record.index
+        for record in records
+        if record.attribution == "subject"
+        and record.index in decoded
+        and decoded[record.index].get("type") == "queue-operation"
+    }
+    if launcher_records:
+        markers["launcher_marker"] = "queue-operation"
+    return markers, launcher_records
+
+
+def token_accounting_includes(session: Mapping, *, view: str) -> bool:
+    """Apply normalized-corpus v2's orchestrated-vs-deduped lane rule.
+
+    The orchestrated view counts every admitted session.  The deduped view
+    excludes only a session explicitly marked as a subagent; absent lane
+    evidence is included rather than guessed.
+    """
+    if not isinstance(session, Mapping):
+        raise _safe_error("token accounting session is invalid")
+    lane_role = session.get("lane_role")
+    if lane_role not in {None, "primary", "subagent"}:
+        raise _safe_error("token accounting lane role is invalid")
+    if view == "orchestrated":
+        return True
+    if view == "deduped":
+        return lane_role != "subagent"
+    raise _safe_error("token accounting view is unsupported")
 
 
 def _parent_links(
@@ -1161,10 +1208,20 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
             record.index: normalized_index
             for normalized_index, record in enumerate(admitted_records)
         }
+        decoded = {}
+        for record in admitted_records:
+            value = _json_object(record.raw_bytes)
+            if value is None:
+                coverage["records_malformed"] += 1
+                continue
+            decoded[record.index] = value
+
+        lane_markers, launcher_records = _lane_markers(decoded, admitted_records)
         manifest_session = {
             "source": session.source,
             "session_id": session.session_id,
             "admitted_record_count": len(admitted_records),
+            **lane_markers,
         }
         if key in episodes:
             manifest_session["task_episode_id"] = episodes[key]
@@ -1176,14 +1233,6 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
                 "signals": ["repo-id", "head-continuity", "temporal-adjacency"],
             }
         manifest_sessions.append(manifest_session)
-
-        decoded = {}
-        for record in admitted_records:
-            value = _json_object(record.raw_bytes)
-            if value is None:
-                coverage["records_malformed"] += 1
-                continue
-            decoded[record.index] = value
 
         subject_decoded = {
             record.index: decoded[record.index]
@@ -1259,8 +1308,11 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
                     observed_context_generation=observed_context_generation,
                 )
             if parsed is None:
-                coverage["records_unsupported"] += 1
-                continue
+                if record.attribution == "subject" and record.index in launcher_records:
+                    parsed = []
+                else:
+                    coverage["records_unsupported"] += 1
+                    continue
             coverage["records_parsed"] += 1
             events.extend(parsed)
 
@@ -1275,6 +1327,7 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
             "version": NORMALIZER_VERSION,
             "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
             "episode_stitcher_version": EPISODE_STITCHER_VERSION,
+            "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CLAUDE_ADAPTER_VERSION}],
         "sessions": manifest_sessions,
@@ -1534,6 +1587,7 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
         "version": NORMALIZER_VERSION,
         "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
         "episode_stitcher_version": EPISODE_STITCHER_VERSION,
+        "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
     }
     if manifest["normalizer"] != expected_normalizer:
         raise _safe_error("normalized manifest has an unsupported normalizer version")
@@ -1567,7 +1621,13 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
         if not _exact_keys(
             session,
             required_session,
-            {"parent_session_id", "task_episode_id", "episode_predecessor"},
+            {
+                "parent_session_id",
+                "task_episode_id",
+                "episode_predecessor",
+                "lane_role",
+                "launcher_marker",
+            },
         ):
             raise _safe_error("normalized manifest session has invalid fields")
         if not _is_label(session["source"], allowed_sources) or not _is_opaque_id(
@@ -1582,6 +1642,17 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
             raise _safe_error("normalized manifest session has an invalid episode id")
         if "parent_session_id" in session and not _is_opaque_id(session["parent_session_id"]):
             raise _safe_error("normalized manifest session has an invalid parent id")
+        if "lane_role" in session and not _is_label(
+            session["lane_role"], {"primary", "subagent"}
+        ):
+            raise _safe_error("normalized manifest session has an invalid lane role")
+        if "launcher_marker" in session and session["launcher_marker"] != "queue-operation":
+            raise _safe_error("normalized manifest session has an invalid launcher marker")
+        if session["source"] == "codex" and {
+            "lane_role",
+            "launcher_marker",
+        } & set(session):
+            raise _safe_error("normalized manifest guesses absent Codex lane evidence")
         if "episode_predecessor" in session:
             predecessor = session["episode_predecessor"]
             if not _exact_keys(predecessor, {"session_id", "signals"}) or not _is_opaque_id(

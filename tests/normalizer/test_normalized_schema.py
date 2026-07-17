@@ -11,7 +11,7 @@ from mybench.schemas import load_validator
 
 
 COMMON = {
-    "schema_version": "1",
+    "schema_version": "2",
     "kind": "normalized-event",
     "source": "codex",
     "session_id": "opaque-synthetic-session",
