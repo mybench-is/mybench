@@ -382,31 +382,28 @@ def _directory_key(directory: Path) -> tuple[str, int, int]:
     return (str(directory.absolute()), info.st_dev, info.st_ino)
 
 
-def _durable_chain_root() -> Path:
-    """Topmost ancestor whose entries mybench must persist: the data-home base.
-
-    The data dir is always ``<base>/mybench`` (see :func:`data_dir`), so
-    fsyncing from the leaf up to and including ``base`` persists every directory
-    mybench itself creates. Nothing above ``base`` is mybench's to create, and
-    those ancestors up to ``/`` may be unopenable under sandboxing — e.g. a
-    systemd unit with ``PrivateTmp=`` makes ``os.open("/")`` raise ``EACCES`` —
-    so the durability walk must stop here rather than ascend to the root.
-    """
-    base = os.environ.get(XDG_DATA_HOME_ENV) or (Path.home() / ".local" / "share")
-    return Path(base).absolute()
-
-
 def _ensure_root_chain_durable(d: Path) -> None:
-    """Repair a possibly interrupted data-root mkdir from leaf up to the base."""
+    """Repair a possibly interrupted data-root mkdir from leaf through root.
+
+    Fsyncing each ancestor persists the directory entries mybench created (via
+    ``mkdir(parents=True)``) after a crash that interrupted the initial mkdir.
+    The only ancestor whose fsync is never a durability requirement is the
+    filesystem root itself — mybench creates nothing directly in ``/`` — and it
+    can be unopenable under sandboxing: a systemd unit with ``PrivateTmp=`` runs
+    in a mount namespace where ``os.open("/")`` raises ``EACCES``. A permission
+    failure at the root is therefore tolerated; a failure at any other ancestor
+    is a real error and propagates.
+    """
     key = _directory_key(d)
     if key in _DURABLE_ROOT_CHAINS:
         return
     absolute = d.absolute()
-    root = _durable_chain_root()
     for directory in (absolute, *absolute.parents):
-        _fsync_directory(directory)
-        if directory == root:
-            break
+        try:
+            _fsync_directory(directory)
+        except PermissionError:
+            if directory != directory.parent:  # not the filesystem root
+                raise
     _DURABLE_ROOT_CHAINS.add(key)
 
 
