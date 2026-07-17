@@ -16,6 +16,7 @@ from mybench.anchor.event import build_event, stage_event, write_identity_record
 from mybench.anchor.ots import stamp_root, upgrade_batch_proof
 from mybench.identity import local_identity_id
 from mybench.verify.cli import VerifyFailure, render, verify_anchors
+from mybench.verify.__main__ import main as verify_main
 from tests.anchor.conftest import BLOCK_HEIGHT
 from tests.anchor.test_publish import grow_and_stage
 from tests.fixtures import generate_fixtures
@@ -73,6 +74,36 @@ def test_pass_full_chain_with_two_step_proof_states(tmp_path, calendar):
     assert "header cross-checked against 2 explorers" in text
     assert "proof not yet published (pending Bitcoin confirmation)" in text
     assert f"rows 0..{events[1]['row_end']} covered, 2 anchor day(s), no gaps" in text
+
+
+def test_verify_cli_passes_anchor_built_across_provenance_schema_boundary(
+    tmp_path, calendar, capsys
+):
+    fx = generate_fixtures(tmp_path / "mixed-fx")
+    ledger, _ = build_canary_ledger(fx, repeats=1)
+    ledger.append_session(
+        session_id="synthetic-historical-import",
+        session_root=bytes.fromhex("ab" * 32),
+        item_count=1,
+        source="synthetic",
+        ts="2026-01-01T01:00:00Z",
+        provenance="IMPORTED",
+    )
+    assert ledger.verify_chain() == 6
+    assert [row["schema_version"] for row in ledger.rows()] == ["1", "2", "2", "2", "3", "3"]
+
+    staging = paths.anchors_dir()
+    write_identity_records(staging, "ckeenan", DATE1)
+    batch = build_batch(ledger)
+    event = build_event(batch, ledger.rows(), date=DATE1)
+    proof = stamp_root(bytes.fromhex(event["root"]), calendars=[calendar.base_url])
+    stage_event(event, proof, staging)
+    public = tmp_path / "mixed-public"
+    shutil.copytree(staging, public)
+    (public / "README.md").write_text("# mixed-version synthetic anchors log\n")
+
+    assert verify_main([str(public), "--offline"]) == 0
+    assert "mybench verify: PASS" in capsys.readouterr().out
 
 
 def test_offline_and_unreachable_degrade_honestly(tmp_path, calendar):

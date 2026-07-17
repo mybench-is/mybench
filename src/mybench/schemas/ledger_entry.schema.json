@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.is/schemas/v2/ledger_entry.schema.json",
+  "$id": "https://mybench.is/schemas/v3/ledger_entry.schema.json",
   "title": "Mybench Ledger Row",
-  "description": "One row of the hash-chained append-only local ledger (asset A3). Version 2 admits closed-shape capture-time lifecycle, session-metadata, and private anchor-receipt observations while version-1 rows remain valid and unchanged. Metadata ONLY: additionalProperties:false makes content, prompt text, paths, and filenames structurally impossible.",
+  "description": "One row of the hash-chained append-only local ledger (asset A3). Version 3 admits explicit LIVE/IMPORTED provenance and a one-time schema-version event while frozen version-1/2 rows remain valid and unchanged. Metadata ONLY: additionalProperties:false makes content, prompt text, paths, and filenames structurally impossible.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "i", "type", "ts", "prev", "h"],
   "properties": {
     "schema_version": {
       "description": "Row schema version. Existing version-1 rows are never rewritten.",
-      "enum": ["1", "2"]
+      "enum": ["1", "2", "3"]
     },
     "i": {
       "description": "Row index, 0-based, strictly sequential.",
@@ -18,7 +18,7 @@
     },
     "type": {
       "description": "Closed row-kind whitelist.",
-      "enum": ["genesis", "session", "binding", "event", "anchor_receipt"]
+      "enum": ["genesis", "session", "binding", "event", "anchor_receipt", "schema_version"]
     },
     "ts": {
       "description": "UTC RFC 3339 timestamp of the append/observation.",
@@ -184,6 +184,18 @@
       "description": "Local typed-HMAC link to the exact staged signed anchor event.",
       "type": "string",
       "pattern": "^[0-9a-f]{16}$"
+    },
+    "provenance": {
+      "description": "Evidence origin. Absence on frozen pre-v3 rows retains their legacy semantics.",
+      "enum": ["IMPORTED", "LIVE"]
+    },
+    "previous_schema_version": {
+      "description": "Frozen predecessor named by the one-time provenance widening event.",
+      "const": "2"
+    },
+    "new_schema_version": {
+      "description": "Frozen version introduced by the one-time provenance widening event.",
+      "const": "3"
     }
   },
   "allOf": [
@@ -214,7 +226,31 @@
           "anchor_root": false,
           "anchor_chain_tip": false,
           "receipt_ts": false,
-          "receipt_id": false
+          "receipt_id": false,
+          "provenance": false,
+          "previous_schema_version": false,
+          "new_schema_version": false
+        }
+      }
+    },
+    {
+      "if": {"properties": {"schema_version": {"const": "2"}}},
+      "then": {
+        "properties": {
+          "type": {"enum": ["genesis", "session", "binding", "event", "anchor_receipt"]},
+          "provenance": false,
+          "previous_schema_version": false,
+          "new_schema_version": false
+        }
+      }
+    },
+    {
+      "if": {"properties": {"schema_version": {"const": "3"}}},
+      "then": {
+        "required": ["provenance"],
+        "properties": {
+          "type": {"enum": ["session", "binding", "schema_version"]},
+          "session_ref": false
         }
       }
     },
@@ -253,7 +289,10 @@
           "anchor_root": false,
           "anchor_chain_tip": false,
           "receipt_ts": false,
-          "receipt_id": false
+          "receipt_id": false,
+          "provenance": false,
+          "previous_schema_version": false,
+          "new_schema_version": false
         }
       }
     },
@@ -280,7 +319,9 @@
           "anchor_root": false,
           "anchor_chain_tip": false,
           "receipt_ts": false,
-          "receipt_id": false
+          "receipt_id": false,
+          "previous_schema_version": false,
+          "new_schema_version": false
         }
       }
     },
@@ -315,7 +356,9 @@
           "anchor_root": false,
           "anchor_chain_tip": false,
           "receipt_ts": false,
-          "receipt_id": false
+          "receipt_id": false,
+          "previous_schema_version": false,
+          "new_schema_version": false
         }
       }
     },
@@ -396,7 +439,10 @@
           "anchor_root": false,
           "anchor_chain_tip": false,
           "receipt_ts": false,
-          "receipt_id": false
+          "receipt_id": false,
+          "provenance": false,
+          "previous_schema_version": false,
+          "new_schema_version": false
         }
       }
     },
@@ -437,7 +483,50 @@
           "effort": false,
           "worktree_id": false,
           "head_before": false,
-          "head_after": false
+          "head_after": false,
+          "provenance": false,
+          "previous_schema_version": false,
+          "new_schema_version": false
+        }
+      }
+    },
+    {
+      "if": {"properties": {"type": {"const": "schema_version"}}},
+      "then": {
+        "required": ["previous_schema_version", "new_schema_version", "provenance"],
+        "properties": {
+          "schema_version": {"const": "3"},
+          "session_id": false,
+          "session_root": false,
+          "item_count": false,
+          "source": false,
+          "models_seen": false,
+          "provider": false,
+          "input_tokens": false,
+          "output_tokens": false,
+          "cache_creation_input_tokens": false,
+          "cache_read_input_tokens": false,
+          "commit_hash": false,
+          "commit_ts": false,
+          "repo_id": false,
+          "session_ref": false,
+          "event_kind": false,
+          "trigger": false,
+          "context_gen": false,
+          "parent_session_id": false,
+          "harness": false,
+          "harness_version": false,
+          "model": false,
+          "effort": false,
+          "worktree_id": false,
+          "head_before": false,
+          "head_after": false,
+          "anchor_row_start": false,
+          "anchor_row_end": false,
+          "anchor_root": false,
+          "anchor_chain_tip": false,
+          "receipt_ts": false,
+          "receipt_id": false
         }
       }
     }

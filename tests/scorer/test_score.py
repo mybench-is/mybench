@@ -167,7 +167,7 @@ def test_golden_values_spot_check():
     assert m["anchor_chain_continuity"]["value"] is True
     assert report["anchored_through"] == "2026-02-02"
     assert report["input_schema_versions"] == {"anchor": ["2"], "ledger": ["1", "2"]}
-    assert report["backfill_note"]
+    assert "not a completeness claim" in report["backfill_note"]
 
 
 # --- Determinism properties (AC #1) --------------------------------------------------
@@ -311,6 +311,61 @@ def test_no_anchors_reports_empty_provenance_denominator_without_freshness_claim
     assert metrics["anchor_chain_continuity"]["value"] is False
     assert report["input_schema_versions"]["anchor"] == []
     assert "anchored_through" not in report
+
+
+def test_provenance_split_uses_explicit_rows_and_live_default_after_v3_boundary():
+    imported = {
+        **session_row(2, "s-imported", "2026-01-02T00:00:00Z", 3),
+        "schema_version": "3",
+        "provenance": "IMPORTED",
+    }
+    live_explicit = {
+        **binding_row(4, "a" * 40, "2026-01-04T00:00:00Z"),
+        "schema_version": "3",
+        "provenance": "LIVE",
+    }
+    rows = rechain(
+        [
+            GENESIS,
+            {
+                "schema_version": "3",
+                "i": 1,
+                "type": "schema_version",
+                "ts": "2026-01-01T01:00:00Z",
+                "prev": "0" * 64,
+                "h": "0" * 64,
+                "previous_schema_version": "2",
+                "new_schema_version": "3",
+                "provenance": "IMPORTED",
+            },
+            imported,
+            session_row(3, "s-live-default", "2026-01-03T00:00:00Z", 4),
+            live_explicit,
+        ]
+    )
+    anchor = anchor_event(rows, 0, len(rows), "2026-01-04", "f")
+    report = json.loads(
+        score(rows, [anchor], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True)
+    )
+    metric = next(
+        item for item in report["metrics"] if item["name"] == "evidence_provenance_split"
+    )
+    # Genesis keeps the legacy first-anchor label; the boundary and imported
+    # session are explicit; the absent post-boundary v1 row defaults LIVE.
+    assert metric["value"] == {"IMPORTED": 0.6, "LIVE": 0.4}
+    assert report["input_schema_versions"]["ledger"] == ["1", "3"]
+
+
+def test_provenance_split_rejects_unknown_explicit_value():
+    rows = [dict(row) for row in FIXED_ROWS]
+    rows[1]["provenance"] = "MAYBE"
+    with pytest.raises(ScoreError, match="provenance is invalid"):
+        score(
+            rows,
+            FIXED_BATCHES,
+            generated_at="2026-07-09T00:00:00Z",
+            allow_synthetic=True,
+        )
 
 
 # --- Purity guard (AC #3) --------------------------------------------------------------

@@ -227,24 +227,88 @@ class Daemon:
         self.config = config
         self.ledger = ledger if ledger is not None else Ledger()
 
-    def scan_once(self, *, record_health: bool = True) -> int:
+    def scan_once(self, *, record_health: bool = True, historical: bool = False) -> int:
         """One full pass over all watches; returns the number of rows appended.
 
         A global process lock is acquired before rebuilding ledger coverage and
         held through nonce, ledger, and optional archive reconciliation.
+        Historical mode labels every session evidence row ``IMPORTED`` and
+        deliberately leaves the live lifecycle queue for the next normal scan.
         """
         with capture_scan_lock():
-            appended = self._scan_once_locked()
+            appended = (
+                self._scan_once_locked(historical=True)
+                if historical
+                else self._scan_once_locked()
+            )
         # A completion receipt is written only after the consistent capture
         # transaction returns successfully. It contains HMAC location ids,
         # never paths or source bytes (MYB-11.6).
-        if record_health:
+        if record_health and not historical:
             from mybench.scan_health import record_capture_success
 
             record_capture_success(self.config.watches)
         return appended
 
-    def _scan_once_locked(self) -> int:
+    def preview_historical(self) -> int:
+        """Read-only count of session rows a historical scan would append.
+
+        No lock, key, nonce, ledger, archive, health, or queue state is created
+        or repaired.  A caller must already have initialized the private scope
+        key; this keeps ``--dry-run`` genuinely no-write.
+        """
+        from mybench.scan_health import load_scope_key
+
+        scope_key = load_scope_key()
+        if scope_key is None:
+            raise ConfigError("historical dry-run requires an initialized scope key")
+        self.ledger.verify_chain()
+        covered: dict[str, dict] = {}
+        for row in self.ledger.rows():
+            if row["type"] == "session":
+                previous = covered.get(row["session_id"])
+                if previous is None or row["item_count"] >= previous["item_count"]:
+                    covered[row["session_id"]] = row
+
+        planned = 0
+        for watch in self.config.watches:
+            from mybench.scan_config import is_excluded
+
+            if is_excluded(watch.path, self.config.exclusions, root=watch.path):
+                continue
+            if watch.path.is_symlink() or not watch.path.is_dir():
+                continue
+            watch_root = watch.path.resolve()
+            for source_file in _source_files(watch, self.config.exclusions):
+                if source_file.is_symlink() or not source_file.resolve().is_relative_to(watch_root):
+                    continue
+                session_id = session_id_for(source_file, watch, scope_key)
+                items = _complete_lines(_read_source_bytes(source_file))
+                known = nonces.load_nonces(session_id)
+                row = covered.get(session_id)
+                if row is not None and len(known) < row["item_count"]:
+                    raise CaptureIntegrityError(
+                        "nonce store is shorter than an existing committed session row"
+                    )
+                if len(items) < len(known) or not items:
+                    continue
+                if row is None or row["item_count"] < len(items) or len(known) < len(items):
+                    if row is not None and row["item_count"] < len(items):
+                        committed_count = row["item_count"]
+                        committed_leaves = [
+                            commitments.leaf_commitment(nonce, item)
+                            for nonce, item in zip(
+                                known[:committed_count], items[:committed_count]
+                            )
+                        ]
+                        if commitments.session_root(committed_leaves).hex() != row["session_root"]:
+                            raise CaptureIntegrityError(
+                                "live source prefix no longer matches its committed session row"
+                            )
+                    planned += 1
+        return planned
+
+    def _scan_once_locked(self, *, historical: bool = False) -> int:
         """Implementation of :meth:`scan_once`; caller holds the global scan lock.
 
         Starts by self-healing a torn ledger tail (MYB-2.6): an append
@@ -254,14 +318,15 @@ class Daemon:
         recovered = self.ledger.recover()
         if recovered:
             log.warning("recovered torn ledger tail (event=torn_tail bytes=%d)", recovered)
-        try:
-            lifecycle_appended = lifecycle.flush_queue(self.ledger)
-        except Exception as exc:  # noqa: BLE001 — queue trouble cannot stop transcript capture
-            log.error(
-                "lifecycle queue flush failed (event=lifecycle_queue_error type=%s)",
-                type(exc).__name__,
-            )
-            lifecycle_appended = 0
+        lifecycle_appended = 0
+        if not historical:
+            try:
+                lifecycle_appended = lifecycle.flush_queue(self.ledger)
+            except Exception as exc:  # noqa: BLE001 — queue trouble cannot stop transcript capture
+                log.error(
+                    "lifecycle queue flush failed (event=lifecycle_queue_error type=%s)",
+                    type(exc).__name__,
+                )
         scope_key = paths.ensure_session_scope_key()
         # Items covered by an existing row, per session. Capture reconciles
         # against THIS, not the nonce store: a crash between nonce writes and
@@ -296,7 +361,13 @@ class Daemon:
                     log.error("transcript escaped watch root (event=source_outside); skipping")
                     continue
                 try:
-                    result = self._capture_file(f, watch, scope_key, covered)
+                    result = self._capture_file(
+                        f,
+                        watch,
+                        scope_key,
+                        covered,
+                        provenance="IMPORTED" if historical else None,
+                    )
                     appended += result.rows_appended
                     archive_covered += result.archive_covered
                     archive_failed += result.archive_failed
@@ -347,7 +418,13 @@ class Daemon:
         return appended
 
     def _capture_file(
-        self, f: Path, watch: WatchSpec, scope_key: bytes, covered: dict[str, dict]
+        self,
+        f: Path,
+        watch: WatchSpec,
+        scope_key: bytes,
+        covered: dict[str, dict],
+        *,
+        provenance: str | None = None,
     ) -> _CaptureResult:
         source = watch.source
         session_id = session_id_for(f, watch, scope_key)
@@ -408,6 +485,7 @@ class Daemon:
                 session_root=commitments.session_root(leaves),
                 item_count=len(items),
                 source=source,
+                provenance=provenance,
                 **metadata.ledger_fields(),
             )
             covered[session_id] = row
