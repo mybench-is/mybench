@@ -13,6 +13,30 @@
       "type": "string",
       "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
       "maxLength": 128
+    },
+    "vocabulary_id": {
+      "description": "Stable identifier for a pinned taxonomy or vocabulary; semantics change only with its separately declared version.",
+      "type": "string",
+      "pattern": "^[a-z0-9_]+([.-][a-z0-9_]+)*$",
+      "maxLength": 128
+    },
+    "cell_id": {
+      "description": "Closed identifier from a pinned taxonomy; never free text.",
+      "type": "string",
+      "pattern": "^[a-z0-9_]+([.-][a-z0-9_]+)*$",
+      "maxLength": 128
+    },
+    "support_thresholds": {
+      "description": "Minimum evidence volume for one conditioning cell. Every threshold is positive: a cell below any declared floor is absent, never emitted as zero.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "sessions": {"type": "integer", "minimum": 1},
+        "commits": {"type": "integer", "minimum": 1},
+        "window_days": {"type": "integer", "minimum": 1},
+        "repos": {"type": "integer", "minimum": 1}
+      }
     }
   },
   "type": "object",
@@ -109,14 +133,56 @@
             }
           },
           "min_support": {
-            "description": "Minimum evidence volume per unit; below threshold NO claim is emitted, never a zero-valued claim (handoff §8.4). Empty only while reserved.",
+            "description": "Minimum evidence volume per unit; below threshold NO claim is emitted, never a zero-valued claim (handoff §8.4, THREAT_MODEL §3.3). per_conditioning_cell keys are the closed cells admitted for a conditioned entry and each value is that cell's independent support floor. Empty only while reserved.",
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "sessions": {"type": "integer", "minimum": 1},
               "commits": {"type": "integer", "minimum": 1},
               "window_days": {"type": "integer", "minimum": 1},
-              "repos": {"type": "integer", "minimum": 1}
+              "repos": {"type": "integer", "minimum": 1},
+              "per_conditioning_cell": {
+                "type": "object",
+                "minProperties": 1,
+                "propertyNames": {"$ref": "#/$defs/cell_id"},
+                "additionalProperties": {"$ref": "#/$defs/support_thresholds"}
+              }
+            }
+          },
+          "conditioning_axis": {
+            "description": "Optional conditioning axis for segmented claims. The taxonomy identity and version pin cell semantics. Active conditioned entries must require an enumerated string output.condition and declare a matching independent min_support.per_conditioning_cell floor for every admitted cell (loader-enforced).",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["taxonomy_id", "taxonomy_version"],
+            "properties": {
+              "taxonomy_id": {"$ref": "#/$defs/vocabulary_id"},
+              "taxonomy_version": {"$ref": "#/$defs/semver"}
+            }
+          },
+          "conditional_denominator": {
+            "description": "Optional declaration for metrics whose denominator is a conditioned population (for example, errors the pinned rubric classified as catchable). Names the closed condition class and the version-bound source that supplies the denominator; it never embeds observations.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["condition_class", "denominator_source"],
+            "properties": {
+              "condition_class": {"$ref": "#/$defs/cell_id"},
+              "denominator_source": {"$ref": "#/$defs/vocabulary_id"}
+            }
+          },
+          "severity_weight_vocabulary": {
+            "description": "Optional pinned severity vocabulary for conditionally weighted judge metrics. The registry declares only class identifiers; numeric weights are deliberately not part of this closed shape and remain versioned judge-rubric behavior (MYB-7.1).",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["taxonomy_id", "taxonomy_version", "classes"],
+            "properties": {
+              "taxonomy_id": {"$ref": "#/$defs/vocabulary_id"},
+              "taxonomy_version": {"$ref": "#/$defs/semver"},
+              "classes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"$ref": "#/$defs/cell_id"}
+              }
             }
           },
           "inference_risk": {

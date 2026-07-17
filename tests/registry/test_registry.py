@@ -29,6 +29,24 @@ def entry_by_id(doc, eid):
     return next(e for e in doc["entries"] if e["id"] == eid)
 
 
+def add_tool_mix_conditioning(doc):
+    """Give one existing synthetic-test entry the MYB-19.4 contract."""
+    entry = entry_by_id(doc, "transcript.tool_mix")
+    entry["conditioning_axis"] = {
+        "taxonomy_id": "arrival-pattern",
+        "taxonomy_version": "0.1.0",
+    }
+    entry["min_support"]["per_conditioning_cell"] = {
+        "cold-start": {"sessions": 5},
+        "prepared-spec": {"sessions": 5},
+    }
+    entry["output_schema"]["required"].append("condition")
+    entry["output_schema"]["properties"]["condition"] = {
+        "type": "string",
+        "enum": ["cold-start", "prepared-spec"],
+    }
+
+
 # --- Loading, identity, determinism (AC #3 substrate) ----------------------------
 
 
@@ -128,6 +146,137 @@ def test_scorers_read_bands_and_min_support_from_the_registry(registry):
         registry.entry("transcript.nonexistent")
 
 
+def test_conditioning_declarations_and_per_cell_support_are_registry_inputs():
+    doc = packaged_doc()
+    add_tool_mix_conditioning(doc)
+    entry = entry_by_id(doc, "transcript.tool_mix")
+    entry["conditional_denominator"] = {
+        "condition_class": "catchable-error",
+        "denominator_source": "judge.enumerated-errors",
+    }
+    entry["severity_weight_vocabulary"] = {
+        "taxonomy_id": "error-severity",
+        "taxonomy_version": "0.1.0",
+        "classes": ["low", "medium", "high"],
+    }
+
+    conditioned = Registry(doc)
+    assert conditioned.conditioning_axis("transcript.tool_mix") == {
+        "taxonomy_id": "arrival-pattern",
+        "taxonomy_version": "0.1.0",
+    }
+    assert conditioned.conditioning_min_support("transcript.tool_mix", "cold-start") == {
+        "sessions": 5
+    }
+    assert conditioned.conditional_denominator("transcript.tool_mix") == {
+        "condition_class": "catchable-error",
+        "denominator_source": "judge.enumerated-errors",
+    }
+    assert conditioned.severity_weight_vocabulary("transcript.tool_mix")["classes"] == [
+        "low",
+        "medium",
+        "high",
+    ]
+
+
+def test_conditioning_support_is_defensive_and_unknown_cells_fail_closed():
+    conditioned = Registry(mutated(add_tool_mix_conditioning))
+    support = conditioned.min_support("transcript.tool_mix")
+    support["per_conditioning_cell"]["cold-start"]["sessions"] = 0
+    assert conditioned.conditioning_min_support("transcript.tool_mix", "cold-start") == {
+        "sessions": 5
+    }
+    with pytest.raises(RegistryError, match="unknown or unsupported condition"):
+        conditioned.conditioning_min_support("transcript.tool_mix", "iterative-emergence")
+    with pytest.raises(RegistryError, match="has no conditioning axis"):
+        Registry.load().conditioning_min_support("transcript.tool_mix", "cold-start")
+
+
+def test_active_conditioned_entry_requires_condition_shape_and_cell_support():
+    def omit_condition_output(doc):
+        entry = entry_by_id(doc, "transcript.tool_mix")
+        entry["conditioning_axis"] = {
+            "taxonomy_id": "arrival-pattern",
+            "taxonomy_version": "0.1.0",
+        }
+        entry["min_support"]["per_conditioning_cell"] = {
+            "cold-start": {"sessions": 5}
+        }
+
+    with pytest.raises(RegistryError, match="require an enumerated string output.condition"):
+        Registry(mutated(omit_condition_output))
+
+    def omit_cell_support(doc):
+        add_tool_mix_conditioning(doc)
+        entry_by_id(doc, "transcript.tool_mix")["min_support"].pop(
+            "per_conditioning_cell"
+        )
+
+    with pytest.raises(RegistryError, match="require min_support.per_conditioning_cell"):
+        Registry(mutated(omit_cell_support))
+
+    def support_without_axis(doc):
+        entry_by_id(doc, "transcript.tool_mix")["min_support"][
+            "per_conditioning_cell"
+        ] = {"cold-start": {"sessions": 5}}
+
+    with pytest.raises(RegistryError, match="support requires conditioning_axis"):
+        Registry(mutated(support_without_axis))
+
+    def mismatched_cell_keys(doc):
+        add_tool_mix_conditioning(doc)
+        entry_by_id(doc, "transcript.tool_mix")["min_support"][
+            "per_conditioning_cell"
+        ].pop("prepared-spec")
+
+    with pytest.raises(RegistryError, match="condition enum and per-cell support keys must match"):
+        Registry(mutated(mismatched_cell_keys))
+
+
+def test_conditioning_support_thresholds_are_positive():
+    def zero_support(doc):
+        add_tool_mix_conditioning(doc)
+        entry_by_id(doc, "transcript.tool_mix")["min_support"][
+            "per_conditioning_cell"
+        ]["cold-start"]["sessions"] = 0
+
+    with pytest.raises(RegistryError, match="schema violation"):
+        Registry(mutated(zero_support))
+
+
+def test_registry_severity_vocabulary_cannot_embed_judge_weights():
+    def add_weights(doc):
+        entry_by_id(doc, "transcript.tool_mix")["severity_weight_vocabulary"] = {
+            "taxonomy_id": "error-severity",
+            "taxonomy_version": "0.1.0",
+            "classes": ["low", "high"],
+            "weights": {"low": 1, "high": 3},
+        }
+
+    with pytest.raises(RegistryError, match="schema violation"):
+        Registry(mutated(add_weights))
+
+
+def test_conditioning_declaration_identifiers_and_versions_are_exact():
+    def newline_taxonomy_version(doc):
+        add_tool_mix_conditioning(doc)
+        entry_by_id(doc, "transcript.tool_mix")["conditioning_axis"][
+            "taxonomy_version"
+        ] = "0.1.0\n"
+
+    with pytest.raises(RegistryError, match="taxonomy_version is not exact semver"):
+        Registry(mutated(newline_taxonomy_version))
+
+    def newline_denominator_source(doc):
+        entry_by_id(doc, "transcript.tool_mix")["conditional_denominator"] = {
+            "condition_class": "catchable-error",
+            "denominator_source": "judge.enumerated-errors\n",
+        }
+
+    with pytest.raises(RegistryError, match="denominator_source is not exact"):
+        Registry(mutated(newline_denominator_source))
+
+
 # --- Disclosure surfaces (handoff §7.1; AC #2 negative) -----------------------------
 
 
@@ -221,6 +370,35 @@ def tool_mix_claim(**overrides):
 
 def test_conforming_claim_passes_the_bridge(registry):
     registry.check_claim(tool_mix_claim())  # no raise
+
+
+def test_conditioned_claim_requires_known_condition():
+    conditioned = Registry(mutated(add_tool_mix_conditioning))
+    with pytest.raises(RegistryError, match="conditioned claim omits output.condition"):
+        conditioned.check_claim(tool_mix_claim())
+    with pytest.raises(RegistryError, match="unknown or unsupported condition"):
+        conditioned.check_claim(
+            tool_mix_claim(
+                output={
+                    "read_share_band": "40-69%",
+                    "write_share_band": "10-39%",
+                    "execute_share_band": "10-39%",
+                    "browse_share_band": "0-9%",
+                    "condition": "iterative-emergence",
+                }
+            )
+        )
+    conditioned.check_claim(
+        tool_mix_claim(
+            output={
+                "read_share_band": "40-69%",
+                "write_share_band": "10-39%",
+                "execute_share_band": "10-39%",
+                "browse_share_band": "0-9%",
+                "condition": "cold-start",
+            }
+        )
+    )
 
 
 def test_bridge_rejects_version_class_reserved_and_shape_mismatches(registry):
