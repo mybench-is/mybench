@@ -11,5 +11,5 @@ while accepting outside work. PRs without signed-off commits will be asked
 to amend.
 
 Ground rules that will not bend in review: the privacy invariants in
-CLAUDE.md, the schema whitelists, determinism of the scorer/renderer, and
+AGENTS.md, the schema whitelists, determinism of the scorer/renderer, and
 the leak-gate discipline on anything that writes or publishes.
