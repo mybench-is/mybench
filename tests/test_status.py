@@ -20,7 +20,7 @@ from opentimestamps.core.op import OpSHA256
 from opentimestamps.core.serialize import BytesSerializationContext
 from opentimestamps.core.timestamp import DetachedTimestampFile, Timestamp
 
-from mybench import cli, nonces, paths, scan_health, status
+from mybench import cli, nonces, paths, scan_health, scheduler, status
 from mybench.anchor.batch import build_batch, canonical_bytes
 from mybench.anchor.event import build_event, stage_event
 from mybench.daemon.capture import Daemon, DaemonConfig, WatchSpec
@@ -93,15 +93,39 @@ def test_fresh_init_status_is_healthy_closed_schema_and_stdout_only(capsys):
     assert output.err == ""
     result = json.loads(output.out)
     load_validator("status.schema.json").validate(result)
+    assert result["schema_version"] == "2"
     assert result["health"] == "healthy"
     assert result["data_dir"] == {"state": "private"}
     assert result["keys"]["ready"] == 4
     assert result["ledger"] == {"state": "absent", "rows": 0}
     assert result["scan"]["last_successful_at"] is None
     assert result["scan"]["stale"] is False
+    assert result["schedule"] == {
+        "backend": "none",
+        "registration_state": "absent",
+        "enabled": None,
+        "last_attempt_at": None,
+        "last_success_at": None,
+        "last_result": "never",
+        "last_exit_code": None,
+    }
     assert result["issues"] == []
     assert not paths.scan_health_path().exists()
     assert not paths.scan_health_lock_path().exists()
+
+
+def test_status_reports_orphan_scheduler_file_without_initializing(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    service, _timer = scheduler.systemd_paths()
+    service.parent.mkdir(parents=True)
+    service.write_text("orphaned\n")
+
+    result = status.collect()
+
+    assert result["data_dir"]["state"] == "absent"
+    assert result["schedule"]["registration_state"] == "invalid"
+    assert "schedule_invalid" in result["issues"]
+    assert not paths.data_dir().exists()
 
 
 def test_configured_sources_without_receipt_are_unknown_and_need_no_manual_backfill(tmp_path):

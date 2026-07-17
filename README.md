@@ -16,7 +16,8 @@ roadmap, and decisions live in the sibling repo `../mybench-ops`.
 
 - `src/mybench/<component>/` — one package per single responsibility:
   `daemon`, `anchor`, `hooks`, `scorer`, `judge` (placeholder), `verify`, `report`.
-- `schemas/` — versioned JSON Schemas (`ledger_entry`, `report`).
+- `schemas/` — versioned JSON Schemas for ledger, report, scan, status, and
+  private scheduler state.
 - `tests/` — pytest smoke tests (synthetic fixtures only).
 
 How it all fits together: [docs/how-anchoring-works.md](docs/how-anchoring-works.md).

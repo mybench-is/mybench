@@ -23,6 +23,7 @@ maps to a surface below:
 | `daemon/capture.py` | none directly (writes via nonces/ledger); log records | S5 |
 | `scan_config.py` | confirmed source/exclusion config, atomically replaced | S16 |
 | `scan_health.py` | successful-scan receipt + writer lock, atomically replaced | S17 |
+| `scheduler.py` | private schedule receipt/lock + owned systemd/launchd files | S18 |
 | `hooks/binding.py` | hook file into enrolled repo's .git/hooks; hooks.log | S6, S5 |
 | `hooks/lifecycle.py` | whitelisted tuple queue; failure counter; hooks.log; explicit user-settings install/uninstall | S15, S5 |
 | `anchor/ots.py` | HTTP POST/GET to calendars; staged artifact + proof files | S7, S8 |
@@ -244,6 +245,27 @@ rather than by the `src/mybench` grep.
   filesystem writes and zero network calls, reports rather than repairs loose
   permissions, validates its closed JSON schema, passes content/key/nonce
   canary scans in both renderings, and the planted-output companion fires.
+
+### S18 — OS-native scheduled capture
+
+- **Risk:** an installed job embeds a source/repository path, nonce, key,
+  transcript marker, credential, network/publication flag, or shell payload;
+  enable overwrites a foreign unit/hook; disable removes unrelated state; a
+  resident process remains; failed scans silently disable future capture; or
+  status mutates scheduler state while inspecting it.
+- **Check:** `$V -m pytest tests/test_scheduler.py -q`; inspect generated job
+  metadata with `stat -c "%a %n" ~/.config/systemd/user/mybench-scan.*`
+  (Linux) or `stat -f "%Lp %N" ~/Library/LaunchAgents/is.mybench.scan.plist`
+  (macOS), then run `mybench status --json` without copying path fields into an
+  external log. Diff the owned job files and `$DD` snapshot before/after status.
+- **Pass:** fixture-locked jobs invoke only the installed CLI with
+  `scan --quiet --scheduled`; systemd uses `Type=oneshot` and launchd uses
+  `KeepAlive=false`, with no restart/resident command. Job files pass raw/common
+  encoding scans for synthetic content/filenames, nonces, and private keys; the
+  planted companion fires. Registration/teardown are idempotent, foreign or
+  insecure files are refused, scheduled failure leaves the job registered for
+  a later run, private state/lock are 0600, and read-only/offline status reports
+  active/inactive/manual and last-result health without repair.
 
 ## Failure protocol (MYB-4.4)
 
