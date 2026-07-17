@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/repo_evidence.schema.json",
+  "$id": "https://mybench.is/schemas/v1/repo_evidence.schema.json",
   "title": "Mybench Normalized Repository Evidence Corpus",
   "description": "Closed local-only A8 schema for subject-authored enrolled-repository structure. It admits opaque repository/worktree ids, Git object addresses and commitments, structural counts, and IMPORTED/LIVE provenance; filenames, paths, author identities, messages, branches, source bytes, and config bytes have no field.",
   "$defs": {

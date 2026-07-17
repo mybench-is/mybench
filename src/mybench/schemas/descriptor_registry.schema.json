@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/descriptor_registry.schema.json",
+  "$id": "https://mybench.is/schemas/v1/descriptor_registry.schema.json",
   "title": "Mybench Descriptor Registry",
   "description": "The versioned, published descriptor registry (MYB-10.2, handoff §7): the single source of truth for what mybench can claim (entries: band edges, min-support, inference risk, disclosure flags, presets) and what it deliberately does NOT claim (rejected: section, banned framings). Strict whitelist like every mybench artifact. Cross-entry rules the schema cannot express live in mybench.registry: unique ids, employer-safe preset entries must be R0, internal-feature-only entries carry no presets and are structurally non-renderable, reserved entries are not claimable.",
   "$defs": {

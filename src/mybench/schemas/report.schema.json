@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/report.schema.json",
+  "$id": "https://mybench.is/schemas/v1/report.schema.json",
   "title": "Mybench Report",
   "description": "Versioned activity report derived from ledger metadata per docs/metrics-v0.md. This is a publishable-field whitelist (privacy invariant #1): aggregates and coarse bucketed distributions only — no per-session values, no time series, no hour-of-day granularity, no ordered sequences. Version 1 replaces the v0 stub; every metric carries exactly one trust tier (THREAT_MODEL §6). The tier enum is extended only by schema_version bump (future TEE-VERIFIED).",
   "type": "object",
