@@ -9,6 +9,7 @@ import pytest
 
 from mybench import paths
 from mybench.daemon.capture import Daemon, DaemonConfig, WatchSpec
+from mybench.ledger import Ledger
 from mybench.normalizer import normalize_claude, validate_corpus_artifact
 from mybench.normalizer import loader
 from mybench.normalizer.__main__ import main
@@ -81,6 +82,56 @@ def test_loader_authenticates_archive_and_observes_context_boundary(captured_arc
     assert validate_corpus_artifact(artifact) == json.loads(artifact)["corpus_commitment"]
     assert CANARY.encode() not in artifact
     assert PATH_CANARY.encode() not in artifact
+
+
+def test_loader_joins_lifecycle_head_provenance_to_binding_row(captured_archive):
+    ledger = Ledger()
+    session_id = next(
+        row["session_id"] for row in ledger.rows() if row.get("type") == "session"
+    )
+    repo_id = "ab" * 8
+    worktree_id = "cd" * 8
+    head_before = "1" * 40
+    head_after = "2" * 40
+    start = ledger.append_event(
+        event_kind="session_start",
+        trigger="startup",
+        session_id=session_id,
+        context_gen=0,
+        harness="claude-code",
+        ts="2026-01-01T00:01:00Z",
+        repo_id=repo_id,
+        worktree_id=worktree_id,
+        head_before=head_before,
+    )
+    binding = ledger.append_binding(
+        commit_hash=head_after,
+        commit_ts="2026-01-01T00:02:00Z",
+        repo_id=repo_id,
+        ts="2026-01-01T00:02:00Z",
+    )
+    end = ledger.append_event(
+        event_kind="session_end",
+        trigger="unknown",
+        session_id=session_id,
+        context_gen=0,
+        harness="claude-code",
+        ts="2026-01-01T00:03:00Z",
+        repo_id=repo_id,
+        worktree_id=worktree_id,
+        head_after=head_after,
+    )
+
+    session = loader.load_owner_claude_sessions(confirm_subject_owned=True)[0]
+    assert (session.start_row_index, session.end_row_index) == (start["i"], end["i"])
+    assert [item.row_index for item in session.binding_observations] == [binding["i"]]
+    artifact = json.loads(normalize_claude((session,)))
+    manifest_session = artifact["manifest"]["sessions"][0]
+    assert manifest_session["git_closure_evidence"] == "bound-commit"
+    assert manifest_session["started_at"] == "2026-01-01T00:01:00.000000Z"
+    encoded = json.dumps(artifact, sort_keys=True, separators=(",", ":")).encode()
+    assert repo_id.encode() not in encoded
+    assert head_after.encode() not in encoded
 
 
 def test_loader_refuses_a_missing_archive_without_exposing_private_fields(captured_archive):

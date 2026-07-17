@@ -88,7 +88,7 @@ def test_codex_uses_the_shared_corpus_contract_and_validates():
     assert {event["source"] for event in artifact["events"]} == {"codex"}
 
     claude_artifact = json.loads(normalize_claude(synthetic_normalizer_input().sessions))
-    assert artifact["schema_version"] == claude_artifact["schema_version"] == "3"
+    assert artifact["schema_version"] == claude_artifact["schema_version"] == "4"
     assert artifact["manifest"]["normalizer"] == claude_artifact["manifest"]["normalizer"]
     assert set(artifact) == set(claude_artifact)
 

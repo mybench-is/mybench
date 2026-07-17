@@ -11,7 +11,8 @@ One corpus artifact contains:
 
 - opaque session identities and conservative task-episode links;
 - closed, structurally observed lane markers and opaque parent-session links;
-- one versioned, content-opaque arrival-pattern output per stitched episode;
+- one versioned, content-opaque arrival-pattern, outcome, and open marker per
+  stitched episode;
 - turn, paste, tool, lifecycle, model, token, reference, and test structure;
 - coarse content shapes such as `short` and `single`;
 - pointers to eligible fields in a committed transcript record; and
@@ -111,7 +112,7 @@ the parent lane's tool-result context. Sessions with absent lane evidence stay
 included in both views; absence is UNKNOWN, never permission to guess a
 duplicate. Token-field missingness and provider-reporting caveats are unchanged.
 
-### Episode arrival pattern (schema v3)
+### Episode arrival pattern (introduced in schema v3)
 
 Every stitched episode has one `manifest.episodes[]` record containing the
 pinned `arrival_pattern` vocabulary, `classifier_version`, and
@@ -124,6 +125,27 @@ assessment, and defer-to-JUDGED boundary are in
 
 Arrival-pattern output remains local A8 evidence. No conditioned public form is
 authorized before the MYB-19.7 ruling.
+
+### Episode outcome and open marker (schema v4)
+
+Each stitched-episode record also carries `episode_outcome` from the closed
+vocabulary `closed-with-bound-commit`, `abandoned`, and `unknown`, plus an
+`episode_opened_at` UTC timestamp or the literal `unknown`. Both derivations
+have explicit `1.0.0` versions in the episode and normalizer records. The
+content-opaque session inputs retained in A8 are `git_closure_evidence` and
+`started_at`; repo ids, worktree ids, row indexes, and Git heads are not copied
+into the normalized artifact.
+
+The trusted loader derives closure evidence from the existing A3 lifecycle and
+binding rows. It requires exactly one start/end pair in row order, matching
+opaque repo/worktree identities, and an exact final-HEAD binding inside that
+row range. Missing, conflicting, multiple, or head-changing-but-unbound
+evidence is `unknown`. The pinned aggregation and open-marker rules are in
+[`episode-outcome-closure.md`](episode-outcome-closure.md).
+
+These fields remain private A8 structure. No one-shot or prompt-to-merge value,
+latency bucket, report field, claim, or publication surface is authorized
+before MYB-19.7.
 
 ## What a pointer means
 
@@ -169,9 +191,10 @@ big-endian length framing. The existing RFC-6962-shaped tree uses
 `mybench:v1:normalized-corpus`.
 
 Schema v2 changed canonical manifest/event bytes for lane evidence. Schema v3
-changes them again for the versioned episode output and classifier metadata.
-Both boundaries produce new corpus roots without changing any manifest, event,
-node, or corpus commitment domain, length framing, leaf order, or tree rule.
+changed them again for the arrival-pattern output. Schema v4 adds the closure
+evidence, outcome, and episode-open fields. These boundaries produce new corpus
+roots without changing any manifest, event, node, or corpus commitment domain,
+length framing, leaf order, or tree rule.
 
 Zero transcript sessions or zero verified repository snapshots produce no
 artifact. A nonempty input whose consent filter admits no records produces a
@@ -185,8 +208,10 @@ Each pure adapter accepts records that an I/O layer has already authenticated
 against capture commitments. The trusted loader takes a consistent snapshot
 under the capture lock, selects the latest committed Claude rows, verifies the
 A9 bytes against their A2 nonces and A3 roots, and only then constructs parser
-inputs. It requires an explicit owner assertion that the local harness sessions
-belong to the credentialed subject and that subject's own agent fleet.
+inputs. In the same snapshot it joins existing A3 lifecycle boundaries to
+binding rows; no capture field or hook changes for schema v4. It requires an
+explicit owner assertion that the local harness sessions belong to the
+credentialed subject and that subject's own agent fleet.
 
 The operator entry point is deliberately not ambient or automatic:
 
