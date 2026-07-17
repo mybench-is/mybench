@@ -87,6 +87,86 @@ def test_precreated_visible_data_tree_gets_restart_durability_barrier(
     assert events[len(managed) :] == [d.absolute(), *d.absolute().parents]
 
 
+def test_durability_walk_tolerates_unopenable_filesystem_root(tmp_path, monkeypatch):
+    """Regression: a scheduled scan under a systemd unit with ``PrivateTmp=``
+    dies because ``os.open("/")`` raises ``EACCES`` in the mount namespace.
+    ``ensure_data_dir`` must tolerate an unopenable filesystem root while still
+    fsyncing every directory it created and their real ancestors."""
+    xdg = tmp_path / "sandbox-xdg"
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+    d = paths.data_dir()
+    # Mirror the real box: the whole managed tree already exists, so only the
+    # root-chain barrier walks toward the (unopenable) filesystem root.
+    for directory in (
+        d,
+        paths.nonces_dir(),
+        paths.ledger_dir(),
+        paths.archive_dir(),
+        paths.reports_dir(),
+        paths.queue_dir(),
+        paths.keys_dir(),
+        paths.anchors_dir(),
+        paths.enrollments_dir(),
+    ):
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+
+    root = Path(d.anchor)  # "/" on POSIX
+    opened = []
+    real_fsync_directory = paths._fsync_directory
+
+    def guarded_fsync_directory(directory):
+        p = Path(directory)
+        opened.append(p)
+        if p == root:  # only the filesystem root is unopenable
+            raise PermissionError(13, "Permission denied", str(p))
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(paths, "_fsync_directory", guarded_fsync_directory)
+    monkeypatch.setattr(paths, "_DURABLE_ROOT_CHAINS", set())
+    # The root EACCES is swallowed, so ensure_data_dir still succeeds.
+    assert paths.ensure_data_dir() == d
+    # Every non-root ancestor of the data dir was still fsynced for durability.
+    for ancestor in (d.absolute(), *d.absolute().parents):
+        if ancestor != root:
+            assert ancestor in opened
+    assert root in opened  # the root was attempted (and tolerated)
+
+
+def test_non_root_fsync_permission_error_propagates(tmp_path, monkeypatch):
+    """A permission failure on any ancestor other than the filesystem root is a
+    real error and must not be swallowed."""
+    xdg = tmp_path / "strict-xdg"
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+    d = paths.data_dir()
+    for directory in (
+        d,
+        paths.nonces_dir(),
+        paths.ledger_dir(),
+        paths.archive_dir(),
+        paths.reports_dir(),
+        paths.queue_dir(),
+        paths.keys_dir(),
+        paths.anchors_dir(),
+        paths.enrollments_dir(),
+    ):
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+
+    blocked = xdg.absolute()  # a real, mybench-relevant ancestor
+    real_fsync_directory = paths._fsync_directory
+
+    def guarded_fsync_directory(directory):
+        if Path(directory) == blocked:
+            raise PermissionError(13, "Permission denied", str(blocked))
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(paths, "_fsync_directory", guarded_fsync_directory)
+    monkeypatch.setattr(paths, "_DURABLE_ROOT_CHAINS", set())
+    with pytest.raises(PermissionError):
+        paths.ensure_data_dir()
+
+
 def test_ensure_creates_tree_0700():
     d = paths.ensure_data_dir()
     for p in (

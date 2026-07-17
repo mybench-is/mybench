@@ -383,13 +383,27 @@ def _directory_key(directory: Path) -> tuple[str, int, int]:
 
 
 def _ensure_root_chain_durable(d: Path) -> None:
-    """Repair a possibly interrupted data-root mkdir from leaf through root."""
+    """Repair a possibly interrupted data-root mkdir from leaf through root.
+
+    Fsyncing each ancestor persists the directory entries mybench created (via
+    ``mkdir(parents=True)``) after a crash that interrupted the initial mkdir.
+    The only ancestor whose fsync is never a durability requirement is the
+    filesystem root itself — mybench creates nothing directly in ``/`` — and it
+    can be unopenable under sandboxing: a systemd unit with ``PrivateTmp=`` runs
+    in a mount namespace where ``os.open("/")`` raises ``EACCES``. A permission
+    failure at the root is therefore tolerated; a failure at any other ancestor
+    is a real error and propagates.
+    """
     key = _directory_key(d)
     if key in _DURABLE_ROOT_CHAINS:
         return
     absolute = d.absolute()
     for directory in (absolute, *absolute.parents):
-        _fsync_directory(directory)
+        try:
+            _fsync_directory(directory)
+        except PermissionError:
+            if directory != directory.parent:  # not the filesystem root
+                raise
     _DURABLE_ROOT_CHAINS.add(key)
 
 
