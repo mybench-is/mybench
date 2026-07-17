@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/anchor_batch.schema.json",
+  "$id": "https://mybench.is/schemas/v1/anchor_batch.schema.json",
   "title": "Mybench Anchor Batch",
   "description": "One publishable anchor batch: the Merkle root over the covered ledger rows' session roots, the covered range, the chain tip, and the device signature. This is a strict whitelist of the ONLY bytes that may leave the machine (threat model §3, privacy invariant #1); additionalProperties:false makes accidental inclusion of anything else structurally impossible.",
   "type": "object",

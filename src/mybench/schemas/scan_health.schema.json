@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/scan_health.schema.json",
+  "$id": "https://mybench.is/schemas/v1/scan_health.schema.json",
   "title": "Private successful-scan health receipt",
   "type": "object",
   "additionalProperties": false,

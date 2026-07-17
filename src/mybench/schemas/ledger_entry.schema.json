@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v2/ledger_entry.schema.json",
+  "$id": "https://mybench.is/schemas/v2/ledger_entry.schema.json",
   "title": "Mybench Ledger Row",
   "description": "One row of the hash-chained append-only local ledger (asset A3). Version 2 admits closed-shape capture-time lifecycle, session-metadata, and private anchor-receipt observations while version-1 rows remain valid and unchanged. Metadata ONLY: additionalProperties:false makes content, prompt text, paths, and filenames structurally impossible.",
   "type": "object",

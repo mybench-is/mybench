@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/claim.schema.json",
+  "$id": "https://mybench.is/schemas/v1/claim.schema.json",
   "title": "Mybench Assessment Claim",
   "description": "One signed assessment claim (MYB-10.1, handoff §3). Strict whitelist like every mybench artifact (additionalProperties:false): a claim carries registry identifiers, commitments, bands, and version identifiers — content fields are structurally impossible (privacy invariant #1). Claims stay local until the THREAT_MODEL §3 revision opens a publish gate (invariant #4, MYB-16.2). Patterns use [0-9] (never \\d — Unicode digits) and every patterned field is length-pinned because jsonschema matches with re.search, where '$' accepts a trailing newline. The 'no floats' rule cannot be expressed here for the free-form output object; mybench.claims.canonical enforces it on every serialization, and validate_claim runs both checks plus ordering rules the schema cannot express (real-instant timestamps; sorted-unique corpus_commitment arrays).",
   "$defs": {

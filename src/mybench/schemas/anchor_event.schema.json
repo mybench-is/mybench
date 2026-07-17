@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v2/anchor_event.schema.json",
+  "$id": "https://mybench.is/schemas/v2/anchor_event.schema.json",
   "title": "Mybench Anchor Event (layout v1)",
   "description": "One immutable anchor event file at anchors/<identity_id>/<YYYY>/<MM>/<DD>.json (ADR-0004). Strict whitelist of publishable bytes. v2 changes vs the v1 batch artifact: identity_id namespacing, COARSE date instead of second-precision ts (privacy tightening), item_count, client_version. One event per identity per UTC day; files are created once and never modified.",
   "type": "object",

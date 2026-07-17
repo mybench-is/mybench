@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v2/status.schema.json",
+  "$id": "https://mybench.is/schemas/v2/status.schema.json",
   "title": "Local mybench status summary",
   "type": "object",
   "additionalProperties": false,

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/normalized_corpus.schema.json",
+  "$id": "https://mybench.is/schemas/v1/normalized_corpus.schema.json",
   "title": "Mybench Normalized Evidence Corpus",
   "description": "Closed A8 schema (MYB-10.4). It can represent derived structure, opaque identities, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
   "$defs": {
