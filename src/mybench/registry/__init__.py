@@ -47,10 +47,16 @@ Enforcement this module adds beyond the schema whitelist
 - :meth:`Registry.check_claim` — the registry-conformance seam the claim
   envelope deliberately left open: a claim must cite an active entry, match
   its version and derivation class, and its output must validate against
-  the entry's (precompiled) output schema. Evidence-volume thresholds
+  the entry's (precompiled) output schema. Conditioned entries additionally
+  pin their taxonomy id/version, require ``output.condition``, and key a
+  positive support floor by every admitted cell. Evidence-volume thresholds
   (``min_support``, handoff §8.4) are deliberately NOT checked here: claims
   carry no volume fields — the scorer's emit gate (MYB-10.6) enforces
-  below-threshold ⇒ no claim, never a zero-valued claim.
+  below-threshold ⇒ no claim, never a zero-valued claim (including each
+  conditioning cell independently).
+- conditional denominators name both their condition class and their source;
+  severity vocabularies declare only closed class ids. Numeric severity
+  weights remain judge-rubric behavior (MYB-7.1), not registry data.
 
 Publication of the CLAIMS the registry governs stays gated on the
 THREAT_MODEL §3 revision (invariant #4, MYB-16.2); the registry file itself
@@ -75,6 +81,7 @@ from mybench.schemas import load_validator
 EMPLOYER_SAFE = "employer-safe"
 
 _ID_RE = re.compile(r"[a-z0-9_]+(\.[a-z0-9_]+)+")
+_VOCABULARY_ID_RE = re.compile(r"[a-z0-9_]+([.-][a-z0-9_]+)*")
 _SEMVER_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 
@@ -122,17 +129,22 @@ def _contains_framing(text: str, framing_tokens: list[str]) -> bool:
     return any(toks[i : i + n] == framing_tokens for i in range(len(toks) - n + 1))
 
 
-def _iter_enum_properties(output_schema: dict):
+def _iter_enum_properties(output_schema: dict, excluded_fields: set[str] | None = None):
     """Yield (property_name, enum) for every enum-carrying string property,
     top-level or one array-items level down — the band surfaces."""
+    excluded_fields = excluded_fields or set()
     for name, prop in output_schema.get("properties", {}).items():
         if isinstance(prop, dict):
-            if "enum" in prop:
+            if "enum" in prop and name not in excluded_fields:
                 yield name, prop["enum"]
             items = prop.get("items")
             if isinstance(items, dict):
                 for sub, subprop in items.get("properties", {}).items():
-                    if isinstance(subprop, dict) and "enum" in subprop:
+                    if (
+                        isinstance(subprop, dict)
+                        and "enum" in subprop
+                        and sub not in excluded_fields
+                    ):
                         yield sub, subprop["enum"]
 
 
@@ -202,9 +214,40 @@ class Registry:
             raise RegistryError(f"duplicate registry id: {eid}")
         self._entries[eid] = entry
 
+        for field in ("conditioning_axis", "severity_weight_vocabulary"):
+            declaration = entry.get(field)
+            if declaration is None:
+                continue
+            if not _VOCABULARY_ID_RE.fullmatch(declaration["taxonomy_id"]):
+                raise RegistryError(f"{eid}: {field} taxonomy_id is not exact")
+            if not _SEMVER_RE.fullmatch(declaration["taxonomy_version"]):
+                raise RegistryError(f"{eid}: {field} taxonomy_version is not exact semver")
+        denominator = entry.get("conditional_denominator")
+        if denominator is not None:
+            for field in ("condition_class", "denominator_source"):
+                if not _VOCABULARY_ID_RE.fullmatch(denominator[field]):
+                    raise RegistryError(
+                        f"{eid}: conditional_denominator {field} is not exact"
+                    )
+        cell_ids = entry["min_support"].get("per_conditioning_cell", {}).keys()
+        severity_classes = entry.get("severity_weight_vocabulary", {}).get("classes", [])
+        for value in (*cell_ids, *severity_classes):
+            if not _VOCABULARY_ID_RE.fullmatch(value):
+                raise RegistryError(f"{eid}: vocabulary cell id is not exact: {value!r}")
+
         band_labels = [
             band for bd in entry["band_definitions"] for band in bd["bands"]
         ]
+        registry_vocabulary = []
+        if "conditioning_axis" in entry:
+            registry_vocabulary.append(entry["conditioning_axis"]["taxonomy_id"])
+            registry_vocabulary.extend(cell_ids)
+        if denominator is not None:
+            registry_vocabulary.extend(denominator.values())
+        if "severity_weight_vocabulary" in entry:
+            severity = entry["severity_weight_vocabulary"]
+            registry_vocabulary.append(severity["taxonomy_id"])
+            registry_vocabulary.extend(severity["classes"])
         copy_surfaces = [
             ("id", eid),
             ("title", entry["title"]),
@@ -212,6 +255,7 @@ class Registry:
             ("notes", entry.get("notes", "")),
             ("risk_note", entry.get("risk_note", "")),
             ("band labels", " ".join(band_labels)),
+            ("registry vocabulary", " ".join(registry_vocabulary)),
         ]
         for framing_tokens, framing in zip(framings, self._doc["banned_framings"]):
             for where, text in copy_surfaces:
@@ -260,10 +304,38 @@ class Registry:
                     "(additionalProperties: false + required) — it is the only shape gate "
                     "between scorer output and a signed claim"
                 )
+            conditioning = entry.get("conditioning_axis")
+            cell_support = entry["min_support"].get("per_conditioning_cell")
+            if conditioning is not None:
+                condition_schema = schema.get("properties", {}).get("condition")
+                if (
+                    "condition" not in schema["required"]
+                    or not isinstance(condition_schema, dict)
+                    or condition_schema.get("type") != "string"
+                    or not condition_schema.get("enum")
+                ):
+                    raise RegistryError(
+                        f"{eid}: active conditioned entries require an enumerated string "
+                        "output.condition"
+                    )
+                if not cell_support:
+                    raise RegistryError(
+                        f"{eid}: active conditioned entries require "
+                        "min_support.per_conditioning_cell"
+                    )
+                if set(condition_schema["enum"]) != set(cell_support):
+                    raise RegistryError(
+                        f"{eid}: output.condition enum and per-cell support keys must match"
+                    )
+            elif cell_support is not None:
+                raise RegistryError(
+                    f"{eid}: per-conditioning-cell support requires conditioning_axis"
+                )
             # Band edges are declared once per property; the schema enum and the
             # band_definitions view must be the same list or the recalibration
             # story (registry bump, no code change) silently breaks.
-            enum_props = dict(_iter_enum_properties(schema))
+            non_band_fields = {"condition"} if conditioning is not None else set()
+            enum_props = dict(_iter_enum_properties(schema, non_band_fields))
             declared = {bd["field"]: bd["bands"] for bd in entry["band_definitions"]}
             for prop, enum in enum_props.items():
                 if prop not in declared:
@@ -311,7 +383,39 @@ class Registry:
         return copy.deepcopy(self._entry(registry_id)["band_definitions"])
 
     def min_support(self, registry_id: str) -> dict:
-        return dict(self._entry(registry_id)["min_support"])
+        return copy.deepcopy(self._entry(registry_id)["min_support"])
+
+    def conditioning_axis(self, registry_id: str) -> dict | None:
+        """Return the pinned conditioning-axis declaration, when present."""
+        axis = self._entry(registry_id).get("conditioning_axis")
+        return copy.deepcopy(axis)
+
+    def conditioning_min_support(self, registry_id: str, condition: str) -> dict:
+        """Return one cell's positive support floors.
+
+        Unknown cells fail closed. Scorers compare their evidence volume with
+        this result and omit a thin cell entirely; zero is never a substitute.
+        """
+        entry = self._entry(registry_id)
+        if "conditioning_axis" not in entry:
+            raise RegistryError(f"{registry_id}: entry has no conditioning axis")
+        cell_support = entry["min_support"].get("per_conditioning_cell", {})
+        try:
+            return dict(cell_support[condition])
+        except (KeyError, TypeError):
+            raise RegistryError(
+                f"{registry_id}: unknown or unsupported condition {condition!r}"
+            ) from None
+
+    def conditional_denominator(self, registry_id: str) -> dict | None:
+        """Return the declared condition class and denominator source."""
+        declaration = self._entry(registry_id).get("conditional_denominator")
+        return copy.deepcopy(declaration)
+
+    def severity_weight_vocabulary(self, registry_id: str) -> dict | None:
+        """Return severity class ids only; weights belong to the judge rubric."""
+        vocabulary = self._entry(registry_id).get("severity_weight_vocabulary")
+        return copy.deepcopy(vocabulary)
 
     # -- disclosure surfaces (handoff §7.1; consumed by MYB-14.1) ------------------
 
@@ -393,6 +497,18 @@ class Registry:
                 f"{claim['registry_id']}: derivation_class {claim['derivation_class']!r} "
                 f"does not match registry class {entry['class']!r}"
             )
+        if "conditioning_axis" in entry:
+            output = claim.get("output")
+            if not isinstance(output, dict) or "condition" not in output:
+                raise RegistryError(
+                    f"{claim['registry_id']}: conditioned claim omits output.condition"
+                )
+            condition = output["condition"]
+            cell_support = entry["min_support"]["per_conditioning_cell"]
+            if not isinstance(condition, str) or condition not in cell_support:
+                raise RegistryError(
+                    f"{claim['registry_id']}: unknown or unsupported condition {condition!r}"
+                )
         validator = self._output_validators[claim["registry_id"]]
         try:
             errors = sorted(validator.iter_errors(claim["output"]), key=str)
