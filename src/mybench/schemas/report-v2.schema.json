@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v2/report.schema.json",
+  "title": "Mybench Workflow Fingerprint Report v2",
+  "description": "Closed local-report assembly envelope accepted by MYB-13.1 and ADR-0019. Atomic field value shapes are additionally validated against the cited descriptor-registry entry; publication is a separate fail-closed projection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_version",
+    "generated_at",
+    "scorer_version",
+    "input_schema_versions",
+    "registry",
+    "evidence_period",
+    "metrics",
+    "fingerprint",
+    "catalog_metrics"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2"
+    },
+    "report_version": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "generated_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "scorer_version": {
+      "$ref": "#/$defs/semver"
+    },
+    "input_schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ledger", "anchor", "normalized_events"],
+      "properties": {
+        "ledger": {"$ref": "#/$defs/versionList"},
+        "anchor": {"$ref": "#/$defs/versionList"},
+        "normalized_events": {"$ref": "#/$defs/versionList"},
+        "phase_classifier": {"$ref": "#/$defs/versionList"}
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest"],
+      "properties": {
+        "version": {"$ref": "#/$defs/semver"},
+        "digest": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "pricing_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest", "currency"],
+      "properties": {
+        "version": {"$ref": "#/$defs/semver"},
+        "digest": {"$ref": "#/$defs/hex64"},
+        "currency": {"const": "USD"}
+      }
+    },
+    "evidence_period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"$ref": "#/$defs/date"},
+        "end": {"$ref": "#/$defs/date"}
+      }
+    },
+    "anchored_through": {
+      "$ref": "#/$defs/date"
+    },
+    "backfill_note": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "binding_tips": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[A-Za-z0-9._/-]{1,200}$": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+        }
+      }
+    },
+    "metrics": {
+      "description": "Schema-v1 activity metrics retained during migration, sorted by name.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/activityMetric"}
+    },
+    "catalog_metrics": {
+      "description": "Reserved registry-governed lane for report metrics outside the seven Workflow Fingerprint sections. Empty in v0; combined registry/report validation admits only ACTIVE entries assigned to this lane.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/field"}
+    },
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workflow_summary",
+        "workflow_map",
+        "model_role_profile",
+        "context_management_profile",
+        "orchestration_topology",
+        "token_cost_profile",
+        "evidence_coverage"
+      ],
+      "properties": {
+        "workflow_summary": {"$ref": "#/$defs/section"},
+        "workflow_map": {"$ref": "#/$defs/section"},
+        "model_role_profile": {"$ref": "#/$defs/section"},
+        "context_management_profile": {"$ref": "#/$defs/section"},
+        "orchestration_topology": {"$ref": "#/$defs/section"},
+        "token_cost_profile": {"$ref": "#/$defs/section"},
+        "evidence_coverage": {"$ref": "#/$defs/section"}
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "versionList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/nonempty"}
+    },
+    "primitive": {
+      "oneOf": [
+        {"type": "integer"},
+        {"type": "boolean"},
+        {"$ref": "#/$defs/nonempty"}
+      ]
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimensions", "value"],
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {"$ref": "#/$defs/nonempty"}
+        },
+        "value": {"$ref": "#/$defs/primitive"}
+      }
+    },
+    "fieldValue": {
+      "oneOf": [
+        {"$ref": "#/$defs/primitive"},
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/cell"}
+        }
+      ]
+    },
+    "field": {
+      "description": "Atomic registry-governed field. The registry entry validates value dimensions/enums and must exactly match disclosure, risk, derivation class, location, reserved-block activation, and required caveat codes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registry_id",
+        "registry_version",
+        "claim_digest",
+        "derivation_class",
+        "execution_env",
+        "trust_tier",
+        "anchor_state",
+        "disclosure",
+        "inference_risk",
+        "coverage_basis_points",
+        "confidence",
+        "value"
+      ],
+      "properties": {
+        "registry_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){1,5}$",
+          "maxLength": 160
+        },
+        "registry_version": {"$ref": "#/$defs/semver"},
+        "claim_digest": {"$ref": "#/$defs/hex64"},
+        "derivation_class": {
+          "enum": ["measured", "characterization"]
+        },
+        "execution_env": {
+          "enum": ["local-unattested", "tee-attested"]
+        },
+        "trust_tier": {
+          "enum": ["PROVEN", "ANCHORED", "TEE-VERIFIED", "JUDGED"]
+        },
+        "tier_qualifier": {
+          "description": "Reserved for JUDGED(unattested|attested); combined validation requires absence until MYB-7.7 activates the taxonomy.",
+          "enum": ["unattested", "attested"]
+        },
+        "anchor_state": {
+          "enum": ["covered", "partial", "pending", "not-applicable"]
+        },
+        "disclosure": {
+          "enum": ["LOCAL_ONLY", "PUBLISHABLE"]
+        },
+        "inference_risk": {
+          "enum": ["R0", "R1", "R2"]
+        },
+        "coverage_basis_points": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0, "maximum": 10000},
+            {"const": "UNKNOWN"}
+          ]
+        },
+        "confidence": {
+          "enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]
+        },
+        "reference_frame": {
+          "description": "Reserved percentile/reference-frame shape. Combined validation requires absence until a percentile artifact class and OQ #52 population ruling activate it.",
+          "$ref": "#/$defs/referenceFrame"
+        },
+        "conditioning": {
+          "description": "Reserved conditioning-cell shape. A false support flag is valid only for LOCAL_ONLY display; below-support publishable cells are absent.",
+          "$ref": "#/$defs/conditioning"
+        },
+        "value": {"$ref": "#/$defs/fieldValue"},
+        "caveats": {
+          "description": "Controlled registry-owned caveat codes. Combined validation rejects an omitted code required by the active registry entry; display copy is not stored here.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/caveatCode"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["conditioning"],
+            "properties": {
+              "conditioning": {
+                "required": ["min_support_met"],
+                "properties": {"min_support_met": {"const": false}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"disclosure": {"const": "LOCAL_ONLY"}}
+          }
+        },
+        {
+          "if": {"required": ["tier_qualifier"]},
+          "then": {"properties": {"trust_tier": {"const": "JUDGED"}}}
+        },
+        {
+          "if": {
+            "required": ["tier_qualifier"],
+            "properties": {"tier_qualifier": {"const": "unattested"}}
+          },
+          "then": {
+            "properties": {"execution_env": {"const": "local-unattested"}}
+          }
+        },
+        {
+          "if": {
+            "required": ["tier_qualifier"],
+            "properties": {"tier_qualifier": {"const": "attested"}}
+          },
+          "then": {
+            "properties": {"execution_env": {"const": "tee-attested"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"trust_tier": {"const": "TEE-VERIFIED"}},
+            "required": ["trust_tier"]
+          },
+          "then": {
+            "properties": {
+              "execution_env": {"const": "tee-attested"},
+              "derivation_class": {"const": "measured"}
+            }
+          }
+        }
+      ]
+    },
+    "caveatCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "maxLength": 96
+    },
+    "referenceFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_corpus_id",
+        "reference_version",
+        "as_of_date",
+        "percentile_band"
+      ],
+      "properties": {
+        "reference_corpus_id": {"$ref": "#/$defs/nonempty"},
+        "reference_version": {"$ref": "#/$defs/semver"},
+        "as_of_date": {"$ref": "#/$defs/date"},
+        "percentile_band": {"$ref": "#/$defs/nonempty"}
+      }
+    },
+    "conditioning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axis", "cell", "min_support_met"],
+      "properties": {
+        "axis": {"$ref": "#/$defs/nonempty"},
+        "cell": {"$ref": "#/$defs/nonempty"},
+        "min_support_met": {"type": "boolean"}
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "fields"],
+      "properties": {
+        "status": {
+          "enum": ["available", "insufficient-evidence", "not-supported"]
+        },
+        "fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/field"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"status": {"const": "available"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {"fields": {"minItems": 1}}
+          },
+          "else": {
+            "properties": {"fields": {"maxItems": 0}}
+          }
+        }
+      ]
+    },
+    "activityMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "trust_tier"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,63}$"
+        },
+        "value": {
+          "oneOf": [
+            {"type": "number"},
+            {"type": "boolean"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "patternProperties": {
+                "^[A-Za-z0-9._+/ -]{1,64}$": {"type": "number"}
+              }
+            }
+          ]
+        },
+        "trust_tier": {
+          "enum": ["PROVEN", "ANCHORED", "JUDGED"]
+        },
+        "caveat": {"$ref": "#/$defs/nonempty"}
+      }
+    }
+  }
+}
