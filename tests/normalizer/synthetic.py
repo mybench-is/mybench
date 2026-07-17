@@ -19,7 +19,10 @@ FILENAME_CANARY = "synthetic_private_plan_31ef.py"
 PATH_CANARY = "/synthetic/private/project/synthetic_private_plan_31ef.py"
 RAW_SESSION_CANARY = "raw-session-identifier-canary-a"
 SIDECHAIN_RAW_SESSION_CANARY = "raw-session-identifier-canary-b"
+NESTED_RAW_SESSION_CANARY = "raw-session-identifier-canary-nested-d"
 NON_SUBJECT_RAW_SESSION_CANARY = "raw-session-identifier-canary-c"
+NESTED_CONTENT_CANARY = "MYBENCH-NORMALIZER-NESTED-CANARY-4bb7"
+LAUNCHER_PAYLOAD_CANARY = "MYBENCH-NORMALIZER-LAUNCHER-CANARY-9ce1"
 TOOL_ID_CANARY = "tool-use-identifier-canary-77cc"
 UUID_CANARIES = tuple(f"raw-uuid-canary-{index:02d}" for index in range(12))
 CODEX_CONTENT_CANARY = "MYBENCH-CODEX-CONTENT-CANARY-6aa1"
@@ -198,6 +201,11 @@ def synthetic_normalizer_input() -> SyntheticNormalizedInput:
             "sessionId": RAW_SESSION_CANARY,
             "type": "future_record_shape",
         },
+        {
+            "operation": "enqueue",
+            "payload": LAUNCHER_PAYLOAD_CANARY,
+            "type": "queue-operation",
+        },
     ]
     main, main_nonces = _session(
         session_index=0,
@@ -212,6 +220,7 @@ def synthetic_normalizer_input() -> SyntheticNormalizedInput:
             "subject",
             "non-subject",
             "unknown",
+            "subject",
             "subject",
             "subject",
         ],
@@ -235,6 +244,7 @@ def synthetic_normalizer_input() -> SyntheticNormalizedInput:
             "isSidechain": True,
             "message": {
                 "role": "assistant",
+                "usage": {"input_tokens": 2, "output_tokens": 3},
                 "content": [{"type": "text", "text": "delegated " + AGENT_CANARY}],
             },
             "parentUuid": UUID_CANARIES[6],
@@ -251,6 +261,41 @@ def synthetic_normalizer_input() -> SyntheticNormalizedInput:
         attributions=["subject", "subject"],
         subject_owned=True,
         parent_session_id="opaque-main-session",
+    )
+
+    nested_values = [
+        {
+            "cwd": PATH_CANARY,
+            "isSidechain": True,
+            "message": {"role": "user", "content": "nested " + NESTED_CONTENT_CANARY},
+            "parentUuid": None,
+            "sessionId": NESTED_RAW_SESSION_CANARY,
+            "timestamp": "2026-01-01T00:01:30.000Z",
+            "type": "user",
+            "uuid": UUID_CANARIES[9],
+        },
+        {
+            "cwd": PATH_CANARY,
+            "isSidechain": True,
+            "message": {
+                "role": "assistant",
+                "usage": {"input_tokens": 4, "output_tokens": 5},
+                "content": [{"type": "text", "text": "nested " + AGENT_CANARY}],
+            },
+            "parentUuid": UUID_CANARIES[9],
+            "sessionId": NESTED_RAW_SESSION_CANARY,
+            "timestamp": "2026-01-01T00:01:31.000Z",
+            "type": "assistant",
+            "uuid": UUID_CANARIES[10],
+        },
+    ]
+    nested, nested_nonces = _session(
+        session_index=3,
+        session_id="opaque-nested-sidechain",
+        values=nested_values,
+        attributions=["subject", "subject"],
+        subject_owned=True,
+        parent_session_id="opaque-sidechain-session",
     )
 
     non_subject_values = [
@@ -273,7 +318,7 @@ def synthetic_normalizer_input() -> SyntheticNormalizedInput:
         subject_owned=False,
     )
 
-    nonces = tuple(main_nonces + side_nonces + non_subject_nonces)
+    nonces = tuple(main_nonces + side_nonces + nested_nonces + non_subject_nonces)
     string_canaries = (
         CONTENT_CANARY,
         AGENT_CANARY,
@@ -285,12 +330,15 @@ def synthetic_normalizer_input() -> SyntheticNormalizedInput:
         PATH_CANARY,
         RAW_SESSION_CANARY,
         SIDECHAIN_RAW_SESSION_CANARY,
+        NESTED_RAW_SESSION_CANARY,
         NON_SUBJECT_RAW_SESSION_CANARY,
+        NESTED_CONTENT_CANARY,
+        LAUNCHER_PAYLOAD_CANARY,
         TOOL_ID_CANARY,
         *UUID_CANARIES,
     )
     return SyntheticNormalizedInput(
-        sessions=(main, sidechain, non_subject),
+        sessions=(main, sidechain, nested, non_subject),
         canaries=tuple(value.encode() for value in string_canaries) + nonces,
         nonces=nonces,
     )

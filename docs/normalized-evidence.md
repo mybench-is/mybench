@@ -10,6 +10,7 @@ commit messages, ref names, or test output into its artifacts.
 One corpus artifact contains:
 
 - opaque session identities and conservative task-episode links;
+- closed, structurally observed lane markers and opaque parent-session links;
 - turn, paste, tool, lifecycle, model, token, reference, and test structure;
 - coarse content shapes such as `short` and `single`;
 - pointers to eligible fields in a committed transcript record; and
@@ -82,6 +83,33 @@ coverage; they are never zero-filled or inferred. Agent text and tool inputs
 may receive commitment-bound pointers. Human text, tool results, compaction
 summaries, and ambiguous records remain shape-only and receive no pointer.
 
+### Lane identity and token accounting (schema v2)
+
+The Claude adapter admits two content-free session fields from a closed raw
+whitelist:
+
+- `lane_role` is `primary` or `subagent` only when all subject message records
+  agree on the boolean `isSidechain` marker; and
+- `launcher_marker` is `queue-operation` when at least one subject record has
+  exactly that structural record type.
+
+`parent_session_id` remains the opaque lineage edge supplied by the trusted
+input boundary. Nested subagents therefore form an opaque session graph without
+serializing task ids, launcher payloads, prompts, paths, filenames, or other
+record fields. Contradictory or malformed markers stay absent. The Codex
+rollout-v1 format has no admitted lane marker, so both lane fields are
+schema-forbidden for Codex sessions: originator strings, working directories,
+parent links, and other launcher-shaped metadata never substitute for observed
+lane evidence.
+
+`token_accounting_policy_version=1.0.0` pins two views over normalized
+`token-usage` events. The **orchestrated** view includes every admitted session,
+including explicitly marked subagents. The **deduped** view excludes only
+sessions with `lane_role=subagent`, because their trajectories also surface in
+the parent lane's tool-result context. Sessions with absent lane evidence stay
+included in both views; absence is UNKNOWN, never permission to guess a
+duplicate. Token-field missingness and provider-reporting caveats are unchanged.
+
 ## What a pointer means
 
 A transcript pointer names a field and carries the salted commitment of its
@@ -124,6 +152,10 @@ record, and subevent. Leaves use the fixed manifest/event domains and 8-byte
 big-endian length framing. The existing RFC-6962-shaped tree uses
 `mybench:v1:node` without duplicating odd leaves, and the result is wrapped by
 `mybench:v1:normalized-corpus`.
+
+Schema v2 changes the canonical manifest/event record bytes and therefore
+produces new corpus roots. It does not change any manifest, event, node, or
+corpus commitment domain, length framing, leaf order, or tree rule.
 
 Zero transcript sessions or zero verified repository snapshots produce no
 artifact. A nonempty input whose consent filter admits no records produces a

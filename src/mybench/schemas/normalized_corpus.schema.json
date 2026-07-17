@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.is/schemas/v1/normalized_corpus.schema.json",
+  "$id": "https://mybench.is/schemas/v2/normalized_corpus.schema.json",
   "title": "Mybench Normalized Evidence Corpus",
-  "description": "Closed A8 schema (MYB-10.4). It can represent derived structure, opaque identities, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
+  "description": "Closed A8 schema v2 (MYB-10.4, MYB-19.1). It can represent derived structure, opaque identities, closed lane markers, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
   "$defs": {
     "hex64": {
       "type": "string",
@@ -137,7 +137,7 @@
         "parent_link"
       ],
       "properties": {
-        "schema_version": {"const": "1"},
+        "schema_version": {"const": "2"},
         "kind": {"const": "normalized-event"},
         "source": {"enum": ["claude-code", "codex"]},
         "session_id": {"$ref": "#/$defs/opaqueId"},
@@ -343,7 +343,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "kind", "corpus_commitment", "manifest", "events"],
   "properties": {
-    "schema_version": {"const": "1"},
+    "schema_version": {"const": "2"},
     "kind": {"const": "normalized-corpus-artifact"},
     "corpus_commitment": {"$ref": "#/$defs/hex64"},
     "manifest": {
@@ -351,17 +351,18 @@
       "additionalProperties": false,
       "required": ["schema_version", "kind", "normalizer", "adapters", "sessions", "coverage", "event_count"],
       "properties": {
-        "schema_version": {"const": "1"},
+        "schema_version": {"const": "2"},
         "kind": {"const": "normalized-corpus-manifest"},
         "normalizer": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version"],
+          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version", "token_accounting_policy_version"],
           "properties": {
             "name": {"const": "mybench.normalizer"},
-            "version": {"const": "1.0.0"},
+            "version": {"const": "2.0.0"},
             "authorship_policy_version": {"const": "1.0.0"},
-            "episode_stitcher_version": {"const": "1.0.0"}
+            "episode_stitcher_version": {"const": "1.0.0"},
+            "token_accounting_policy_version": {"const": "1.0.0"}
           }
         },
         "adapters": {
@@ -376,7 +377,7 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "claude-code"},
-                  "version": {"const": "1.0.0"}
+                  "version": {"const": "2.0.0"}
                 }
               },
               {
@@ -385,7 +386,7 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "codex"},
-                  "version": {"const": "1.0.0"}
+                  "version": {"const": "2.0.0"}
                 }
               }
             ]
@@ -402,6 +403,8 @@
               "session_id": {"$ref": "#/$defs/opaqueId"},
               "admitted_record_count": {"type": "integer", "minimum": 1},
               "parent_session_id": {"$ref": "#/$defs/opaqueId"},
+              "lane_role": {"enum": ["primary", "subagent"]},
+              "launcher_marker": {"const": "queue-operation"},
               "task_episode_id": {"$ref": "#/$defs/episodeId"},
               "episode_predecessor": {
                 "type": "object",
@@ -414,7 +417,23 @@
                   }
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": ["source"],
+                  "properties": {"source": {"const": "codex"}}
+                },
+                "then": {
+                  "not": {
+                    "anyOf": [
+                      {"required": ["lane_role"]},
+                      {"required": ["launcher_marker"]}
+                    ]
+                  }
+                }
+              }
+            ]
           }
         },
         "coverage": {

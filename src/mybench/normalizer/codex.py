@@ -22,6 +22,7 @@ from mybench.normalizer.claude import (
     EPISODE_STITCHER_VERSION,
     NORMALIZER_VERSION,
     SCHEMA_VERSION,
+    TOKEN_ACCOUNTING_POLICY_VERSION,
     VerifiedRecord,
     VerifiedSession,
     _COVERAGE_KEYS,
@@ -45,7 +46,7 @@ from mybench.normalizer.claude import (
     corpus_commitment,
 )
 
-CODEX_ADAPTER_VERSION = "1.0.0"
+CODEX_ADAPTER_VERSION = "2.0.0"
 _SOURCE = "codex"
 
 _MESSAGE_TYPES = frozenset({"input_text", "output_text"})
@@ -663,6 +664,7 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
             "version": NORMALIZER_VERSION,
             "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
             "episode_stitcher_version": EPISODE_STITCHER_VERSION,
+            "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CODEX_ADAPTER_VERSION}],
         "sessions": manifest_sessions,

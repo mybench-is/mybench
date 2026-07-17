@@ -11,6 +11,8 @@ from mybench.commitment_tree import leaf_commitment, merkle_root, session_root
 from mybench.normalizer.claude import VerifiedRecord, VerifiedSession, normalize_claude
 from mybench.normalizer.contract import (
     DOMAIN_NORMALIZED_CORPUS,
+    DOMAIN_NORMALIZED_EVENT,
+    DOMAIN_NORMALIZED_MANIFEST,
     NormalizationError,
     corpus_commitment,
     event_leaf_hash,
@@ -90,6 +92,9 @@ def vector_records():
 
 
 def test_fixed_three_leaf_vector_locks_domains_framing_and_odd_tree_rule():
+    assert DOMAIN_NORMALIZED_MANIFEST == b"mybench:v1:normalized-corpus-manifest"
+    assert DOMAIN_NORMALIZED_EVENT == b"mybench:v1:normalized-event"
+    assert DOMAIN_NORMALIZED_CORPUS == b"mybench:v1:normalized-corpus"
     manifest, event_1, event_2 = vector_records()
     leaves = [manifest_leaf_hash(manifest), event_leaf_hash(event_1), event_leaf_hash(event_2)]
     assert [leaf.hex() for leaf in leaves] == [
@@ -133,7 +138,7 @@ def test_fixed_production_artifact_locks_schema_and_root_together():
     data = normalize_claude((session,))
     artifact = json.loads(data)
     assert artifact["corpus_commitment"] == (
-        "067bfb0baaf02044c28bde0171d96606a13fdb25cd0f92dd66ccdd8053cf2853"
+        "ef5a99badc4501aadbd9a2b2b0970ba8a4bd9bc44fe66a7a6cb002c3b1944f95"
     )
     load_validator("normalized_corpus.schema.json").validate(artifact)
     assert validate_corpus_artifact(data) == artifact["corpus_commitment"]
