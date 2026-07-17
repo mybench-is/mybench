@@ -56,7 +56,7 @@ reports.
 
 | Symbol | Versioned input class | Authority |
 |---|---|---|
-| `LEDGER` | validated ledger v1/v2 rows | hash-chained local ledger |
+| `LEDGER` | validated ledger v1/v2/v3 rows | hash-chained local ledger |
 | `ANCHORS` | validated anchor events + private receipts | anchor event / receipt schemas |
 | `EVENTS` | normalized session/git events | MYB-10.4 normalizer version |
 | `PHASES` | per-episode phase stream over `TASK/PLAN/BUILD/TEST/DEBUG/REVIEW/COMMIT/UNKNOWN` | MYB-13.2 classifier version |

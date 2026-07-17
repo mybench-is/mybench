@@ -31,11 +31,20 @@ and explicitly rooted Git sources; it writes the private scan config only after
 `--accept-all` or interactive confirmation. `--decline` writes nothing.
 
 `mybench scan [--watch DIR:SOURCE ...] [--repo PATH ...] [--archive]
-[--upgrade] [--quiet] [--json]` performs one capture pass. It also flushes the lifecycle
+[--upgrade] [--historical [--dry-run]] [--quiet] [--json]` performs one capture pass. It also flushes the lifecycle
 queue and reconciles missed commits in each enrolled repo. With no `--watch`,
 the owner-machine Claude Code location and an exists-guarded Codex location are
 used. With no `--repo`, the current directory is reconciled. Transcript
 retention remains off unless `--archive` is explicit.
+
+`--historical` is the explicit import path. Transcript evidence appended by
+that invocation and commits at or before each enrolled repo's recorded floor
+carry first-class `IMPORTED` ledger provenance; live lifecycle events remain
+queued for a normal scan. Repeating the import appends nothing. `--dry-run`
+requires `--historical`, reports planned counts, and creates or repairs no
+ledger, nonce, archive, lock, queue, proof, or health state. It therefore
+cannot be combined with `--archive` or `--upgrade`. Imported history means
+only records locally available at import time—not a completeness claim.
 
 Plain `scan` is offline. `--upgrade` is the sole scan flag that permits network
 calls, and only to refresh already-staged OpenTimestamps proofs; it never

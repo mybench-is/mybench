@@ -18,8 +18,9 @@ is unavailable.
 the data dir (never the repo or the ledger; invariant #2), and :func:`reconcile`
 sweeps the SINCE-ENROLLMENT (LIVE) window: it binds every commit after the
 enrollment point that the ``post-commit`` hook missed (rebase, merge, or a
-GitHub server-side squash-merge born as a new hash). Pre-enrollment history
-is backfill/IMPORTED and is NOT swept.
+GitHub server-side squash-merge born as a new hash). The explicit historical
+mode reverses the former backfill exclusion under roadmap Stage 1 §3: it walks
+only the pre-enrollment side and writes closed-shape IMPORTED rows.
 """
 
 from __future__ import annotations
@@ -393,8 +394,13 @@ def unenroll(repo: str | Path) -> dict[str, bool]:
     }
 
 
-def reconcile(cwd: Path | None = None) -> int:
-    """Bind the SINCE-ENROLLMENT (LIVE) commits an enrolled repo has not bound (MYB-3.7).
+def reconcile(
+    cwd: Path | None = None,
+    *,
+    historical: bool = False,
+    dry_run: bool = False,
+) -> int:
+    """Bind missing commits on one side of an enrolled repo's enrollment floor.
 
     A catch-up sweep for the commit-creation paths the ``post-commit`` hook can
     never see: ``git rebase`` (post-rewrite), merge commits (post-merge),
@@ -405,15 +411,17 @@ def reconcile(cwd: Path | None = None) -> int:
     completeness for everything since enrollment. Meant to run from the capture
     scan; safe to call anywhere.
 
-    Only commits AFTER the enrollment point are swept: with a non-empty
+    Normally only commits AFTER the enrollment point are swept: with a non-empty
     ``enroll_commit`` the window is ``git rev-list <enroll_commit>..HEAD``; a
     repo enrolled at its very start (``enroll_commit=""``) has no pre-history,
-    so the window is all of ``HEAD``. Pre-enrollment history is backfill/
-    IMPORTED and is deliberately NOT swept (a future explicit IMPORTED-tagged
-    backfill is out of scope). Appends one binding row per in-window commit not
-    already bound, deduping against existing ``binding`` rows by
+    so the window is all of ``HEAD``. With ``historical=True`` the floor is
+    reversed: ``git rev-list <enroll_commit>`` includes the enrollment commit
+    and its ancestors as IMPORTED, while an empty enrollment point correctly
+    has no pre-history. Appends one binding row per in-window commit not already
+    bound, deduping against existing ``binding`` rows by
     ``(repo_id, commit_hash)``. Idempotent: a re-run appends nothing. Returns
-    the number of rows appended.
+    the number of rows appended, or the number planned when ``dry_run=True``.
+    Dry-run is valid only for historical mode and never creates local state.
 
     REPO-level conditions never raise: no enrollment record → no-op (enrollment
     must be stamped first; it does NOT backfill all-history as a fallback);
@@ -431,6 +439,8 @@ def reconcile(cwd: Path | None = None) -> int:
     a quiet "0 bound". Contrast :func:`run`, which must never block a commit
     and swallows everything.
     """
+    if dry_run and not historical:
+        raise HookError("dry-run is available only for historical reconciliation")
     try:
         cwd = cwd if cwd is not None else Path.cwd()
         top = Path(_git(cwd, "rev-parse", "--show-toplevel"))
@@ -438,16 +448,30 @@ def reconcile(cwd: Path | None = None) -> int:
         return 0
     if not (top / MARKER_RELPATH).is_file():
         return 0  # strictly opt-in, exactly like the hook — no marker, no sweep
-    repo_id = repo_identity_for_worktree(
-        top
-    )  # PathsError propagates: integrity failures must surface
+    if dry_run:
+        from mybench.scan_health import load_scope_key
+
+        scope_key = load_scope_key()
+        if scope_key is None:
+            raise HookError("historical dry-run requires an initialized scope key")
+        repo_id = repo_identity_for_worktree(top, scope_key=scope_key)
+    else:
+        repo_id = repo_identity_for_worktree(
+            top
+        )  # PathsError propagates: integrity failures must surface
     enroll_path = paths.enrollment_path(repo_id)
     if not enroll_path.exists():
         return 0  # not stamped: enrollment must be recorded before any sweep
     try:
         record = json.loads(enroll_path.read_text())
         enroll_commit = record.get("enroll_commit", "")
-        rev_range = f"{enroll_commit}..HEAD" if enroll_commit else "HEAD"
+        if historical and not enroll_commit:
+            return 0
+        rev_range = (
+            enroll_commit
+            if historical
+            else (f"{enroll_commit}..HEAD" if enroll_commit else "HEAD")
+        )
         rev_out = _git(top, "rev-list", rev_range)
     except Exception as exc:  # noqa: BLE001 — unborn HEAD, rebased-away enroll point, bad record
         _log_error(exc, context="reconcile")
@@ -472,10 +496,15 @@ def reconcile(cwd: Path | None = None) -> int:
         for commit_hash in commits:
             if commit_hash in bound:
                 continue
+            if dry_run:
+                bound.add(commit_hash)
+                appended += 1
+                continue
             ledger.append_binding(
                 commit_hash=commit_hash,
                 commit_ts=_committer_ts(top, commit_hash),
                 repo_id=repo_id,
+                provenance="IMPORTED" if historical else None,
             )
             bound.add(commit_hash)  # guard against a hash appearing twice in rev-list output
             appended += 1

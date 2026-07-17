@@ -111,6 +111,16 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="explicitly use the network to upgrade staged OpenTimestamps proofs",
     )
+    scan.add_argument(
+        "--historical",
+        action="store_true",
+        help="explicitly import available transcript and pre-enrollment Git history",
+    )
+    scan.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="count historical rows without writing any local state (requires --historical)",
+    )
     scan.add_argument("--quiet", action="store_true", help="suppress successful scan output")
     scan.add_argument("--scheduled", action="store_true", help=argparse.SUPPRESS)
     _add_json(scan)
@@ -252,6 +262,22 @@ def _failed(command: str, *, as_json: bool, error: str = "operation_failed") -> 
     return EXIT_FAILED
 
 
+def _usage(command: str, *, as_json: bool, error: str) -> int:
+    payload = {
+        "command": command,
+        "error": error,
+        "exit_code": EXIT_USAGE,
+        "status": "error",
+    }
+    _emit(
+        payload,
+        as_json=as_json,
+        human=f"{command}: invalid usage ({error})",
+        error=True,
+    )
+    return EXIT_USAGE
+
+
 def _init(args: argparse.Namespace) -> int:
     if args.detect is not None:
         return _init_detect(args)
@@ -390,6 +416,10 @@ def _upgrade_proofs() -> tuple[int, int]:
 
 
 def _scan(args: argparse.Namespace) -> int:
+    if args.dry_run and not args.historical:
+        return _usage("scan", as_json=args.json, error="dry_run_requires_historical")
+    if args.dry_run and (args.archive or args.upgrade):
+        return _usage("scan", as_json=args.json, error="dry_run_must_be_read_only")
     try:
         from mybench.daemon.capture import Daemon, DaemonConfig, default_config
         from mybench.hooks.binding import reconcile
@@ -417,14 +447,31 @@ def _scan(args: argparse.Namespace) -> int:
             )
             # Unified scan records one completion only after capture, repo
             # reconciliation, and any explicit proof upgrade all succeed.
-            rows = Daemon(config).scan_once(record_health=False)
+            daemon = Daemon(config)
+            if args.dry_run:
+                rows = 0
+                rows_planned = daemon.preview_historical()
+            else:
+                rows = daemon.scan_once(record_health=False, historical=args.historical)
+                rows_planned = 0
         else:
             config = None
             rows = 0
+            rows_planned = 0
         repos = args.repo or ([str(repo) for repo in stored.repos] if stored else [str(Path.cwd())])
-        bindings = sum(reconcile(Path(repo)) for repo in repos)
+        if args.dry_run:
+            bindings = 0
+            bindings_planned = sum(
+                reconcile(Path(repo), historical=True, dry_run=True) for repo in repos
+            )
+        else:
+            bindings = sum(
+                reconcile(Path(repo), historical=args.historical) for repo in repos
+            )
+            bindings_planned = 0
         proofs, confirmed = _upgrade_proofs() if args.upgrade else (0, 0)
-        record_full_success(watches, repos)
+        if not args.historical:
+            record_full_success(watches, repos)
     except Exception:  # noqa: BLE001 - source paths and internals are a leak surface
         return _failed("scan", as_json=args.json)
     payload = {
@@ -437,14 +484,30 @@ def _scan(args: argparse.Namespace) -> int:
         "upgrade_requested": args.upgrade,
         "watches": len(watches),
     }
+    if args.historical:
+        payload.update({"dry_run": args.dry_run, "historical": True})
+    if args.dry_run:
+        payload.update(
+            {
+                "bindings_planned": bindings_planned,
+                "rows_planned": rows_planned,
+            }
+        )
     if not args.quiet:
+        if args.dry_run:
+            human = (
+                f"historical dry-run complete: watches={len(watches)} "
+                f"rows_planned={rows_planned} bindings_planned={bindings_planned}"
+            )
+        else:
+            human = (
+                f"scan complete: watches={len(watches)} rows_appended={rows} "
+                f"bindings_appended={bindings} proofs_confirmed={confirmed}/{proofs}"
+            )
         _emit(
             payload,
             as_json=args.json,
-            human=(
-                f"scan complete: watches={len(watches)} rows_appended={rows} "
-                f"bindings_appended={bindings} proofs_confirmed={confirmed}/{proofs}"
-            ),
+            human=human,
         )
     return EXIT_OK
 

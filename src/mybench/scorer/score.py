@@ -19,11 +19,12 @@ from datetime import date, timedelta
 from mybench.anchor.receipt import ReceiptError, derive_receipt_latencies
 
 SCHEMA_VERSION = "1"
-SCORER_VERSION = "0.2.0"
+SCORER_VERSION = "0.3.0"
 DOMAIN_ROW = b"mybench:v1:ledgerrow"
 
 BACKFILL_NOTE = (
-    "History captured by backfill is anchored as of anchor time; "
+    "Imported history includes only records locally available at import time and is not a "
+    "completeness claim. Imported rows are anchored as of anchor time; "
     "capture-time metrics (ledger_span_days, active_days, sessions_total) "
     "reflect when rows were appended, not when the underlying work happened."
 )
@@ -52,8 +53,9 @@ LATENCY_CAVEAT = (
     "self-attested, not the independently verified Bitcoin block time."
 )
 PROVENANCE_CAVEAT = (
-    "Percentages cover only ledger rows named by supplied anchor events; "
-    "unanchored local rows are excluded."
+    "Percentages cover only ledger rows named by supplied anchor events. Explicit row "
+    "provenance is used at and after the v3 boundary; frozen earlier rows retain the "
+    "legacy first-anchor classification. Unanchored local rows are excluded."
 )
 
 
@@ -199,19 +201,47 @@ def _anchor_latency_distribution(rows: list[dict], anchors: list[dict]) -> dict:
     return counts
 
 
-def _evidence_provenance_split(anchors: list[dict]) -> dict:
-    imported: set[int] = set()
-    live: set[int] = set()
-    if anchors:
-        imported.update(range(anchors[0]["row_start"], anchors[0]["row_end"]))
-        for anchor in anchors[1:]:
-            live.update(range(anchor["row_start"], anchor["row_end"]))
-    live -= imported
-    total = len(imported | live)
+def _evidence_provenance_split(rows: list[dict], anchors: list[dict]) -> dict:
+    """Classify anchored rows from v3 provenance with a frozen legacy fallback.
+
+    The schema-version event is the semantic boundary: an explicit field wins;
+    absent provenance after it is LIVE (the reviewed default), while older rows
+    retain the report-v0 first-anchor inference so historical reports remain
+    reproducible. Duplicate anchor coverage is counted once and the first
+    supplied range still wins for legacy rows.
+    """
+    boundaries = [
+        row["i"]
+        for row in rows
+        if row.get("type") == "schema_version"
+        and row.get("new_schema_version") == "3"
+    ]
+    if len(boundaries) > 1:
+        raise ScoreError("ledger contains multiple provenance schema boundaries")
+    boundary = boundaries[0] if boundaries else None
+
+    classified: dict[int, str] = {}
+    for anchor_number, anchor in enumerate(anchors):
+        legacy = "IMPORTED" if anchor_number == 0 else "LIVE"
+        for row_index in range(anchor["row_start"], anchor["row_end"]):
+            if row_index in classified:
+                continue
+            row = rows[row_index]
+            provenance = row.get("provenance")
+            if provenance is not None and provenance not in {"IMPORTED", "LIVE"}:
+                raise ScoreError("ledger row provenance is invalid")
+            if provenance is not None:
+                classified[row_index] = provenance
+            elif boundary is not None and row_index > boundary:
+                classified[row_index] = "LIVE"
+            else:
+                classified[row_index] = legacy
+
+    total = len(classified)
     if total == 0:
         return {"IMPORTED": 0.0, "LIVE": 0.0}
-    imported_share = round(len(imported) / total, 4)
-    live_share = round(len(live) / total, 4)
+    imported_share = round(sum(value == "IMPORTED" for value in classified.values()) / total, 4)
+    live_share = round(sum(value == "LIVE" for value in classified.values()) / total, 4)
     return {"IMPORTED": imported_share, "LIVE": live_share}
 
 
@@ -347,7 +377,7 @@ def score(
         },
         {
             "name": "evidence_provenance_split",
-            "value": _evidence_provenance_split(anchors),
+            "value": _evidence_provenance_split(rows, anchors),
             "trust_tier": "PROVEN",
             "caveat": PROVENANCE_CAVEAT,
         },
