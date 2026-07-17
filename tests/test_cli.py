@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mybench import cli, nonces, paths
+from mybench import cli, nonces, paths, scheduler
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 
 ROOT = Path(__file__).parents[1]
@@ -147,12 +147,14 @@ def test_capture_enable_is_explicit_idempotent_and_counts_only(tmp_path, capsys)
     _git(repo, "add", "README.md")
     _git(repo, "commit", "-qm", "synthetic root")
 
-    command = ["capture", "enable", "--repo", str(repo), "--json"]
+    command = ["capture", "enable", "--repo", str(repo), "--no-schedule", "--json"]
     assert cli.main(command) == 0
     first = capsys.readouterr()
     assert json.loads(first.out) == {
         "command": "capture enable",
         "repos_enrolled": 1,
+        "schedule_backend": "manual",
+        "schedule_state": "manual",
         "status": "ok",
     }
     assert str(repo) not in first.out + first.err
@@ -165,7 +167,7 @@ def test_capture_enable_is_explicit_idempotent_and_counts_only(tmp_path, capsys)
     second = capsys.readouterr()
     assert json.loads(second.out)["repos_enrolled"] == 1
     assert len(list(paths.enrollments_dir().glob("*.json"))) == 1
-    assert not any("scheduler" in path.name for path in paths.data_dir().rglob("*"))
+    assert scheduler.load() is not None and scheduler.load().backend == "manual"
 
 
 def test_reserved_surfaces_are_side_effect_free_and_publish_never_networks(capsys, monkeypatch):

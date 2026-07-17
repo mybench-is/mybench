@@ -1,8 +1,9 @@
 """Suite-wide privacy guards (invariant #2 / MYB-2.1 AC #4).
 
-Every test runs with XDG_DATA_HOME pointed at a per-test tmp dir, so no test
-can ever touch the real data dir; after the whole run, the repo tree is
-scanned for data-dir artifacts and the run fails if any appeared.
+Every test runs with HOME, XDG_DATA_HOME, and XDG_CONFIG_HOME pointed at a
+per-test tmp dir, so no test can touch real private or scheduler state; after
+the whole run, the repo tree is scanned for data-dir artifacts and the run
+fails if any appeared.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ FORBIDDEN_BASENAMES = {
     "scan-config.json",
     "scan-health.json",
     "scan-health.lock",
+    "schedule.json",
+    "schedule.lock",
     "session-scope.key",
 }
 FORBIDDEN_DIRNAMES = {"archive", "nonces", "normalized", "queue", "reports"}
@@ -31,7 +34,9 @@ FORBIDDEN_DIRNAMES = {"archive", "nonces", "normalized", "queue", "reports"}
 
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
 
 
 def scan_repo_for_data_artifacts() -> list[Path]:

@@ -1,0 +1,9 @@
+# Managed by mybench; do not edit.
+[Unit]
+Description=Run the private mybench reconciliation scan
+
+[Service]
+Type=oneshot
+ExecStart="/opt/mybench/bin/mybench" scan --quiet --scheduled
+NoNewPrivileges=true
+PrivateTmp=true

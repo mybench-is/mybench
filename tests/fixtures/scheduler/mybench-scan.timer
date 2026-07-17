@@ -1,0 +1,12 @@
+# Managed by mybench; do not edit.
+[Unit]
+Description=Run mybench scan daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+Unit=mybench-scan.service
+
+[Install]
+WantedBy=timers.target
