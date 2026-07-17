@@ -2,9 +2,9 @@
 
 The normalizer is pure and returns canonical bytes.  This module validates
 those bytes before touching the filesystem, then installs them exactly once at
-``normalized/<corpus-commitment>/corpus.json``. Transcript and repository
-artifacts share this content-addressed layout. Content, source filenames, and
-data-directory paths never enter an error message.
+``normalized/<corpus-commitment>/corpus.json``. Transcript, repository, and
+commitment-only join artifacts share this content-addressed layout. Content,
+source filenames, and data-directory paths never enter an error message.
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ def _validated_commitment(artifact: bytes) -> str:
         validate_corpus_artifact,
     )
     from mybench.normalizer.repo import validate_repo_corpus_artifact
+    from mybench.normalizer.reference_join import validate_reference_target_corpus_artifact
 
     try:
         kind = json.loads(artifact).get("kind")
@@ -66,6 +67,8 @@ def _validated_commitment(artifact: bytes) -> str:
             commitment = validate_corpus_artifact(artifact)
         elif kind == "normalized-repo-corpus-artifact":
             commitment = validate_repo_corpus_artifact(artifact)
+        elif kind == "normalized-reference-target-corpus-artifact":
+            commitment = validate_reference_target_corpus_artifact(artifact)
         else:
             raise NormalizationError("unsupported normalized artifact kind")
     except (
