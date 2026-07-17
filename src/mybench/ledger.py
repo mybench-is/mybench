@@ -9,7 +9,7 @@ trailing write therefore fails JSON parsing or the ``h`` recomputation and is
 reported as :class:`TornTailError`, distinct from corruption elsewhere.
 
 Rows are metadata only. The schema (``schemas/ledger_entry.schema.json``,
-versions "1" and "2", ``additionalProperties: false``) is enforced on write AND read,
+versions "1", "2", and "3", ``additionalProperties: false``) is enforced on write AND read,
 making content/filename fields structurally impossible (invariant #1).
 
 Writers serialize on ``<ledger>.lock`` (MYB-3.7): the read-tip → append pair
@@ -42,6 +42,8 @@ SCHEMA_VERSION = "1"
 EVENT_SCHEMA_VERSION = "2"
 SESSION_SCHEMA_VERSION = "2"
 ANCHOR_RECEIPT_SCHEMA_VERSION = "2"
+PROVENANCE_SCHEMA_VERSION = "3"
+PROVENANCE_VALUES = frozenset({"IMPORTED", "LIVE"})
 ANCHOR_RECEIPT_DOMAIN = b"anchor-receipt:v1:"
 ANCHOR_RECEIPT_EVENT_FIELDS = (
     "identity_id",
@@ -173,6 +175,7 @@ class Ledger:
         that gap (ADV-6).
         """
         rows = self.rows()
+        provenance_boundary_seen = False
         for n, row in enumerate(rows):
             if row["i"] != n:
                 raise LedgerError(f"row {n}: index {row['i']} out of sequence")
@@ -185,6 +188,15 @@ class Ledger:
                 where = "torn or tampered final row" if n == len(rows) - 1 else "tampered row"
                 err = TornTailError if n == len(rows) - 1 else LedgerError
                 raise err(f"row {n}: h mismatch ({where})")
+            if row["type"] == "schema_version":
+                if provenance_boundary_seen:
+                    raise LedgerError("provenance schema_version event appears more than once")
+                provenance_boundary_seen = True
+            elif row["schema_version"] == PROVENANCE_SCHEMA_VERSION:
+                if not provenance_boundary_seen:
+                    raise LedgerError(
+                        f"row {n}: provenance row precedes its schema_version event"
+                    )
         if expect_tip is not None and (not rows or rows[-1]["h"] != expect_tip):
             raise LedgerError(
                 "chain tip does not match the expected (anchored) tip — "
@@ -279,6 +291,61 @@ class Ledger:
         _fsync_directory(self.path.parent)
         return row
 
+    def _prepare_provenance_rows(
+        self,
+        existing: list[dict],
+        *,
+        ts: str,
+        provenance: str | None,
+    ) -> tuple[list[dict], str]:
+        """Validate explicit provenance and append its one-time schema boundary.
+
+        Version-1/2 writers remain frozen.  Only an explicit caller (currently
+        ``scan --historical``) enters v3; its first evidence append records the
+        reviewed widening immediately before the evidence row.  The transition
+        itself carries the initiating operation's provenance, and subsequent
+        calls reuse it idempotently.
+        """
+        if provenance not in PROVENANCE_VALUES:
+            raise LedgerError("provenance must be exactly IMPORTED or LIVE")
+        if not existing:
+            existing = [
+                self._append_row(
+                    {
+                        "schema_version": SCHEMA_VERSION,
+                        "i": 0,
+                        "type": "genesis",
+                        "ts": ts,
+                        "prev": GENESIS_PREV,
+                    }
+                )
+            ]
+        transitions = [row for row in existing if row["type"] == "schema_version"]
+        if len(transitions) > 1:
+            raise LedgerError("provenance schema_version event appears more than once")
+        if any(
+            row["schema_version"] == PROVENANCE_SCHEMA_VERSION
+            and row["type"] != "schema_version"
+            and (not transitions or row["i"] < transitions[0]["i"])
+            for row in existing
+        ):
+            raise LedgerError("provenance row precedes its schema_version event")
+        if not transitions:
+            transition = self._append_row(
+                {
+                    "schema_version": PROVENANCE_SCHEMA_VERSION,
+                    "i": existing[-1]["i"] + 1,
+                    "type": "schema_version",
+                    "ts": ts,
+                    "prev": existing[-1]["h"],
+                    "previous_schema_version": "2",
+                    "new_schema_version": PROVENANCE_SCHEMA_VERSION,
+                    "provenance": provenance,
+                }
+            )
+            existing = [*existing, transition]
+        return existing, provenance
+
     def append_session(
         self,
         *,
@@ -295,20 +362,27 @@ class Ledger:
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         harness_version: str | None = None,
+        provenance: str | None = None,
     ) -> dict:
-        """Append one v2 session observation (creating a frozen-v1 genesis first).
+        """Append one session observation (creating a frozen-v1 genesis first).
 
         Metadata parameters are the complete whitelist: there is no content,
         path, filename, or arbitrary metadata mapping that a caller could pass.
         ``None`` means unknown and is omitted; an explicit zero token count is
-        retained as a provider observation.
+        retained as a provider observation.  ``provenance=None`` preserves the
+        frozen live v2 row shape; an explicit ``IMPORTED``/``LIVE`` writes the
+        reviewed v3 shape after the one-time schema boundary.
         """
         if self.path == paths.ledger_dir() / "ledger.jsonl":
             paths.ensure_data_dir()
         ts = ts if ts is not None else _utc_now()
         with self._writer_lock():
             existing = self.rows()
-            if not existing:
+            if provenance is not None:
+                existing, provenance = self._prepare_provenance_rows(
+                    existing, ts=ts, provenance=provenance
+                )
+            elif not existing:
                 existing = [
                     self._append_row(
                         {"schema_version": SCHEMA_VERSION, "i": 0, "type": "genesis", "ts": ts,
@@ -316,7 +390,11 @@ class Ledger:
                     )
                 ]
             row = {
-                "schema_version": SESSION_SCHEMA_VERSION,
+                "schema_version": (
+                    PROVENANCE_SCHEMA_VERSION
+                    if provenance is not None
+                    else SESSION_SCHEMA_VERSION
+                ),
                 "i": existing[-1]["i"] + 1,
                 "type": "session",
                 "ts": ts,
@@ -326,6 +404,8 @@ class Ledger:
                 "item_count": item_count,
                 "source": source,
             }
+            if provenance is not None:
+                row["provenance"] = provenance
             optional = {
                 "provider": provider,
                 "effort": effort,
@@ -341,37 +421,52 @@ class Ledger:
             return self._append_row(row)
 
     def append_binding(
-        self, *, commit_hash: str, commit_ts: str, repo_id: str, ts: str | None = None
+        self,
+        *,
+        commit_hash: str,
+        commit_ts: str,
+        repo_id: str,
+        ts: str | None = None,
+        provenance: str | None = None,
     ) -> dict:
         """Append one commit↔activity binding row (MYB-3.5); genesis-creating like sessions.
 
         Deliberately narrow: no message, diff, filename, or branch parameter
         exists, so those leak channels cannot reach the ledger even by bug.
+        Explicit provenance selects the reviewed v3 shape; the normal hook and
+        since-enrollment reconciler keep the frozen live v1 shape.
         """
         if self.path == paths.ledger_dir() / "ledger.jsonl":
             paths.ensure_data_dir()
         ts = ts if ts is not None else _utc_now()
         with self._writer_lock():
             existing = self.rows()
-            if not existing:
+            if provenance is not None:
+                existing, provenance = self._prepare_provenance_rows(
+                    existing, ts=ts, provenance=provenance
+                )
+            elif not existing:
                 existing = [
                     self._append_row(
                         {"schema_version": SCHEMA_VERSION, "i": 0, "type": "genesis", "ts": ts,
                          "prev": GENESIS_PREV}
                     )
                 ]
-            return self._append_row(
-                {
-                    "schema_version": SCHEMA_VERSION,
-                    "i": existing[-1]["i"] + 1,
-                    "type": "binding",
-                    "ts": ts,
-                    "prev": existing[-1]["h"],
-                    "commit_hash": commit_hash,
-                    "commit_ts": commit_ts,
-                    "repo_id": repo_id,
-                }
-            )
+            row = {
+                "schema_version": (
+                    PROVENANCE_SCHEMA_VERSION if provenance is not None else SCHEMA_VERSION
+                ),
+                "i": existing[-1]["i"] + 1,
+                "type": "binding",
+                "ts": ts,
+                "prev": existing[-1]["h"],
+                "commit_hash": commit_hash,
+                "commit_ts": commit_ts,
+                "repo_id": repo_id,
+            }
+            if provenance is not None:
+                row["provenance"] = provenance
+            return self._append_row(row)
 
     def append_event(
         self,

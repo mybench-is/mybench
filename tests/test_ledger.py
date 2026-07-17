@@ -81,6 +81,129 @@ def test_injected_filename_field_rejected_on_read():
         led.rows()  # …the whitelist rejects the extra field
 
 
+def test_provenance_widening_records_one_boundary_and_preserves_frozen_rows():
+    led = Ledger()
+    live = led.append_session(
+        session_id="synthetic-live",
+        session_root=bytes.fromhex("11" * 32),
+        item_count=1,
+        source="synthetic",
+        ts=TS,
+    )
+    imported = led.append_binding(
+        commit_hash="ab" * 20,
+        commit_ts=TS,
+        repo_id="cd" * 8,
+        ts=TS,
+        provenance="IMPORTED",
+    )
+    imported_session = led.append_session(
+        session_id="synthetic-imported",
+        session_root=bytes.fromhex("22" * 32),
+        item_count=2,
+        source="synthetic",
+        ts=TS,
+        provenance="IMPORTED",
+    )
+
+    rows = led.rows()
+    assert [row["type"] for row in rows] == [
+        "genesis",
+        "session",
+        "schema_version",
+        "binding",
+        "session",
+    ]
+    assert live["schema_version"] == "2" and "provenance" not in live
+    transition = rows[2]
+    assert {
+        key: transition[key]
+        for key in (
+            "schema_version",
+            "type",
+            "previous_schema_version",
+            "new_schema_version",
+            "provenance",
+        )
+    } == {
+        "schema_version": "3",
+        "type": "schema_version",
+        "previous_schema_version": "2",
+        "new_schema_version": "3",
+        "provenance": "IMPORTED",
+    }
+    assert imported["schema_version"] == "3"
+    assert imported["provenance"] == "IMPORTED"
+    assert imported_session["provenance"] == "IMPORTED"
+    assert led.verify_chain() == 5
+
+
+def test_imported_binding_shape_rejects_any_extra_git_metadata():
+    led = Ledger()
+    led.append_binding(
+        commit_hash="ab" * 20,
+        commit_ts=TS,
+        repo_id="cd" * 8,
+        ts=TS,
+        provenance="IMPORTED",
+    )
+    lines = led.path.read_text().splitlines()
+    row = json.loads(lines[-1])
+    with_session_ref = {**row, "session_ref": "ef" * 32}
+    with_session_ref["h"] = row_hash(with_session_ref)
+    with pytest.raises(LedgerError, match="schema"):
+        led._validate_row(with_session_ref, "test")
+    row["filename"] = "CANARY-private-name.txt"
+    row["h"] = row_hash(row)
+    lines[-1] = json.dumps(row, sort_keys=True, separators=(",", ":"))
+    led.path.write_text("\n".join(lines) + "\n")
+    with pytest.raises(LedgerError, match="schema"):
+        led.rows()
+
+
+def test_explicit_provenance_is_closed_and_transition_order_is_verified():
+    led = Ledger()
+    with pytest.raises(LedgerError, match="exactly IMPORTED or LIVE"):
+        led.append_binding(
+            commit_hash="ab" * 20,
+            commit_ts=TS,
+            repo_id="cd" * 8,
+            provenance="imported",
+        )
+
+    genesis = {
+        "schema_version": "1",
+        "i": 0,
+        "type": "genesis",
+        "ts": TS,
+        "prev": GENESIS_PREV,
+    }
+    genesis["h"] = row_hash(genesis)
+    premature = {
+        "schema_version": "3",
+        "i": 1,
+        "type": "binding",
+        "ts": TS,
+        "prev": genesis["h"],
+        "commit_hash": "ab" * 20,
+        "commit_ts": TS,
+        "repo_id": "cd" * 8,
+        "provenance": "IMPORTED",
+    }
+    premature["h"] = row_hash(premature)
+    led.path.parent.mkdir(parents=True, exist_ok=True)
+    led.path.write_text(
+        "\n".join(
+            json.dumps(row, sort_keys=True, separators=(",", ":"))
+            for row in (genesis, premature)
+        )
+        + "\n"
+    )
+    led.path.chmod(0o600)
+    with pytest.raises(LedgerError, match="precedes its schema_version event"):
+        led.verify_chain()
+
+
 # --- Tamper detection (AC #2) ------------------------------------------------------
 
 

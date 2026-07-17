@@ -207,6 +207,49 @@ def test_rescan_and_restart_append_nothing(fx, config):
     assert [r["h"] for r in restarted.ledger.rows()] == baseline
 
 
+def test_historical_preview_is_no_write_and_import_is_idempotent(fx, config):
+    paths.ensure_session_scope_key()
+    daemon = capture.Daemon(config)
+
+    def private_snapshot():
+        root = paths.data_dir()
+        return sorted(
+            (
+                path.relative_to(root).as_posix(),
+                path.is_dir(),
+                b"" if path.is_dir() else path.read_bytes(),
+            )
+            for path in root.rglob("*")
+        )
+
+    before = private_snapshot()
+    assert daemon.preview_historical() == len(fx.sessions) == 3
+    assert private_snapshot() == before
+    assert not daemon.ledger.path.exists()
+
+    assert daemon.scan_once(historical=True) == 3
+    rows = daemon.ledger.rows()
+    evidence = [row for row in rows if row["type"] != "genesis"]
+    assert sum(row["type"] == "schema_version" for row in evidence) == 1
+    assert all(row["schema_version"] == "3" for row in evidence)
+    assert all(row["provenance"] == "IMPORTED" for row in evidence)
+    baseline = daemon.ledger.path.read_bytes()
+
+    assert daemon.preview_historical() == 0
+    assert daemon.scan_once(historical=True) == 0
+    assert daemon.ledger.path.read_bytes() == baseline
+
+    target = fx.sessions[0]
+    with target.open("ab") as stream:
+        stream.write(b'{"synthetic":"live growth"}\n')
+    assert daemon.scan_once() == 1
+    live = daemon.ledger.rows()[-1]
+    assert live["type"] == "session"
+    assert live["schema_version"] == "2"
+    assert "provenance" not in live
+    assert sum(row["type"] == "schema_version" for row in daemon.ledger.rows()) == 1
+
+
 def test_shrunken_source_never_rewrites_history(fx, config):
     daemon = capture.Daemon(config)
     daemon.scan_once()

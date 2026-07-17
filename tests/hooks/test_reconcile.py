@@ -163,6 +163,61 @@ def test_reconcile_binds_only_post_enrollment_commits(repo):
     assert bound_hashes(repo) == {c1, c2}
 
 
+def test_historical_reconcile_backfills_only_pre_enrollment_as_imported(repo):
+    pre1 = commit(repo, filename="pre1.txt")
+    at_enroll = commit(repo, filename="at-enroll.txt")
+    enroll_disarmed(repo)
+    post1 = commit(repo, filename="post1.txt")
+    post2 = commit(repo, filename="post2.txt")
+
+    assert binding.reconcile(repo, historical=True, dry_run=True) == 2
+    assert not Ledger().path.exists()
+    assert binding.reconcile(repo, historical=True) == 2
+    rows = Ledger().rows()
+    imported = [row for row in rows if row["type"] == "binding"]
+    assert {row["commit_hash"] for row in imported} == {pre1, at_enroll}
+    assert all(row["schema_version"] == "3" for row in imported)
+    assert all(row["provenance"] == "IMPORTED" for row in imported)
+    assert all(
+        set(row)
+        == {
+            "schema_version",
+            "i",
+            "type",
+            "ts",
+            "prev",
+            "h",
+            "commit_hash",
+            "commit_ts",
+            "repo_id",
+            "provenance",
+        }
+        for row in imported
+    )
+    assert binding.reconcile(repo, historical=True) == 0
+
+    assert binding.reconcile(repo) == 2
+    live = [
+        row
+        for row in Ledger().rows()
+        if row["type"] == "binding" and row["commit_hash"] in {post1, post2}
+    ]
+    assert len(live) == 2
+    assert all(row["schema_version"] == "1" for row in live)
+    assert all("provenance" not in row for row in live)
+    assert binding.reconcile(repo) == 0
+
+
+def test_historical_reconcile_has_no_pre_history_for_unborn_enrollment(repo):
+    enroll_disarmed(repo)
+    commit(repo, filename="after1.txt")
+    commit(repo, filename="after2.txt")
+    assert binding.reconcile(repo, historical=True, dry_run=True) == 0
+    assert binding.reconcile(repo, historical=True) == 0
+    assert not Ledger().path.exists()
+    assert binding.reconcile(repo) == 2
+
+
 def test_reconcile_binds_only_the_gap_left_by_post_commit(repo):
     at_enroll = commit(repo, filename="base.txt")
     enroll_disarmed(repo)

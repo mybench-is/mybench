@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 
 from mybench import cli, nonces, paths, scheduler
+from mybench.hooks import binding
+from mybench.ledger import Ledger
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 
 ROOT = Path(__file__).parents[1]
@@ -135,6 +137,106 @@ def test_init_scan_report_synthetic_e2e_is_deterministic_and_leak_free(
     planted.write_text(fx.content_canaries[0])
     with pytest.raises(CanaryLeakError):
         assert_no_canaries([planted], canaries)
+
+
+def test_historical_scan_dry_run_import_and_rescan_are_safe_and_leak_free(
+    tmp_path, capsys
+):
+    fx = generate_fixtures(tmp_path / "historical-synthetic-fixtures")
+    repo = tmp_path / "CANARY-historical-private-repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "Synthetic Test")
+    _git(repo, "config", "user.email", "synthetic@example.invalid")
+    for number in (1, 2):
+        (repo / f"CANARY-private-{number}.txt").write_text(f"synthetic {number}\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", f"synthetic pre-enrollment {number}")
+    binding.enroll(repo)
+    (repo / ".git" / "hooks" / "post-commit").unlink()
+
+    command = [
+        "scan",
+        "--historical",
+        "--watch",
+        f"{fx.root / 'claude' / 'projects'}:claude-code",
+        "--watch",
+        f"{fx.root / 'codex' / 'sessions'}:codex",
+        "--repo",
+        str(repo),
+        "--json",
+    ]
+    assert not Ledger().path.exists()
+    assert list(paths.nonces_dir().glob("*.jsonl")) == []
+    assert cli.main([*command, "--dry-run"]) == 0
+    dry_output = capsys.readouterr()
+    assert json.loads(dry_output.out) == {
+        "bindings_appended": 0,
+        "bindings_planned": 2,
+        "command": "scan",
+        "dry_run": True,
+        "historical": True,
+        "proofs_confirmed": 0,
+        "proofs_staged": 0,
+        "rows_appended": 0,
+        "rows_planned": 3,
+        "status": "ok",
+        "upgrade_requested": False,
+        "watches": 2,
+    }
+    assert not Ledger().path.exists()
+    assert list(paths.nonces_dir().glob("*.jsonl")) == []
+    assert not paths.capture_scan_lock_path().exists()
+    assert not paths.scan_health_path().exists()
+
+    assert cli.main(command) == 0
+    import_output = capsys.readouterr()
+    imported_summary = json.loads(import_output.out)
+    assert imported_summary["rows_appended"] == 3
+    assert imported_summary["bindings_appended"] == 2
+    assert imported_summary["historical"] is True
+    assert imported_summary["dry_run"] is False
+    evidence = [row for row in Ledger().rows() if row["type"] != "genesis"]
+    assert len([row for row in evidence if row["type"] == "schema_version"]) == 1
+    assert all(row["provenance"] == "IMPORTED" for row in evidence)
+    assert not paths.scan_health_path().exists()
+
+    baseline = Ledger().path.read_bytes()
+    assert cli.main(command) == 0
+    repeat_output = capsys.readouterr()
+    repeat_summary = json.loads(repeat_output.out)
+    assert repeat_summary["rows_appended"] == 0
+    assert repeat_summary["bindings_appended"] == 0
+    assert Ledger().path.read_bytes() == baseline
+
+    used_nonces = [
+        nonce
+        for nonce_file in paths.nonces_dir().glob("*.jsonl")
+        for nonce in nonces.load_nonces(nonce_file.stem)
+    ]
+    surface = tmp_path / "historical-cli-surface.log"
+    surface.write_text(
+        dry_output.out
+        + dry_output.err
+        + import_output.out
+        + import_output.err
+        + repeat_output.out
+        + repeat_output.err
+    )
+    canaries = fx.all_canaries() + used_nonces + [str(fx.root).encode(), str(repo).encode()]
+    assert assert_no_canaries([Ledger().path, surface], canaries) == 2
+
+    planted = tmp_path / "historical-planted-output.log"
+    planted.write_text(fx.content_canaries[0])
+    with pytest.raises(CanaryLeakError):
+        assert_no_canaries([planted], canaries)
+
+
+def test_historical_dry_run_rejects_write_capable_or_missing_modes(capsys):
+    assert cli.main(["scan", "--dry-run", "--json"]) == 2
+    assert json.loads(capsys.readouterr().err)["error"] == "dry_run_requires_historical"
+    assert cli.main(["scan", "--historical", "--dry-run", "--archive", "--json"]) == 2
+    assert json.loads(capsys.readouterr().err)["error"] == "dry_run_must_be_read_only"
 
 
 def test_capture_enable_is_explicit_idempotent_and_counts_only(tmp_path, capsys):
