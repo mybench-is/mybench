@@ -38,6 +38,7 @@ _ERROR_ISSUES = {
     "proof_invalid",
     "scan_config_invalid",
     "scan_receipt_invalid",
+    "schedule_invalid",
 }
 _PRIVATE_KEY_PATHS = {
     "commit_signing": paths.commit_signing_key_path,
@@ -167,6 +168,29 @@ def _load_receipt(issues: set[str]) -> tuple[str, ScanHealth | None]:
         issues.add("scan_receipt_invalid")
         return "invalid", None
     return ("valid", receipt) if receipt is not None else ("absent", None)
+
+
+def _schedule_summary(issues: set[str]) -> dict:
+    from mybench.scheduler import inspect
+
+    try:
+        result = inspect()
+    except Exception:
+        issues.add("schedule_invalid")
+        return {
+            "backend": "none",
+            "registration_state": "invalid",
+            "enabled": None,
+            "last_attempt_at": None,
+            "last_success_at": None,
+            "last_result": "never",
+            "last_exit_code": None,
+        }
+    if result["registration_state"] == "inactive":
+        issues.add("schedule_inactive")
+    if result["last_result"] == "failed":
+        issues.add("scheduled_scan_failed")
+    return result
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -419,6 +443,15 @@ def collect(*, now: datetime | None = None) -> dict:
     scope_key = None
     ledger, rows = ({"state": "absent", "rows": 0}, [])
     anchors = {"anchored_through": None, "proofs": {"confirmed": 0, "pending": 0, "invalid": 0}}
+    schedule = {
+        "backend": "none",
+        "registration_state": "absent",
+        "enabled": None,
+        "last_attempt_at": None,
+        "last_success_at": None,
+        "last_result": "never",
+        "last_exit_code": None,
+    }
     enrollment_ids: set[str] = set()
     if data_state == "private":
         config_state, config = _load_config(issues)
@@ -430,6 +463,7 @@ def collect(*, now: datetime | None = None) -> dict:
         ledger, rows = _ledger_summary(issues)
         enrollment_ids = _enrollment_ids(issues)
         anchors = _anchor_summary(issues)
+    schedule = _schedule_summary(issues)
 
     watches = []
     repos = []
@@ -469,7 +503,7 @@ def collect(*, now: datetime | None = None) -> dict:
     if issues:
         health = "error" if issues & _ERROR_ISSUES else "attention"
     result = {
-        "schema_version": "1",
+        "schema_version": "2",
         "command": "status",
         "health": health,
         "exit_code": 0 if health == "healthy" else 1,
@@ -487,6 +521,7 @@ def collect(*, now: datetime | None = None) -> dict:
             "exclusions": list(config.exclusions) if config is not None else [],
             "unmapped_enrollments": unmapped,
         },
+        "schedule": schedule,
         "anchors": anchors,
         "issues": sorted(issues),
     }
@@ -499,7 +534,7 @@ def collect(*, now: datetime | None = None) -> dict:
 def failure() -> dict:
     """Closed, path-free fallback for an unexpected collector failure."""
     return {
-        "schema_version": "1",
+        "schema_version": "2",
         "command": "status",
         "health": "error",
         "exit_code": 1,
@@ -520,6 +555,15 @@ def failure() -> dict:
             "repos": [],
             "exclusions": [],
             "unmapped_enrollments": 0,
+        },
+        "schedule": {
+            "backend": "none",
+            "registration_state": "invalid",
+            "enabled": None,
+            "last_attempt_at": None,
+            "last_success_at": None,
+            "last_result": "never",
+            "last_exit_code": None,
         },
         "anchors": {
             "anchored_through": None,
@@ -553,6 +597,12 @@ def render(result: dict) -> str:
             f"  repo {repo['path']} · {repo['state']} · unbound {unbound} · "
             f"last {repo['last_scanned_at'] or 'unknown'}"
         )
+    schedule = result["schedule"]
+    lines.append(
+        f"schedule: {schedule['registration_state']} ({schedule['backend']}) · "
+        f"last {schedule['last_attempt_at'] or 'unknown'} · "
+        f"result {schedule['last_result']}"
+    )
     proofs = result["anchors"]["proofs"]
     lines.append(
         f"anchors: through {result['anchors']['anchored_through'] or 'unknown'} · "

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.dev/schemas/v1/status.schema.json",
+  "$id": "https://mybench.dev/schemas/v2/status.schema.json",
   "title": "Local mybench status summary",
   "type": "object",
   "additionalProperties": false,
@@ -13,11 +13,12 @@
     "keys",
     "ledger",
     "scan",
+    "schedule",
     "anchors",
     "issues"
   ],
   "properties": {
-    "schema_version": {"const": "1"},
+    "schema_version": {"const": "2"},
     "command": {"const": "status"},
     "health": {"enum": ["healthy", "attention", "error"]},
     "exit_code": {"enum": [0, 1]},
@@ -131,6 +132,40 @@
         "unmapped_enrollments": {"type": "integer", "minimum": 0}
       }
     },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "registration_state",
+        "enabled",
+        "last_attempt_at",
+        "last_success_at",
+        "last_result",
+        "last_exit_code"
+      ],
+      "properties": {
+        "backend": {"enum": ["none", "manual", "systemd", "launchd"]},
+        "registration_state": {
+          "enum": ["absent", "manual", "active", "inactive", "invalid"]
+        },
+        "enabled": {
+          "oneOf": [
+            {"type": "boolean"},
+            {"type": "null"}
+          ]
+        },
+        "last_attempt_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "last_success_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "last_result": {"enum": ["never", "success", "failed"]},
+        "last_exit_code": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0, "maximum": 255},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
     "anchors": {
       "type": "object",
       "additionalProperties": false,
@@ -174,6 +209,9 @@
           "scan_never_completed",
           "scan_receipt_invalid",
           "scan_stale",
+          "schedule_inactive",
+          "schedule_invalid",
+          "scheduled_scan_failed",
           "source_missing",
           "unbound_commits"
         ]

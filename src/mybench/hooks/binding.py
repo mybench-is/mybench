@@ -28,6 +28,7 @@ import hashlib
 import hmac
 import json
 import os
+import stat
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -60,19 +61,72 @@ def _git(repo: Path, *args: str) -> str:
     return out.stdout.strip()
 
 
-def install(repo: str) -> Path:
-    """Install the post-commit hook into exactly this repo's .git/hooks."""
+def _existing_enrollment_path(top: Path) -> Path | None:
+    """Return a secure existing enrollment path using only existing key state."""
+    from mybench.scan_health import load_scope_key
+
+    scope_key = load_scope_key()
+    if scope_key is None:
+        return None
+    repo_id = repo_identity_for_worktree(top, scope_key=scope_key)
+    candidate = paths.enrollment_path(repo_id)
+    if not os.path.lexists(candidate):
+        return None
+    info = candidate.lstat()
+    if (
+        candidate.is_symlink()
+        or not stat.S_ISREG(info.st_mode)
+        or info.st_nlink != 1
+        or stat.S_IMODE(info.st_mode) != 0o600
+    ):
+        raise HookError("enrollment storage is insecure")
+    return candidate
+
+
+def preflight_enroll(repo: str | Path) -> Path:
+    """Validate one enrollment target without writing it."""
+    repo = os.fspath(repo)
     if repo.startswith("-"):
         raise HookError(f"not a repo path: {repo!r} (global installs are refused by design)")
     top = Path(repo).resolve()
     git_dir = top / ".git"
     if not git_dir.is_dir():
         raise HookError(f"{top} is not the top level of a git worktree")
-    hook_path = git_dir / "hooks" / "post-commit"
-    if hook_path.exists() and HOOK_SENTINEL not in hook_path.read_text():
-        raise HookError(f"{hook_path} exists and is not a mybench hook — refusing to overwrite")
+    hooks_dir = git_dir / "hooks"
+    if os.path.lexists(hooks_dir):
+        info = hooks_dir.lstat()
+        if hooks_dir.is_symlink() or not stat.S_ISDIR(info.st_mode):
+            raise HookError("binding hooks directory is insecure")
+    hook_path = hooks_dir / "post-commit"
+    if os.path.lexists(hook_path):
+        info = hook_path.lstat()
+        if hook_path.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise HookError("binding hook storage is insecure")
+        if HOOK_SENTINEL not in hook_path.read_text():
+            raise HookError("post-commit is not a mybench hook; refusing to overwrite")
+    marker_parent = top / MARKER_RELPATH.parent
+    if os.path.lexists(marker_parent):
+        info = marker_parent.lstat()
+        if marker_parent.is_symlink() or not stat.S_ISDIR(info.st_mode):
+            raise HookError("binding marker directory is insecure")
+    marker = top / MARKER_RELPATH
+    if os.path.lexists(marker):
+        info = marker.lstat()
+        if marker.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise HookError("binding marker storage is insecure")
+    _existing_enrollment_path(top)
+    return top
+
+
+def install(repo: str) -> Path:
+    """Install the post-commit hook into exactly this repo's .git/hooks."""
+    top = preflight_enroll(repo)
+    hook_path = top / ".git" / "hooks" / "post-commit"
+    expected = HOOK_TEMPLATE.format(sentinel=HOOK_SENTINEL, python=sys.executable)
+    if hook_path.exists() and hook_path.read_text() == expected:
+        return hook_path
     hook_path.parent.mkdir(exist_ok=True)
-    hook_path.write_text(HOOK_TEMPLATE.format(sentinel=HOOK_SENTINEL, python=sys.executable))
+    hook_path.write_text(expected)
     hook_path.chmod(0o755)
     return hook_path
 
@@ -221,7 +275,7 @@ def enroll(repo: str | Path, at: str | None = None) -> dict:
 
     Returns the enrollment record dict.
     """
-    top = Path(repo).resolve()
+    top = preflight_enroll(repo)
     install(str(top))  # validates the worktree top level; refuses foreign/global hooks
     marker = top / MARKER_RELPATH
     marker.parent.mkdir(exist_ok=True)
@@ -242,7 +296,15 @@ def enroll(repo: str | Path, at: str | None = None) -> dict:
     repo_id = repo_identity_for_worktree(top)
     paths.ensure_data_dir()
     path = paths.enrollment_path(repo_id)
-    if path.exists():
+    if os.path.lexists(path):
+        info = path.lstat()
+        if (
+            path.is_symlink()
+            or not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            raise HookError("enrollment storage is insecure")
         record = json.loads(path.read_text())  # first enrollment wins — never re-stamp
         if at_commit is not None and record["enroll_commit"] != at_commit:
             raise HookError(
@@ -261,6 +323,74 @@ def enroll(repo: str | Path, at: str | None = None) -> dict:
     with os.fdopen(fd, "w") as f:
         json.dump(record, f)
     return record
+
+
+def _unenroll_plan(repo: str | Path) -> tuple[Path, Path, bool, bool, Path | None]:
+    """Validate one removal target and return its owned state without writing."""
+    top = Path(repo).resolve()
+    git_dir = top / ".git"
+    if not git_dir.is_dir():
+        raise HookError("capture disable requires a worktree root")
+    hook_path = git_dir / "hooks" / "post-commit"
+    marker_path = top / MARKER_RELPATH
+
+    hook_exists = os.path.lexists(hook_path)
+    if hook_exists:
+        hook_info = hook_path.lstat()
+        if (
+            hook_path.is_symlink()
+            or not stat.S_ISREG(hook_info.st_mode)
+            or hook_info.st_nlink != 1
+        ):
+            raise HookError("binding hook storage is insecure")
+        if HOOK_SENTINEL not in hook_path.read_text():
+            raise HookError("refusing to remove a foreign post-commit hook")
+
+    marker_exists = os.path.lexists(marker_path)
+    if marker_exists:
+        marker_info = marker_path.lstat()
+        if (
+            marker_path.is_symlink()
+            or not stat.S_ISREG(marker_info.st_mode)
+            or marker_info.st_nlink != 1
+        ):
+            raise HookError("binding marker storage is insecure")
+
+    enrollment_path = _existing_enrollment_path(top)
+
+    return hook_path, marker_path, hook_exists, marker_exists, enrollment_path
+
+
+def preflight_unenroll(repo: str | Path) -> None:
+    """Validate one removal target without unlinking any state."""
+    _unenroll_plan(repo)
+
+
+def unenroll(repo: str | Path) -> dict[str, bool]:
+    """Remove only mybench-owned binding state for one worktree.
+
+    Validation happens before any unlink: a foreign, symlinked, hardlinked, or
+    non-regular hook/enrollment is refused rather than partially dismantled.
+    Re-running after a clean removal is a no-op.
+    """
+    hook_path, marker_path, hook_exists, marker_exists, enrollment_path = (
+        _unenroll_plan(repo)
+    )
+    if hook_exists:
+        hook_path.unlink()
+    if marker_exists:
+        marker_path.unlink()
+    if enrollment_path is not None:
+        enrollment_path.unlink()
+    try:
+        marker_path.parent.rmdir()
+    except OSError:
+        pass
+    return {
+        "hook_removed": hook_exists,
+        "marker_removed": marker_exists,
+        "enrollment_removed": enrollment_path is not None,
+    }
 
 
 def reconcile(cwd: Path | None = None) -> int:

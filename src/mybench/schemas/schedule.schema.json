@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.dev/schemas/v1/schedule.schema.json",
+  "title": "Private scheduled-scan state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backend",
+    "executable",
+    "xdg_data_home",
+    "last_attempt_at",
+    "last_success_at",
+    "last_result",
+    "last_exit_code"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "backend": {"enum": ["manual", "systemd", "launchd"]},
+    "executable": {
+      "oneOf": [
+        {"$ref": "#/$defs/path"},
+        {"type": "null"}
+      ]
+    },
+    "xdg_data_home": {
+      "oneOf": [
+        {"$ref": "#/$defs/path"},
+        {"type": "null"}
+      ]
+    },
+    "last_attempt_at": {"$ref": "#/$defs/nullable_timestamp"},
+    "last_success_at": {"$ref": "#/$defs/nullable_timestamp"},
+    "last_result": {"enum": ["never", "success", "failed"]},
+    "last_exit_code": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 255},
+        {"type": "null"}
+      ]
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^/[^\\u0000-\\u001f]*$"
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 20,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "nullable_timestamp": {
+      "oneOf": [
+        {"$ref": "#/$defs/timestamp"},
+        {"type": "null"}
+      ]
+    }
+  }
+}

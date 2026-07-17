@@ -13,6 +13,8 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     scan-config.json confirmed local scan locations (0600)
     scan-health.json successful scan times + opaque source ids (0600)
     scan-health.lock serializes health receipt replacement (0600)
+    schedule.json  scheduler backend + last scheduled result (0600)
+    schedule.lock  serializes schedule receipt replacement (0600)
     queue/        whitelisted hook tuples (0600)       — asset A3 ingress
     capture.lock  whole-scan daemon flock (0600)
     keys/         device.key (0600) / device.pub      — Ed25519 device identity
@@ -41,6 +43,7 @@ _CORPUS_COMMITMENT_RE = re.compile(r"[0-9a-f]{64}")
 _REPORT_ID_RE = re.compile(r"[0-9a-f]{64}")
 _DURABLE_DIRS: set[tuple[str, int, int]] = set()
 _DURABLE_ROOT_CHAINS: set[tuple[str, int, int]] = set()
+XDG_DATA_HOME_ENV = "XDG_DATA_HOME"
 
 
 class PathsError(RuntimeError):
@@ -65,8 +68,19 @@ def data_dir() -> Path:
 
     Honors ``XDG_DATA_HOME``, falling back to ``~/.local/share``.
     """
-    base = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
+    base = os.environ.get(XDG_DATA_HOME_ENV) or (Path.home() / ".local" / "share")
     return Path(base) / "mybench"
+
+
+def configured_data_home() -> Path | None:
+    """Explicit scheduler environment needed to reproduce :func:`data_dir`."""
+    raw = os.environ.get(XDG_DATA_HOME_ENV)
+    return Path(raw).expanduser().absolute() if raw else None
+
+
+def data_home_environment_name() -> str:
+    """Return the environment name whose value selects the data-dir root."""
+    return XDG_DATA_HOME_ENV
 
 
 def nonces_dir() -> Path:
@@ -117,6 +131,16 @@ def scan_health_path() -> Path:
 def scan_health_lock_path() -> Path:
     """Writer lock for atomic scan-health receipt updates (0600)."""
     return data_dir() / "scan-health.lock"
+
+
+def schedule_path() -> Path:
+    """Scheduler registration and last-run health state (0600, private)."""
+    return data_dir() / "schedule.json"
+
+
+def schedule_lock_path() -> Path:
+    """Writer lock for atomic scheduler-state replacement (0600)."""
+    return data_dir() / "schedule.lock"
 
 
 def report_dir(report_id: str) -> Path:

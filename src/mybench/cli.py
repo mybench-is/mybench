@@ -111,6 +111,8 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="explicitly use the network to upgrade staged OpenTimestamps proofs",
     )
+    scan.add_argument("--quiet", action="store_true", help="suppress successful scan output")
+    scan.add_argument("--scheduled", action="store_true", help=argparse.SUPPRESS)
     _add_json(scan)
 
     report = sub.add_parser("report", help="build a deterministic private local report")
@@ -155,7 +157,28 @@ def _parser() -> argparse.ArgumentParser:
     enable.add_argument(
         "--repo", action="append", required=True, metavar="PATH", help="repo to enroll (repeatable)"
     )
+    schedule = enable.add_mutually_exclusive_group()
+    schedule.add_argument(
+        "--schedule",
+        dest="schedule",
+        action="store_true",
+        help="register the daily OS-native scan (default)",
+    )
+    schedule.add_argument(
+        "--no-schedule",
+        dest="schedule",
+        action="store_false",
+        help="install hooks only; explicit fallback when no user scheduler is available",
+    )
+    enable.set_defaults(schedule=True)
     _add_json(enable)
+    disable = capture_sub.add_parser(
+        "disable", help="remove mybench-owned repo hooks and scheduled scan"
+    )
+    disable.add_argument(
+        "--repo", action="append", required=True, metavar="PATH", help="repo to disable"
+    )
+    _add_json(disable)
 
     status = sub.add_parser("status", help="read-only offline local health summary")
     _add_json(status)
@@ -377,7 +400,9 @@ def _scan(args: argparse.Namespace) -> int:
             watches = default_config().watches
         exclusions = stored.exclusions if stored is not None else ()
         logging.basicConfig(
-            stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(message)s"
+            stream=sys.stderr,
+            level=logging.CRITICAL if args.quiet else logging.INFO,
+            format="%(levelname)s %(message)s",
         )
         if watches:
             config = DaemonConfig(
@@ -407,14 +432,15 @@ def _scan(args: argparse.Namespace) -> int:
         "upgrade_requested": args.upgrade,
         "watches": len(watches),
     }
-    _emit(
-        payload,
-        as_json=args.json,
-        human=(
-            f"scan complete: watches={len(watches)} rows_appended={rows} "
-            f"bindings_appended={bindings} proofs_confirmed={confirmed}/{proofs}"
-        ),
-    )
+    if not args.quiet:
+        _emit(
+            payload,
+            as_json=args.json,
+            human=(
+                f"scan complete: watches={len(watches)} rows_appended={rows} "
+                f"bindings_appended={bindings} proofs_confirmed={confirmed}/{proofs}"
+            ),
+        )
     return EXIT_OK
 
 
@@ -537,17 +563,78 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def _capture_enable(args: argparse.Namespace) -> int:
+    schedule_enabled = False
     try:
-        from mybench.hooks.binding import enroll
+        from mybench.hooks.binding import enroll, preflight_enroll
+        from mybench.scan_config import load
+        from mybench.scheduler import disable as disable_scheduler
+        from mybench.scheduler import enable as enable_scheduler
 
+        if args.schedule:
+            config = load()
+            configured_repos = {repo.resolve() for repo in config.repos} if config else set()
+            if config is None or any(Path(repo).resolve() not in configured_repos for repo in args.repo):
+                return _failed(
+                    "capture enable",
+                    as_json=args.json,
+                    error="scan_config_required",
+                )
+        for repo in args.repo:
+            preflight_enroll(repo)
+        schedule_state = enable_scheduler(schedule=args.schedule)
+        schedule_enabled = True
         records = [enroll(repo) for repo in args.repo]
     except Exception:  # noqa: BLE001 - repo paths must never reach command output
+        if schedule_enabled:
+            try:
+                disable_scheduler()
+            except Exception:  # noqa: BLE001 - preserve the closed primary failure
+                pass
         return _failed("capture enable", as_json=args.json)
-    payload = {"command": "capture enable", "repos_enrolled": len(records), "status": "ok"}
+    payload = {
+        "command": "capture enable",
+        "repos_enrolled": len(records),
+        "schedule_backend": schedule_state.backend,
+        "schedule_state": "manual" if schedule_state.backend == "manual" else "active",
+        "status": "ok",
+    }
     _emit(
         payload,
         as_json=args.json,
-        human=f"capture enabled for {len(records)} repo(s); no scheduler was installed",
+        human=(
+            f"capture enabled for {len(records)} repo(s); "
+            f"schedule={payload['schedule_state']} backend={schedule_state.backend}"
+        ),
+    )
+    return EXIT_OK
+
+
+def _capture_disable(args: argparse.Namespace) -> int:
+    try:
+        from mybench.hooks.binding import preflight_unenroll, unenroll
+        from mybench.scheduler import disable
+        from mybench.scheduler import preflight_disable as preflight_scheduler_disable
+
+        for repo in args.repo:
+            preflight_unenroll(repo)
+        preflight_scheduler_disable()
+        records = [unenroll(repo) for repo in args.repo]
+        schedule_removed = disable()
+    except Exception:  # noqa: BLE001 - repo paths must never reach command output
+        return _failed("capture disable", as_json=args.json)
+    payload = {
+        "command": "capture disable",
+        "repos_disabled": len(records),
+        "schedule_removed": schedule_removed,
+        "status": "ok",
+    }
+    _emit(
+        payload,
+        as_json=args.json,
+        human=(
+            f"capture disabled for {len(records)} repo(s); "
+            f"schedule_removed={int(schedule_removed)}"
+        ),
     )
     return EXIT_OK
 
@@ -593,11 +680,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         return _init(args)
     if args.command == "scan":
-        return _scan(args)
+        code = _scan(args)
+        if args.scheduled:
+            try:
+                from mybench.scheduler import record_run
+
+                record_run(code)
+            except Exception:  # noqa: BLE001 - scheduled state failures stay closed
+                return _failed("scan", as_json=args.json, error="schedule_receipt_failed")
+        return code
     if args.command == "report":
         return _report(args)
     if args.command == "capture":
-        return _capture_enable(args)
+        return _capture_enable(args) if args.capture_command == "enable" else _capture_disable(args)
     if args.command == "status":
         return _status(args)
     if args.command == "publish":

@@ -32,16 +32,20 @@ Each configured source therefore has its own `last_scanned_at`; newly added or
 uncovered sources remain `null`. Any configured source older than seven days,
 or never covered, makes scan health stale and prints `run mybench scan`.
 
-## JSON v1
+## JSON v2
 
 The output is validated against packaged `schemas/status.schema.json`, closed
-with `additionalProperties: false` at every object. Top-level fields are:
+with `additionalProperties: false` at every object. V2 adds the schedule object
+required by MYB-11.8; consumers must select on `schema_version` rather than
+assuming the closed v1 shape. Top-level fields are:
 
 - `schema_version`, `command`, `health`, `exit_code`;
 - `data_dir` and four private-key role states;
 - ledger integrity and row count;
 - scan config/receipt state, last completion, staleness, configured watches,
   repos, exclusions, and unmapped opaque enrollment count;
+- scheduler backend and registration state, plus the last scheduled attempt,
+  successful attempt, result, and exit code;
 - anchored-through date and confirmed/pending/invalid proof counts;
 - a sorted, closed list of machine-readable issue codes.
 
@@ -49,3 +53,11 @@ Paths and exclusion patterns are displayed because this is an explicit local
 diagnostic surface. Transcript content, filenames discovered inside watched
 trees, nonces, private keys, session ids, raw repo identities, Git messages,
 and proof bytes have no output field.
+
+Schedule state is `absent` on a fresh init, `manual` after an explicit
+`capture enable --no-schedule`, `active` when the installed OS job is enabled,
+and `inactive` when its owned files exist but the manager does not report it
+enabled. An inactive job or failed latest scheduled attempt is attention;
+corrupt/mismatched private state or owned job files is an error. Status only
+reads these files and queries the local service manager—it never registers,
+repairs, runs, or removes a job.
