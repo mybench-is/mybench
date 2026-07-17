@@ -50,7 +50,8 @@ def test_fresh_bootstrap_fsyncs_managed_directory_entries_to_existing_parent(
     ):
         expected.extend((subdir, d))
     assert events[: len(expected)] == expected
-    assert events[len(expected) :] == [d.absolute(), *d.absolute().parents]
+    # The durability walk stops at the data-home base, not the filesystem root.
+    assert events[len(expected) :] == [d.absolute(), xdg]
 
 
 def test_precreated_visible_data_tree_gets_restart_durability_barrier(
@@ -84,7 +85,51 @@ def test_precreated_visible_data_tree_gets_restart_durability_barrier(
     monkeypatch.setattr(paths, "_fsync_directory", tracked_fsync_directory)
     assert paths.ensure_data_dir() == d
     assert events[: len(managed)] == list(managed)
-    assert events[len(managed) :] == [d.absolute(), *d.absolute().parents]
+    # The durability walk stops at the data-home base, not the filesystem root.
+    assert events[len(managed) :] == [d.absolute(), xdg]
+
+
+def test_durability_walk_stops_at_base_when_root_is_unopenable(tmp_path, monkeypatch):
+    """Regression: a scheduled scan under a systemd unit with ``PrivateTmp=``
+    dies because ``os.open("/")`` raises ``EACCES`` in the mount namespace.
+    ``ensure_data_dir`` must never fsync above the data-home base, so a
+    restricted filesystem root cannot break capture."""
+    xdg = tmp_path / "sandbox-xdg"
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+    d = paths.data_dir()
+    # Mirror the real box: the whole managed tree already exists, so only the
+    # root-chain barrier walks toward the (unopenable) filesystem root.
+    for directory in (
+        d,
+        paths.nonces_dir(),
+        paths.ledger_dir(),
+        paths.archive_dir(),
+        paths.reports_dir(),
+        paths.queue_dir(),
+        paths.keys_dir(),
+        paths.anchors_dir(),
+        paths.enrollments_dir(),
+    ):
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+
+    base = paths._durable_chain_root()
+    opened = []
+    real_fsync_directory = paths._fsync_directory
+
+    def guarded_fsync_directory(directory):
+        p = Path(directory)
+        opened.append(p)
+        if p != base and base not in p.parents:  # strictly above the data-home base
+            raise PermissionError(13, "Permission denied", str(p))
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(paths, "_fsync_directory", guarded_fsync_directory)
+    monkeypatch.setattr(paths, "_DURABLE_ROOT_CHAINS", set())
+    # No PermissionError escapes: the walk stopped at the base.
+    assert paths.ensure_data_dir() == d
+    assert base in opened
+    assert all(p == base or base in p.parents for p in opened)
 
 
 def test_ensure_creates_tree_0700():
