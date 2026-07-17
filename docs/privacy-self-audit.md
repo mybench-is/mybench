@@ -251,7 +251,8 @@ rather than by the `src/mybench` grep.
 - **Risk:** an installed job embeds a source/repository path, nonce, key,
   transcript marker, credential, network/publication flag, or shell payload;
   enable overwrites a foreign unit/hook; disable removes unrelated state; a
-  resident process remains; failed scans silently disable future capture; or
+  resident process remains; failed scans silently disable future capture;
+  explicit private-archive consent is lost during supervisor migration; or
   status mutates scheduler state while inspecting it.
 - **Check:** `$V -m pytest tests/test_scheduler.py -q`; inspect generated job
   metadata with `stat -c "%a %n" ~/.config/systemd/user/mybench-scan.*`
@@ -259,12 +260,15 @@ rather than by the `src/mybench` grep.
   (macOS), then run `mybench status --json` without copying path fields into an
   external log. Diff the owned job files and `$DD` snapshot before/after status.
 - **Pass:** fixture-locked jobs invoke only the installed CLI with
-  `scan --quiet --scheduled`; systemd uses `Type=oneshot` and launchd uses
+  `scan --quiet --scheduled` and, only after explicit owner consent, the local
+  `--archive` retention flag; systemd uses `Type=oneshot` and launchd uses
   `KeepAlive=false`, with no restart/resident command. Job files pass raw/common
   encoding scans for synthetic content/filenames, nonces, and private keys; the
-  planted companion fires. Registration/teardown are idempotent, foreign or
-  insecure files are refused, scheduled failure leaves the job registered for
-  a later run, private state/lock are 0600, and read-only/offline status reports
+  planted companion fires. Archive consent persists in canonical private state,
+  and the manual fallback rejects it rather than claiming nonexistent
+  retention. Registration/teardown are idempotent, foreign or insecure files
+  are refused, scheduled failure leaves the job registered for a later run,
+  private state/lock are 0600, and read-only/offline status reports
   active/inactive/manual and last-result health without repair.
 
 ## Failure protocol (MYB-4.4)

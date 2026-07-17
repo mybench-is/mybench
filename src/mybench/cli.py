@@ -170,6 +170,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_false",
         help="install hooks only; explicit fallback when no user scheduler is available",
     )
+    enable.add_argument(
+        "--archive",
+        action="store_true",
+        help="explicitly retain private transcript preimages during scheduled scans",
+    )
     enable.set_defaults(schedule=True)
     _add_json(enable)
     disable = capture_sub.add_parser(
@@ -570,6 +575,12 @@ def _capture_enable(args: argparse.Namespace) -> int:
         from mybench.scheduler import disable as disable_scheduler
         from mybench.scheduler import enable as enable_scheduler
 
+        if args.archive and not args.schedule:
+            return _failed(
+                "capture enable",
+                as_json=args.json,
+                error="archive_requires_schedule",
+            )
         if args.schedule:
             config = load()
             configured_repos = {repo.resolve() for repo in config.repos} if config else set()
@@ -581,7 +592,10 @@ def _capture_enable(args: argparse.Namespace) -> int:
                 )
         for repo in args.repo:
             preflight_enroll(repo)
-        schedule_state = enable_scheduler(schedule=args.schedule)
+        schedule_state = enable_scheduler(
+            schedule=args.schedule,
+            archive_enabled=args.archive,
+        )
         schedule_enabled = True
         records = [enroll(repo) for repo in args.repo]
     except Exception:  # noqa: BLE001 - repo paths must never reach command output
@@ -593,6 +607,7 @@ def _capture_enable(args: argparse.Namespace) -> int:
         return _failed("capture enable", as_json=args.json)
     payload = {
         "command": "capture enable",
+        "archive_enabled": schedule_state.archive_enabled,
         "repos_enrolled": len(records),
         "schedule_backend": schedule_state.backend,
         "schedule_state": "manual" if schedule_state.backend == "manual" else "active",
@@ -603,7 +618,8 @@ def _capture_enable(args: argparse.Namespace) -> int:
         as_json=args.json,
         human=(
             f"capture enabled for {len(records)} repo(s); "
-            f"schedule={payload['schedule_state']} backend={schedule_state.backend}"
+            f"schedule={payload['schedule_state']} backend={schedule_state.backend} "
+            f"archive={int(schedule_state.archive_enabled)}"
         ),
     )
     return EXIT_OK

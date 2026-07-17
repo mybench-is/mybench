@@ -56,12 +56,15 @@ the same ID. No report is published. `--open` and `--serve` are reserved and
 exit 3.
 
 `mybench capture enable --repo PATH [--repo PATH ...]
-[--schedule|--no-schedule] [--json]` opts only the named repos into the local
-commit-binding hook and, by default, registers an OS-native daily scan. The
-scheduled form requires the accepted private scan config to contain every
-named repo, so the unit/plist embeds no repo or transcript path. It supports a
-systemd user timer on Linux and launchd on macOS. `--no-schedule` is the
-explicit hook-only/manual fallback when neither user scheduler is reachable.
+[--schedule|--no-schedule] [--archive] [--json]` opts only the named repos into
+the local commit-binding hook and, by default, registers an OS-native daily
+scan. The scheduled form requires the accepted private scan config to contain
+every named repo, so the unit/plist embeds no repo or transcript path. It
+supports a systemd user timer on Linux and launchd on macOS. Scheduled private
+preimage retention remains off unless `--archive` is explicit; that consent is
+persisted in private scheduler state and the generated job. `--no-schedule` is
+the explicit hook-only/manual fallback when neither user scheduler is
+reachable, and cannot be combined with `--archive`.
 
 `mybench capture disable --repo PATH [--repo PATH ...] [--json]` removes only
 mybench-owned hooks, markers, enrollment records, schedule state, and the
