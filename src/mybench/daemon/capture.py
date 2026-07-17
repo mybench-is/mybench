@@ -227,14 +227,22 @@ class Daemon:
         self.config = config
         self.ledger = ledger if ledger is not None else Ledger()
 
-    def scan_once(self) -> int:
+    def scan_once(self, *, record_health: bool = True) -> int:
         """One full pass over all watches; returns the number of rows appended.
 
         A global process lock is acquired before rebuilding ledger coverage and
         held through nonce, ledger, and optional archive reconciliation.
         """
         with capture_scan_lock():
-            return self._scan_once_locked()
+            appended = self._scan_once_locked()
+        # A completion receipt is written only after the consistent capture
+        # transaction returns successfully. It contains HMAC location ids,
+        # never paths or source bytes (MYB-11.6).
+        if record_health:
+            from mybench.scan_health import record_capture_success
+
+            record_capture_success(self.config.watches)
+        return appended
 
     def _scan_once_locked(self) -> int:
         """Implementation of :meth:`scan_once`; caller holds the global scan lock.

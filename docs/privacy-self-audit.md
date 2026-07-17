@@ -22,6 +22,7 @@ maps to a surface below:
 | `ledger.py` | ledger row append; quarantine write + truncate | S4 |
 | `daemon/capture.py` | none directly (writes via nonces/ledger); log records | S5 |
 | `scan_config.py` | confirmed source/exclusion config, atomically replaced | S16 |
+| `scan_health.py` | successful-scan receipt + writer lock, atomically replaced | S17 |
 | `hooks/binding.py` | hook file into enrolled repo's .git/hooks; hooks.log | S6, S5 |
 | `hooks/lifecycle.py` | whitelisted tuple queue; failure counter; hooks.log; explicit user-settings install/uninstall | S15, S5 |
 | `anchor/ots.py` | HTTP POST/GET to calendars; staged artifact + proof files | S7, S8 |
@@ -224,6 +225,25 @@ rather than by the `src/mybench` grep.
   the explicit local consent proposal and the private config—never in daemon
   logs, report artifacts, CI summaries, or publication surfaces. Synthetic
   negative leak scans pass and the repo-copy firing test fails as intended.
+
+### S17 — Successful-scan receipt + local status output
+
+- **Risk:** a forged/manual timestamp overclaims capture freshness; receipt
+  identifiers disclose paths; status mutates the state it is meant to inspect,
+  networks while checking proofs, leaks content/key/nonce bytes, or silently
+  repairs loose permissions.
+- **Check:** `$V -m pytest tests/test_status.py -q`; inspect only receipt
+  metadata with
+  `$V -c "import json,stat; from mybench import paths; p=paths.scan_health_path(); d=json.loads(p.read_bytes()); print(oct(stat.S_IMODE(p.stat().st_mode)), sorted(d), len(d['watches']), len(d['repos']))"`.
+  Run `mybench status --json` twice around a recursive file size/mode/mtime/hash
+  snapshot of `$DD` and confirm the snapshots are identical.
+- **Pass:** successful scan paths automatically write canonical 0600 receipt
+  and lock files below the 0700 data dir; failed scans do not advance them;
+  receipt location ids are full keyed HMACs and contain no paths. Existing
+  activity stays `unknown` until a real post-upgrade scan. Status makes zero
+  filesystem writes and zero network calls, reports rather than repairs loose
+  permissions, validates its closed JSON schema, passes content/key/nonce
+  canary scans in both renderings, and the planted-output companion fires.
 
 ## Failure protocol (MYB-4.4)
 
