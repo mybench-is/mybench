@@ -6,7 +6,7 @@ value is publishable until MYB-19.7 rules on a conditioned published form.
 ## Contract and vocabulary
 
 Normalized-corpus schema v3 introduced one `manifest.episodes[]` output for
-every stitched `task_episode_id`; schema v4 retains this classifier unchanged.
+every stitched `task_episode_id`; schema v5 retains this classifier unchanged.
 Each output contains:
 
 - `arrival_pattern`, from the closed vocabulary `cold-start`, `prepared-spec`,
