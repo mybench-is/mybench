@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/fingerprint_coverage_input.schema.json",
+  "title": "Workflow Fingerprint evidence-coverage contribution",
+  "description": "Closed, content-free contract emitted by Workflow Fingerprint section scorers. It carries rates and ambiguity-category counts only; source names, paths, session ids, timestamps, and ordered evidence are structurally impossible.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "producer", "observations", "missing_ambiguous"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "producer": {
+      "enum": [
+        "workflow-map",
+        "model-role-profile",
+        "context-management-profile",
+        "token-cost-profile"
+      ]
+    },
+    "observations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/observation"}
+    },
+    "missing_ambiguous": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/ambiguity"}
+    }
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_class",
+        "basis",
+        "coverage_basis_points",
+        "confidence",
+        "evidence_state"
+      ],
+      "properties": {
+        "input_class": {
+          "enum": ["model", "effort", "context-lifecycle", "token-data"]
+        },
+        "basis": {
+          "enum": [
+            "recognized-model-or-other-per-eligible-event",
+            "recognized-effort-per-eligible-event",
+            "reliable-lifecycle-marker-per-eligible-session",
+            "structurally-valid-token-metadata-per-eligible-session"
+          ]
+        },
+        "coverage_basis_points": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0, "maximum": 10000},
+            {"const": "UNKNOWN"}
+          ]
+        },
+        "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+        "evidence_state": {"enum": ["available", "partial", "unknown"]}
+      }
+    },
+    "ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "count"],
+      "properties": {
+        "category": {
+          "enum": [
+            "missing-marker",
+            "missing-pointer-target",
+            "conflicting-evidence",
+            "unsupported-harness-version",
+            "unlinked-session",
+            "unknown-phase",
+            "missing-model",
+            "missing-effort",
+            "missing-token-data"
+          ]
+        },
+        "count": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

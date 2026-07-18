@@ -6,6 +6,15 @@ from mybench.scorer.agent_hours import (
     AgentHoursScoringError,
     score_agent_hours,
 )
+from mybench.scorer.evidence_coverage import (
+    AMBIGUITY_CATEGORIES,
+    COVERAGE_CONTRACT_VERSION,
+    EvidenceCoverageError,
+    basis_points,
+    build_coverage_contribution,
+    confidence,
+    score_evidence_coverage,
+)
 from mybench.scorer.topology import (
     TOPOLOGY_CATEGORIES,
     TOPOLOGY_REGISTRY_ID,
@@ -41,6 +50,13 @@ __all__ = [
     "AGENT_HOURS_SCORER_VERSION",
     "AgentHoursScoringError",
     "score_agent_hours",
+    "AMBIGUITY_CATEGORIES",
+    "COVERAGE_CONTRACT_VERSION",
+    "EvidenceCoverageError",
+    "basis_points",
+    "build_coverage_contribution",
+    "confidence",
+    "score_evidence_coverage",
     "TOPOLOGY_CATEGORIES",
     "TOPOLOGY_REGISTRY_ID",
     "TOPOLOGY_SCHEMA_VERSION",

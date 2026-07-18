@@ -206,6 +206,17 @@ def _workflow_map_output() -> Invocation:
     )
 
 
+def _evidence_coverage_aggregate() -> Invocation:
+    # Fixed schema-v1 PROVEN metrics plus fixed, content-free contributions.
+    # The production aggregate receives no raw evidence or ambient authority.
+    from tests.scorer.test_evidence_coverage import LEGACY_METRICS, _contributions
+
+    return Invocation(
+        args=(_contributions(),),
+        kwargs={"legacy_metrics": LEGACY_METRICS},
+    )
+
+
 def _git_normalized_corpus() -> Invocation:
     # Fixed, path-free subject-only repository records. The production stage
     # receives no Git, enrollment, filesystem, or author-identity authority.
@@ -231,6 +242,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
+    "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
     "reference-target-join-corpus": _reference_target_join_corpus,
     "session-timing-output": _session_timing_output,
@@ -258,6 +270,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.agent_hours",),
+    ),
+    Stage(
+        "evidence-coverage-aggregate",
+        EntryPoint("mybench.scorer.evidence_coverage", "score_evidence_coverage"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.evidence_coverage",),
     ),
     Stage(
         "workflow-map-output",
