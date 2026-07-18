@@ -10,6 +10,9 @@ commit messages, ref names, or test output into its artifacts.
 One corpus artifact contains:
 
 - opaque session identities and conservative task-episode links;
+- closed, structurally observed lane markers and opaque parent-session links;
+- one versioned, content-opaque arrival-pattern, outcome, and open marker per
+  stitched episode;
 - turn, paste, tool, lifecycle, model, token, reference, and test structure;
 - coarse content shapes such as `short` and `single`;
 - pointers to eligible fields in a committed transcript record; and
@@ -85,6 +88,68 @@ coverage; they are never zero-filled or inferred. Agent text and tool inputs
 may receive commitment-bound pointers. Human text, tool results, compaction
 summaries, and ambiguous records remain shape-only and receive no pointer.
 
+### Lane identity and token accounting (schema v2)
+
+The Claude adapter admits two content-free session fields from a closed raw
+whitelist:
+
+- `lane_role` is `primary` or `subagent` only when all subject message records
+  agree on the boolean `isSidechain` marker; and
+- `launcher_marker` is `queue-operation` when at least one subject record has
+  exactly that structural record type.
+
+`parent_session_id` remains the opaque lineage edge supplied by the trusted
+input boundary. Nested subagents therefore form an opaque session graph without
+serializing task ids, launcher payloads, prompts, paths, filenames, or other
+record fields. Contradictory or malformed markers stay absent. The Codex
+rollout-v1 format has no admitted lane marker, so both lane fields are
+schema-forbidden for Codex sessions: originator strings, working directories,
+parent links, and other launcher-shaped metadata never substitute for observed
+lane evidence.
+
+`token_accounting_policy_version=1.0.0` pins two views over normalized
+`token-usage` events. The **orchestrated** view includes every admitted session,
+including explicitly marked subagents. The **deduped** view excludes only
+sessions with `lane_role=subagent`, because their trajectories also surface in
+the parent lane's tool-result context. Sessions with absent lane evidence stay
+included in both views; absence is UNKNOWN, never permission to guess a
+duplicate. Token-field missingness and provider-reporting caveats are unchanged.
+
+### Episode arrival pattern (introduced in schema v3)
+
+Every stitched episode has one `manifest.episodes[]` record containing the
+pinned `arrival_pattern` vocabulary, `classifier_version`, and
+`taxonomy_version`. `unknown` is a first-class value. The v1 classifier reads
+only root-session lineage plus normalized `reference`, `pasted-span`,
+`content_shape`, `tool_family`, authorship, and ordering fields. It never
+resolves a pointer or reads free text. The complete pinned rule table, stability
+assessment, and defer-to-JUDGED boundary are in
+[`arrival-pattern-taxonomy.md`](arrival-pattern-taxonomy.md).
+
+Arrival-pattern output remains local A8 evidence. No conditioned public form is
+authorized before the MYB-19.7 ruling.
+
+### Episode outcome and open marker (schema v4)
+
+Each stitched-episode record also carries `episode_outcome` from the closed
+vocabulary `closed-with-bound-commit`, `abandoned`, and `unknown`, plus an
+`episode_opened_at` UTC timestamp or the literal `unknown`. Both derivations
+have explicit `1.0.0` versions in the episode and normalizer records. The
+content-opaque session inputs retained in A8 are `git_closure_evidence` and
+`started_at`; repo ids, worktree ids, row indexes, and Git heads are not copied
+into the normalized artifact.
+
+The trusted loader derives closure evidence from the existing A3 lifecycle and
+binding rows. It requires exactly one start/end pair in row order, matching
+opaque repo/worktree identities, and an exact final-HEAD binding inside that
+row range. Missing, conflicting, multiple, or head-changing-but-unbound
+evidence is `unknown`. The pinned aggregation and open-marker rules are in
+[`episode-outcome-closure.md`](episode-outcome-closure.md).
+
+These fields remain private A8 structure. No one-shot or prompt-to-merge value,
+latency bucket, report field, claim, or publication surface is authorized
+before MYB-19.7.
+
 ## What a pointer means
 
 A transcript pointer names a field and carries the salted commitment of its
@@ -146,6 +211,12 @@ big-endian length framing. The existing RFC-6962-shaped tree uses
 `mybench:v1:node` without duplicating odd leaves, and the result is wrapped by
 `mybench:v1:normalized-corpus`.
 
+Schema v2 changed canonical manifest/event bytes for lane evidence. Schema v3
+changed them again for the arrival-pattern output. Schema v4 adds the closure
+evidence, outcome, and episode-open fields. These boundaries produce new corpus
+roots without changing any manifest, event, node, or corpus commitment domain,
+length framing, leaf order, or tree rule.
+
 Zero transcript sessions or zero verified repository snapshots produce no
 artifact. A nonempty input whose consent filter admits no records produces a
 valid manifest-only commitment. Transcript and repository records use separate
@@ -158,8 +229,10 @@ Each pure adapter accepts records that an I/O layer has already authenticated
 against capture commitments. The trusted loader takes a consistent snapshot
 under the capture lock, selects the latest committed Claude rows, verifies the
 A9 bytes against their A2 nonces and A3 roots, and only then constructs parser
-inputs. It requires an explicit owner assertion that the local harness sessions
-belong to the credentialed subject and that subject's own agent fleet.
+inputs. In the same snapshot it joins existing A3 lifecycle boundaries to
+binding rows; no capture field or hook changes for schema v4. It requires an
+explicit owner assertion that the local harness sessions belong to the
+credentialed subject and that subject's own agent fleet.
 
 The operator entry point is deliberately not ambient or automatic:
 

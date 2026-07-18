@@ -18,10 +18,15 @@ from collections.abc import Mapping, Sequence
 
 from mybench.claims.canonical import canonical_bytes
 from mybench.normalizer.claude import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION,
     AUTHORSHIP_POLICY_VERSION,
+    EPISODE_OPEN_MARKER_VERSION,
+    EPISODE_OUTCOME_CLASSIFIER_VERSION,
     EPISODE_STITCHER_VERSION,
     NORMALIZER_VERSION,
     SCHEMA_VERSION,
+    TOKEN_ACCOUNTING_POLICY_VERSION,
     VerifiedRecord,
     VerifiedSession,
     _COVERAGE_KEYS,
@@ -33,7 +38,9 @@ from mybench.normalizer.claude import (
     _check_input_sessions,
     _content_pointer,
     _episode_map,
+    _episode_outputs,
     _event_sort_key,
+    _git_closure_evidence,
     _is_label,
     _is_test_invocation,
     _json_object,
@@ -45,7 +52,7 @@ from mybench.normalizer.claude import (
     corpus_commitment,
 )
 
-CODEX_ADAPTER_VERSION = "1.0.0"
+CODEX_ADAPTER_VERSION = "4.0.0"
 _SOURCE = "codex"
 
 _MESSAGE_TYPES = frozenset({"input_text", "output_text"})
@@ -602,6 +609,8 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
             "source": session.source,
             "session_id": session.session_id,
             "admitted_record_count": len(admitted_records),
+            "started_at": session.started_at or "unknown",
+            "git_closure_evidence": _git_closure_evidence(session),
         }
         if key in episodes:
             manifest_session["task_episode_id"] = episodes[key]
@@ -655,6 +664,7 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
 
     events.sort(key=_event_sort_key)
     manifest_sessions.sort(key=lambda item: (item["source"].encode(), item["session_id"].encode()))
+    episode_outputs = _episode_outputs(manifest_sessions, events)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "kind": "normalized-corpus-manifest",
@@ -663,9 +673,15 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
             "version": NORMALIZER_VERSION,
             "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
             "episode_stitcher_version": EPISODE_STITCHER_VERSION,
+            "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
+            "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+            "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+            "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
+            "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CODEX_ADAPTER_VERSION}],
         "sessions": manifest_sessions,
+        "episodes": episode_outputs,
         "coverage": {key: coverage[key] for key in _COVERAGE_KEYS},
         "event_count": len(events),
     }

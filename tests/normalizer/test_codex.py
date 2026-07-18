@@ -8,6 +8,7 @@ import stat
 from dataclasses import replace
 
 import pytest
+from jsonschema import ValidationError
 
 from mybench import normalized_store, paths
 from mybench.commitments import leaf_commitment
@@ -21,6 +22,7 @@ from mybench.normalizer import (
     validate_corpus_artifact,
 )
 from mybench.normalizer.claude import VerifiedRecord, VerifiedSession
+from mybench.schemas import load_validator
 from tests.conftest import REPO_ROOT
 from tests.fixtures import CanaryLeakError, assert_no_canaries
 from tests.normalizer.synthetic import (
@@ -86,7 +88,7 @@ def test_codex_uses_the_shared_corpus_contract_and_validates():
     assert {event["source"] for event in artifact["events"]} == {"codex"}
 
     claude_artifact = json.loads(normalize_claude(synthetic_normalizer_input().sessions))
-    assert artifact["schema_version"] == claude_artifact["schema_version"] == "1"
+    assert artifact["schema_version"] == claude_artifact["schema_version"] == "4"
     assert artifact["manifest"]["normalizer"] == claude_artifact["manifest"]["normalizer"]
     assert set(artifact) == set(claude_artifact)
 
@@ -157,6 +159,29 @@ def test_missing_metadata_is_absent_and_observed_zero_is_preserved():
     )
     model = _event(json.loads(normalize_codex((model_session,))), "model")
     assert set(model).isdisjoint({"provider", "reasoning_effort", "token_usage"})
+
+
+def test_codex_lane_markers_remain_absent_even_for_launcher_shaped_metadata():
+    session = _one_record_session(
+        {
+            "timestamp": "2026-01-03T00:00:00.000Z",
+            "type": "session_meta",
+            "payload": {
+                "originator": "codex_exec",
+                "isSidechain": True,
+                "source": "exec",
+            },
+        }
+    )
+    session = replace(session, parent_session_id="opaque-parent-session")
+    manifest_session = json.loads(normalize_codex((session,)))["manifest"]["sessions"][0]
+    assert manifest_session["parent_session_id"] == "opaque-parent-session"
+    assert set(manifest_session).isdisjoint({"lane_role", "launcher_marker"})
+
+    artifact = json.loads(normalize_codex((session,)))
+    artifact["manifest"]["sessions"][0]["lane_role"] = "subagent"
+    with pytest.raises(ValidationError):
+        load_validator("normalized_corpus.schema.json").validate(artifact)
 
 
 def test_authorship_and_consent_filter_run_before_normalized_derivation():

@@ -3,6 +3,7 @@
 from mybench.normalizer.claude import (
     CLAUDE_ADAPTER_VERSION,
     ContentResolution,
+    GitBindingObservation,
     ResolutionIntegrityError,
     ResolutionRecord,
     VerifiedRecord,
@@ -12,12 +13,18 @@ from mybench.normalizer.claude import (
     resolution_coverage,
 )
 from mybench.normalizer.contract import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION,
     AUTHORSHIP_POLICY_VERSION,
     EPISODE_STITCHER_VERSION,
+    EPISODE_OPEN_MARKER_VERSION,
+    EPISODE_OUTCOME_CLASSIFIER_VERSION,
     NORMALIZER_VERSION,
+    TOKEN_ACCOUNTING_POLICY_VERSION,
     NoEvidence,
     NormalizationError,
     validate_corpus_artifact,
+    token_accounting_includes,
 )
 from mybench.normalizer.codex import CODEX_ADAPTER_VERSION, normalize_codex
 from mybench.normalizer.repo import (
@@ -39,13 +46,19 @@ from mybench.normalizer.reference_join import (
 )
 
 __all__ = [
+    "ARRIVAL_PATTERN_CLASSIFIER_VERSION",
+    "ARRIVAL_PATTERN_TAXONOMY_VERSION",
     "AUTHORSHIP_POLICY_VERSION",
     "CLAUDE_ADAPTER_VERSION",
     "CODEX_ADAPTER_VERSION",
     "CommitEvidence",
     "ContentResolution",
+    "GitBindingObservation",
     "EPISODE_STITCHER_VERSION",
+    "EPISODE_OPEN_MARKER_VERSION",
+    "EPISODE_OUTCOME_CLASSIFIER_VERSION",
     "NORMALIZER_VERSION",
+    "TOKEN_ACCOUNTING_POLICY_VERSION",
     "NoEvidence",
     "NormalizationError",
     "ResolutionIntegrityError",
@@ -66,6 +79,7 @@ __all__ = [
     "normalize_reference_target_joins",
     "resolve_content_pointer",
     "resolution_coverage",
+    "token_accounting_includes",
     "validate_corpus_artifact",
     "validate_repo_corpus_artifact",
     "validate_reference_target_corpus_artifact",

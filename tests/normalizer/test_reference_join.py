@@ -111,5 +111,5 @@ def test_fixed_reference_target_root_locks_shared_merkle_contract():
         )
     )
     assert artifact["corpus_commitment"] == (
-        "333a16a25c0bba6d83a2ead2e982c2de05b71eae86165e0d4704bd626ac3b3e2"
+        "5c4b73cf0c3530f5efa43a01fc5c07a381843f103a2151049f8434e4f111113c"
     )
