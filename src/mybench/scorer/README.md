@@ -11,3 +11,13 @@ contract and deterministic private aggregate. See
 `docs/evidence-coverage.md`. It accepts only fixed classes, integer rates,
 honesty labels, pinned ambiguity counts, and the shipped PROVEN v1 coverage
 metrics; raw or identifying evidence is not an input.
+
+`wave1.py` implements the six registry-governed Wave-1 transcript scorers and
+their signed, local-only claim set. It accepts normalized v5 structure plus
+an offline harness-currency snapshot and per-event MCP category assertions
+bound to normalized event-leaf commitments. It proves exact MCP-event coverage
+and derives the identifier-free recurrence aggregate itself. Its outputs
+contain only registry bands/booleans and the registry-admitted R1 harness
+inventory; content, paths, session/event identifiers, tool/server names, and
+ordered streams are absent. See
+`docs/wave1-transcript-scorers.md`.

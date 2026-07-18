@@ -180,6 +180,30 @@ def _evidence_coverage_aggregate() -> Invocation:
     )
 
 
+def _wave1_transcript_claim_set() -> Invocation:
+    # Fixed synthetic normalized evidence, content-free control snapshots, and
+    # a deterministic dev-only key. The production scorer receives no ambient
+    # data, clock, signing-key, environment, or network authority.
+    from mybench.claims import dev_signing_key
+    from tests.fixtures.wave1 import wave1_synthetic_input
+
+    synthetic = wave1_synthetic_input()
+    return Invocation(
+        args=(
+            synthetic.corpus,
+            synthetic.currency_snapshot,
+            synthetic.mcp_observations,
+        ),
+        kwargs={
+            "window_start": "2026-01-01T00:00:00Z",
+            "window_end": "2026-01-01T01:00:00Z",
+            "signed_at": "2026-07-18T00:00:00Z",
+            "private_key": dev_signing_key(b"w" * 32),
+            "signer_kind": "dev",
+        },
+    )
+
+
 def _git_normalized_corpus() -> Invocation:
     # Fixed, path-free subject-only repository records. The production stage
     # receives no Git, enrollment, filesystem, or author-identity authority.
@@ -212,6 +236,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
+    "wave1-transcript-claim-set": _wave1_transcript_claim_set,
     "workflow-phase-output": _workflow_phase_output,
 }
 
@@ -239,6 +264,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.evidence_coverage",),
+    ),
+    Stage(
+        "wave1-transcript-claim-set",
+        EntryPoint("mybench.scorer.wave1", "score_wave1_claims"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.wave1",),
     ),
     Stage(
         "claude-normalized-corpus",

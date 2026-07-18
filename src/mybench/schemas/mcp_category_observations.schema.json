@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/mcp_category_observations.schema.json",
+  "title": "Mybench MCP Category Event Observations",
+  "description": "Private local provenance binding one fixed MCP category to each normalized event commitment. It carries no transcript content, tool/server name, session/event identifier, path, timestamp, or corpus order.",
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    },
+    "category": {
+      "enum": [
+        "browser",
+        "communications",
+        "database",
+        "deploy",
+        "observability",
+        "other",
+        "planning",
+        "vcs"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "taxonomy_version",
+    "source_corpus_commitment",
+    "observations",
+    "digest"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "mcp-category-event-observations"},
+    "taxonomy_version": {"const": "1.0.0"},
+    "source_corpus_commitment": {"$ref": "#/$defs/hex64"},
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_commitment", "category"],
+        "properties": {
+          "event_commitment": {"$ref": "#/$defs/hex64"},
+          "category": {"$ref": "#/$defs/category"}
+        }
+      }
+    },
+    "digest": {"$ref": "#/$defs/hex64"}
+  }
+}
