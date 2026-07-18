@@ -1,7 +1,9 @@
 # Episode outcome and open-marker contract (MYB-19.5)
 
-Status: implemented for private A8 normalized evidence only. Publication of
-one-shot or episode-latency values remains blocked on MYB-19.7.
+Status: implemented for private A8 normalized evidence only. THREAT_MODEL
+v0.2.1 admits only bucketed, support-qualified episode-latency aggregates via a
+separately reviewed ACTIVE descriptor. One-shot/practice-signal publication
+remains behind OQ #33 and its registry gates.
 
 ## Versioned output
 
@@ -68,5 +70,7 @@ commit to the subject and does not build a merge-time join. That future surface
 requires an explicit ADR-0018 boundary ruling before implementation.
 
 No raw outcome rate, conditioned one-shot rate, episode-open timestamp,
-prompt-to-merge latency, or latency bucket is published by this task. MYB-19.7
-must first admit the class, granularity, controls, tier, and conditioning form.
+prompt-to-merge latency, or latency bucket is published by this task. The
+v0.2.1 class admission does not activate a field: a latency aggregate needs a
+separately reviewed ACTIVE descriptor implementing its granularity, controls,
+tier, and coverage, while one-shot remains separately gated.

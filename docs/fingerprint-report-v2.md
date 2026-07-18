@@ -221,7 +221,7 @@ Every field carries lifecycle-marker coverage from §3.7.
 | `fingerprint.context.one_context_episode_rate` | episodes with exactly one known context generation ÷ episodes with generation coverage | ANCHORED | 5 episodes | R0 |
 | `fingerprint.context.fresh_phase_split` | fresh sessions whose first known phase is PLAN vs BUILD/TEST/DEBUG/REVIEW/COMMIT vs UNKNOWN, divided by fresh sessions | ANCHORED | 5 fresh sessions | R0 |
 | `fingerprint.context.model_change_boundary_rate` | known context boundaries with model change ÷ boundaries with model coverage on both sides | ANCHORED | 5 boundaries | R1 |
-| `fingerprint.context.lane_switch_count_distribution` | LOCAL_ONLY cells `(count_band, exact episode count)`: for each eligible episode, count adjacent `LANES` events whose known normalized lane differs; an unknown lane breaks adjacency without bridging, then histogram the counts | ANCHORED | 5 episodes with lane coverage | no public form until MYB-19.7 |
+| `fingerprint.context.lane_switch_count_distribution` | LOCAL_ONLY cells `(count_band, exact episode count)`: for each eligible episode, count adjacent `LANES` events whose known normalized lane differs; an unknown lane breaks adjacency without bridging, then histogram the counts | ANCHORED | 5 episodes with lane coverage | LOCAL_ONLY; v0.2.1 permits only a separate ACTIVE descriptor with banded/top-coded output and k≥5 support |
 
 For all rows except the two count rows, `.band` means `share_band` or a
 banded distribution as stated. The `.exact` entry is LOCAL_ONLY and `.band`
