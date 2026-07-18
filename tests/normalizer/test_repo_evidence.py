@@ -15,12 +15,14 @@ from mybench import paths
 from mybench.hooks import binding
 from mybench.normalizer.contract import corpus_commitment
 from mybench.normalizer.repo import (
+    FILE_CLASSES,
     NormalizationError,
     normalize_repo_evidence,
     validate_repo_corpus_artifact,
 )
 from mybench.normalizer.repo_loader import (
     RepoEvidenceLoaderError,
+    _file_class,
     capture_enrolled_repo,
     resolve_repo_pointer,
 )
@@ -149,6 +151,63 @@ def artifact_from(repo: Path) -> tuple[bytes, dict]:
     )
     data = normalize_repo_evidence((snapshot,))
     return data, json.loads(data)
+
+
+@pytest.mark.parametrize(
+    ("relative", "expected"),
+    [
+        (b"README.md", "docs"),
+        (b"docs/guide.rst", "docs"),
+        (b"specs/protocol.md", "spec"),
+        (b"decisions/ADR-0001-boundary.md", "spec"),
+        (b".claude/plans/synthetic.md", "plan"),
+        (b"docs/roadmaps/v1.md", "plan"),
+        (b"AGENTS.md", "handoff"),
+        (b"handoffs/release-context.md", "handoff"),
+        (b"tests/spec/test_parser.py", "other"),
+    ],
+)
+def test_file_classes_are_closed_and_document_specific(relative, expected):
+    assert _file_class(relative) == expected
+
+
+def test_synthetic_multi_file_commit_emits_every_file_class(tmp_path):
+    repo = tmp_path / "synthetic-multi-file-repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    files = {
+        "package.json": "{}\n",
+        "package-lock.json": "{}\n",
+        ".github/workflows/check.yml": "name: synthetic\n",
+        "README.md": "synthetic documentation\n",
+        "specs/protocol.md": "synthetic specification\n",
+        ".claude/plans/next.md": "synthetic plan\n",
+        "HANDOFF.md": "synthetic handoff\n",
+        "src/example.py": "SYNTHETIC = True\n",
+    }
+    for relative, content in files.items():
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    git(repo, "add", "--all")
+    git(
+        repo,
+        "commit",
+        "-q",
+        "--no-gpg-sign",
+        "-m",
+        "synthetic multi-file commit",
+        env=identity_env(SUBJECT_EMAIL, 1),
+    )
+    root = git(repo, "rev-parse", "HEAD").stdout.strip()
+    enroll_fixture(repo, root)
+
+    snapshot = capture_enrolled_repo(
+        repo, subject_identities={SUBJECT_EMAIL}, scope_key=SCOPE_KEY
+    )
+    commit = next(item for item in snapshot.commits if item.commit_id == root)
+    assert dict(commit.file_class_counts) == {file_class: 1 for file_class in FILE_CLASSES}
+    assert {target.file_class for target in commit.targets} == set(FILE_CLASSES)
 
 
 def test_real_git_snapshot_is_deterministic_closed_and_subject_only(enrolled_repo):
@@ -367,5 +426,5 @@ def test_fixed_repo_corpus_root_locks_shared_adr_0013_merkle_contract():
     data = normalize_repo_evidence(synthetic_repo_evidence_input().snapshots)
     artifact = json.loads(data)
     assert artifact["corpus_commitment"] == (
-        "3743a5b3ec63a1c97e1e70205ff71e87e32421fbc3f9175274397bb73fb1ecc6"
+        "11e989ba39b84ecb8dfc9313893c78cc349e7bde822a1b0b3ae52554a31fa9f2"
     )

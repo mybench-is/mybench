@@ -98,11 +98,15 @@
     "fileClassCounts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["manifest", "lockfile", "ci", "other"],
+      "required": ["manifest", "lockfile", "ci", "docs", "spec", "plan", "handoff", "other"],
       "properties": {
         "manifest": {"type": "integer", "minimum": 0},
         "lockfile": {"type": "integer", "minimum": 0},
         "ci": {"type": "integer", "minimum": 0},
+        "docs": {"type": "integer", "minimum": 0},
+        "spec": {"type": "integer", "minimum": 0},
+        "plan": {"type": "integer", "minimum": 0},
+        "handoff": {"type": "integer", "minimum": 0},
         "other": {"type": "integer", "minimum": 0}
       }
     },
@@ -155,7 +159,7 @@
                 "additionalProperties": false,
                 "required": ["file_class", "pointer"],
                 "properties": {
-                  "file_class": {"enum": ["manifest", "lockfile", "ci", "other"]},
+                  "file_class": {"enum": ["manifest", "lockfile", "ci", "docs", "spec", "plan", "handoff", "other"]},
                   "pointer": {"$ref": "#/$defs/pointer"}
                 }
               }
@@ -243,12 +247,12 @@
           "required": ["name", "version", "authorship_policy_version"],
           "properties": {
             "name": {"const": "mybench.normalizer.repo"},
-            "version": {"const": "1.0.0"},
+            "version": {"const": "1.1.0"},
             "authorship_policy_version": {"const": "1.0.0"}
           }
         },
         "adapters": {
-          "const": [{"source": "git", "version": "1.0.0"}]
+          "const": [{"source": "git", "version": "1.1.0"}]
         },
         "repositories": {
           "type": "array",
