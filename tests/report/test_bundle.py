@@ -1,0 +1,177 @@
+"""MYB-13.9 local bundle: immutability, signing, manifest, viewing, leak scan."""
+
+from __future__ import annotations
+
+import json
+import logging
+import random
+import stat
+
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from mybench.report.cli import (
+    BUNDLE_FILES,
+    BundleError,
+    assemble_bundle,
+    canonical_report_bytes,
+    content_address,
+    evidence_manifest,
+    validate_evidence_manifest,
+    verify_signature,
+    create_server,
+    open_report,
+    report_url,
+)
+from mybench.scorer.score import score
+from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
+from tests.fixtures.ledgers import build_canary_ledger
+from tests.scorer.test_score import fixed_report_bytes
+
+SYNTHETIC_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+
+
+def _report() -> dict:
+    return json.loads(fixed_report_bytes())
+
+
+def _manifest(report: dict, rows=()) -> dict:
+    dates = [report["anchored_through"]] if "anchored_through" in report else []
+    return evidence_manifest(report, list(rows), dates)
+
+
+def _mode(path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def _reordered(value, rng: random.Random):
+    if isinstance(value, dict):
+        items = list(value.items())
+        rng.shuffle(items)
+        return {key: _reordered(item, rng) for key, item in items}
+    if isinstance(value, list):
+        return [_reordered(item, rng) for item in value]
+    return value
+
+
+def test_report_id_is_a_stable_property_of_canonical_report_json():
+    report = _report()
+    expected_bytes = canonical_report_bytes(report)
+    expected_id = content_address(expected_bytes)
+    for seed in range(32):
+        reordered = _reordered(report, random.Random(seed))
+        assert canonical_report_bytes(reordered) == expected_bytes
+        assert content_address(canonical_report_bytes(reordered)) == expected_id
+    changed = dict(report, report_version="different")
+    assert content_address(canonical_report_bytes(changed)) != expected_id
+
+
+def test_bundle_layout_modes_idempotence_and_outside_path_refusal(tmp_path):
+    report = _report()
+    manifest = _manifest(report)
+    directory = assemble_bundle(report, manifest, private_key=SYNTHETIC_KEY)
+    assert directory.name == content_address((directory / "report.json").read_bytes())
+    assert {entry.name for entry in directory.iterdir()} == {*BUNDLE_FILES, "assets"}
+    assert _mode(directory) == _mode(directory / "assets") == 0o700
+    assert all(_mode(directory / name) == 0o600 for name in BUNDLE_FILES)
+    first = {name: (directory / name).read_bytes() for name in BUNDLE_FILES}
+    assert assemble_bundle(report, manifest, private_key=SYNTHETIC_KEY) == directory
+    assert {name: (directory / name).read_bytes() for name in BUNDLE_FILES} == first
+
+    with pytest.raises(BundleError, match="outside the private data directory"):
+        assemble_bundle(
+            report,
+            manifest,
+            private_key=SYNTHETIC_KEY,
+            bundle_dir=tmp_path / "outside" / directory.name,
+        )
+    assert not (tmp_path / "outside").exists()
+
+
+def test_signature_covers_exact_canonical_report_bytes_and_tampering_fails():
+    directory = assemble_bundle(_report(), _manifest(_report()), private_key=SYNTHETIC_KEY)
+    report_bytes = (directory / "report.json").read_bytes()
+    encoded_signature = (directory / "report.sig").read_bytes()
+    verify_signature(report_bytes, encoded_signature, SYNTHETIC_KEY.public_key())
+    with pytest.raises(BundleError, match="does not verify"):
+        verify_signature(report_bytes + b" ", encoded_signature, SYNTHETIC_KEY.public_key())
+
+
+@pytest.mark.parametrize(
+    ("location", "field"),
+    (
+        ((), "nonce"),
+        (("ledger",), "preimage"),
+        (("ledger", "row_ranges", 0), "filename"),
+        (("versions", "schemas"), "path"),
+        (("versions", "formulas", 0), "prompt"),
+    ),
+)
+def test_evidence_manifest_closed_schema_rejects_secret_or_filename_fields(location, field):
+    manifest = _manifest(_report())
+    if location == ("ledger", "row_ranges", 0):
+        manifest["ledger"]["row_ranges"] = [{"start": 0, "end": 1}]
+    if location == ("versions", "formulas", 0):
+        manifest["versions"]["formulas"] = [
+            {"registry_id": "synthetic.metric", "registry_version": "1.0.0"}
+        ]
+    cursor = manifest
+    for part in location:
+        cursor = cursor[part]
+    cursor[field] = "MYBENCH-CANARY-forbidden"
+    with pytest.raises(BundleError, match="schema validation"):
+        validate_evidence_manifest(manifest)
+
+
+def test_manifest_references_are_content_free_sorted_and_strict():
+    rows = [
+        {"i": 0, "h": "b" * 64, "session_root": "d" * 64},
+        {"i": 1, "h": "a" * 64, "session_root": "c" * 64},
+    ]
+    manifest = evidence_manifest(_report(), rows, ["2026-02-02", "2026-01-01"])
+    assert manifest["ledger"] == {
+        "row_ranges": [{"start": 0, "end": 2}],
+        "chain_tip": "a" * 64,
+    }
+    assert manifest["anchors"]["event_dates"] == ["2026-01-01", "2026-02-02"]
+    assert manifest["corpora"]["commitments"] == ["c" * 64, "d" * 64]
+    assert manifest["versions"]["schemas"]["evidence_manifest"] == "1"
+
+
+def test_server_is_ipv4_loopback_only_and_open_is_headless_safe(monkeypatch):
+    directory = assemble_bundle(_report(), _manifest(_report()), private_key=SYNTHETIC_KEY)
+    server = create_server(directory)
+    try:
+        assert server.server_address[0] == "127.0.0.1"
+        assert report_url(server).startswith("http://127.0.0.1:")
+    finally:
+        server.server_close()
+
+    def no_browser(*_args, **_kwargs):
+        raise RuntimeError("synthetic headless environment")
+
+    monkeypatch.setattr("webbrowser.open", no_browser)
+    assert open_report(directory / "index.html") is False
+
+
+def test_entire_canary_bundle_and_logs_are_leak_free_and_firing_test_detects(tmp_path, caplog):
+    fx = generate_fixtures(tmp_path / "synthetic-fixtures")
+    ledger, canaries = build_canary_ledger(fx)
+    rows = ledger.rows()
+    report = json.loads(
+        score(rows, [], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True)
+    )
+    caplog.set_level(logging.INFO)
+    directory = assemble_bundle(
+        report,
+        evidence_manifest(report, rows, []),
+        private_key=SYNTHETIC_KEY,
+    )
+    log = tmp_path / "bundle.log"
+    log.write_text(caplog.text)
+    assert assert_no_canaries([directory, log], canaries) == len(BUNDLE_FILES) + 1
+
+    planted = directory / "assets" / "planted.txt"
+    planted.write_bytes(canaries[0])
+    with pytest.raises(CanaryLeakError):
+        assert_no_canaries([directory], canaries)

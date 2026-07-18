@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/evidence-manifest.schema.json",
+  "title": "Mybench local report evidence manifest",
+  "description": "Local-only, content-free references for one immutable report bundle. This artifact is never a publication input.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "ledger",
+    "anchors",
+    "corpora",
+    "claims",
+    "versions"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_ranges"],
+      "properties": {
+        "row_ranges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end"],
+            "properties": {
+              "start": {"type": "integer", "minimum": 0},
+              "end": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "chain_tip": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "anchors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_dates"],
+      "properties": {
+        "event_dates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/date"}
+        }
+      }
+    },
+    "corpora": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commitments"],
+      "properties": {
+        "commitments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hex64"}
+        }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digests"],
+      "properties": {
+        "digests": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hex64"}
+        }
+      }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scorer", "classifiers", "schemas", "formulas"],
+      "properties": {
+        "scorer": {"$ref": "#/$defs/version"},
+        "classifiers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/version"}
+        },
+        "schemas": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "report",
+            "ledger",
+            "anchor",
+            "normalized_events",
+            "evidence_manifest"
+          ],
+          "properties": {
+            "report": {"$ref": "#/$defs/version"},
+            "ledger": {"$ref": "#/$defs/versionList"},
+            "anchor": {"$ref": "#/$defs/versionList"},
+            "normalized_events": {"$ref": "#/$defs/versionList"},
+            "evidence_manifest": {"const": "1"}
+          }
+        },
+        "formulas": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["registry_id", "registry_version"],
+            "properties": {
+              "registry_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){1,5}$",
+                "maxLength": 160
+              },
+              "registry_version": {"$ref": "#/$defs/version"}
+            }
+          }
+        },
+        "registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "digest"],
+          "properties": {
+            "version": {"$ref": "#/$defs/version"},
+            "digest": {"$ref": "#/$defs/hex64"}
+          }
+        },
+        "pricing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "digest"],
+          "properties": {
+            "version": {"$ref": "#/$defs/version"},
+            "digest": {"$ref": "#/$defs/hex64"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"
+    },
+    "versionList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/version"}
+    }
+  }
+}

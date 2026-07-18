@@ -1,7 +1,6 @@
-"""mybench.report — render versioned reports + static page (see README)."""
+"""mybench.report — assemble signed local report bundles (see README)."""
 
 COMPONENT = "report"
 RESPONSIBILITY = (
-    "render the scorer's metrics into a versioned JSON report and a static "
-    "verification page"
+    "assemble the scorer's metrics into an immutable signed local report bundle"
 )

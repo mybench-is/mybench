@@ -118,8 +118,13 @@ def test_page_has_no_javascript_and_pinned_references_only():
     assert "<script" not in page and "javascript:" not in page
     hrefs = set(re.findall(r'href="([^"]+)"', page))
     canonical = "https://mybench.is/@ckeenan/2026-W28"
-    assert hrefs == {ANCHORS, "report.json", "https://mybench.is",
-                     "https://mybench.is/how-it-works", "favicon.svg", canonical}
+    assert hrefs == {
+        ANCHORS,
+        "report.json",
+        "https://mybench.is",
+        "https://mybench.is/how-it-works",
+        canonical,
+    }
     assert "src=" not in page  # no images/iframes/external fetches (SVG is inline)
 
 
@@ -146,17 +151,19 @@ def test_page_from_canary_report_is_leak_free(tmp_path):
 
 def test_cli_end_to_end(tmp_path, capsys):
     from mybench.report.__main__ import main
+    from mybench import paths
 
     src = tmp_path / "report.json"
     src.write_bytes(fixed_report_bytes())
-    out = tmp_path / "index.html"
-    assert main(["--report", str(src), "--anchors-url", ANCHORS, "--out", str(out)]) == 0
-    assert out.read_bytes().startswith(b"<!DOCTYPE html>")
+    assert main(["--report", str(src), "--anchors-url", ANCHORS]) == 0
+    output = capsys.readouterr()
+    report_id = output.out.split("id=", 1)[1].split(" ", 1)[0]
+    assert (paths.report_dir(report_id) / "index.html").read_bytes().startswith(b"<!DOCTYPE html>")
     bad = tmp_path / "bad.json"
     report = fixed_report()
     report["extra"] = "x"
     bad.write_text(json.dumps(report))
-    assert main(["--report", str(bad), "--anchors-url", ANCHORS, "--out", str(out)]) == 1
+    assert main(["--report", str(bad), "--anchors-url", ANCHORS]) == 1
 
 
 # --- MYB-5.8: identity, backfill honesty, pretty buckets --------------------------------
