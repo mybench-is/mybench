@@ -23,6 +23,20 @@ from mybench.scorer.topology import (
     scan_orchestration_topology,
     store_local_topology,
 )
+from mybench.scorer.wave1 import (
+    MCP_TAXONOMY_VERSION,
+    SCORER_VERSION as WAVE1_SCORER_VERSION,
+    Wave1ScorerError,
+    build_harness_currency_snapshot,
+    build_mcp_recurrence_snapshot,
+    score_autonomy_band,
+    score_mcp_breadth,
+    score_orchestrators,
+    score_tool_mix,
+    score_verification_ratio,
+    score_wave1_claims,
+    score_wellformed,
+)
 
 COMPONENT = "scorer"
 RESPONSIBILITY = (
@@ -48,4 +62,16 @@ __all__ = [
     "TopologyScanError",
     "scan_orchestration_topology",
     "store_local_topology",
+    "MCP_TAXONOMY_VERSION",
+    "WAVE1_SCORER_VERSION",
+    "Wave1ScorerError",
+    "build_harness_currency_snapshot",
+    "build_mcp_recurrence_snapshot",
+    "score_autonomy_band",
+    "score_mcp_breadth",
+    "score_orchestrators",
+    "score_tool_mix",
+    "score_verification_ratio",
+    "score_wave1_claims",
+    "score_wellformed",
 ]

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/mcp_recurrence_snapshot.schema.json",
+  "title": "Mybench MCP Category Recurrence Snapshot",
+  "description": "A content-free aggregate over an already-normalized corpus. It admits fixed category labels and per-category distinct-session counts only: no tool/server names, transcript content, session identifiers, or ordered event stream.",
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "minLength": 64,
+      "maxLength": 64
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "taxonomy_version",
+    "source_corpus_commitment",
+    "category_session_counts",
+    "digest"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "mcp-category-recurrence-snapshot"},
+    "taxonomy_version": {"const": "1.0.0"},
+    "source_corpus_commitment": {"$ref": "#/$defs/hex64"},
+    "category_session_counts": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "sessions"],
+        "properties": {
+          "category": {
+            "enum": [
+              "browser",
+              "communications",
+              "database",
+              "deploy",
+              "observability",
+              "other",
+              "planning",
+              "vcs"
+            ]
+          },
+          "sessions": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "digest": {"$ref": "#/$defs/hex64"}
+  }
+}

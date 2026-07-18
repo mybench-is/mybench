@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.3.0",
+  "registry_version": "0.4.0",
   "format_status": "provisional-json-pending-OQ-31",
   "entries": [
     {
@@ -347,13 +347,14 @@
     },
     {
       "id": "transcript.orchestrators",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "class": "measured",
       "status": "active",
       "wave": 1,
       "title": "Orchestrator inventory",
       "inputs": [
-        "normalized-session-events"
+        "normalized-session-events",
+        "harness-version-currency-snapshot"
       ],
       "output_schema": {
         "type": "object",
@@ -408,13 +409,14 @@
     },
     {
       "id": "transcript.mcp_breadth",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "class": "measured",
       "status": "active",
       "wave": 1,
       "title": "MCP category breadth",
       "inputs": [
-        "normalized-session-events"
+        "normalized-session-events",
+        "mcp-category-recurrence-snapshot"
       ],
       "output_schema": {
         "type": "object",
