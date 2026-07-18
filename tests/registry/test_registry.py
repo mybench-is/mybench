@@ -51,10 +51,10 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.5.0"
+    assert registry.version == "0.6.0"
     assert len(registry.ids()) == 43
-    # OQ #31 is owner-gated: the file must say its format is provisional.
-    assert packaged_doc()["format_status"] == "provisional-json-pending-OQ-31"
+    # ADR-0016 resolved OQ #31 by ratifying JSON at the owner sitting.
+    assert packaged_doc()["format_status"] == "ratified-json"
 
 
 def test_digest_is_deterministic_and_formatting_independent(registry, tmp_path):
@@ -154,6 +154,13 @@ def test_file_structure_topology_descriptor_pins_publication_controls(registry):
     assert entry["inference_risk"] == "R1"
     assert entry["presets"] == ["full"]
     assert entry["min_support"] == {"roots": 1}
+    assert entry["report_location"] == "fingerprint.orchestration_topology"
+    assert entry["report_controls"] == {
+        "reference_frame": False,
+        "conditioning": False,
+        "tier_qualifier": False,
+    }
+    assert set(entry["caveat_copy"]) == {"scan-time-state-not-evidence-period"}
     assert "fingerprint.orchestration_topology" in entry["notes"]
     properties = entry["output_schema"]["properties"]
     assert properties["trust_tier"] == {"const": "ANCHORED"}
@@ -334,6 +341,87 @@ def test_internal_feature_only_is_structurally_non_renderable(registry):
         named = set(manifest["included"]) | {x["id"] for x in manifest["excluded"]}
         assert "transcript.domain_vocabulary" not in named
         assert manifest["internal_feature_only_count"] == 1
+
+
+def test_report_field_gate_is_location_and_metadata_closed(registry):
+    entry = registry.entry("transcript.agent_hours")
+    field = {
+        "registry_id": entry["id"],
+        "registry_version": entry["version"],
+        "derivation_class": entry["class"],
+        "execution_env": "local-unattested",
+        "trust_tier": "ANCHORED",
+        "disclosure": "PUBLISHABLE",
+        "inference_risk": entry["inference_risk"],
+        "caveats": [
+            "capture-dependent-and-inflatable",
+            "observed-at-coverage-limits-backfill",
+        ],
+        "value": [
+            {"dimensions": ["active_time_band"], "value": "40h-to-under-160h"},
+            {"dimensions": ["active_time_coverage_band"], "value": "90-to-100-percent"},
+            {
+                "dimensions": ["active_time_definition"],
+                "value": "sum-observed-gaps-no-greater-than-30m",
+            },
+            {"dimensions": ["backfill_annotation"], "value": "14-days-plus"},
+            {"dimensions": ["close_normalizer_version"], "value": "1.0.0"},
+            {
+                "dimensions": ["observed_boundary_coverage_band"],
+                "value": "90-to-100-percent",
+            },
+            {
+                "dimensions": ["wall_clock_definition"],
+                "value": "sum-observed-open-to-observed-or-scan-inferred-close",
+            },
+            {"dimensions": ["wall_clock_time_band"], "value": "40h-to-under-160h"},
+        ],
+    }
+    assert registry.report_location(entry["id"]) == "catalog_metrics"
+    assert registry.check_report_field(field, "catalog_metrics")["id"] == entry["id"]
+    with pytest.raises(RegistryError, match="location"):
+        registry.check_report_field(field, "fingerprint.workflow_summary")
+    with pytest.raises(RegistryError, match="caveats"):
+        registry.check_report_field({**field, "caveats": []}, "catalog_metrics")
+    bad_value = copy.deepcopy(field)
+    bad_value["value"][0]["value"] = "exact-private-hours"
+    with pytest.raises(RegistryError, match="report value does not conform"):
+        registry.check_report_field(bad_value, "catalog_metrics")
+    unsorted_value = copy.deepcopy(field)
+    unsorted_value["value"].reverse()
+    with pytest.raises(RegistryError, match="sorted by dimensions"):
+        registry.check_report_field(unsorted_value, "catalog_metrics")
+    with pytest.raises(RegistryError, match="no report-v2 location"):
+        registry.check_report_field(
+            {
+                **field,
+                "registry_id": "transcript.tool_mix",
+                "registry_version": "0.1.0",
+                "inference_risk": "R0",
+                "caveats": [],
+            },
+            "catalog_metrics",
+        )
+
+
+def test_report_metadata_requires_location_controls_and_exact_caveat_copy():
+    doc = packaged_doc()
+    entry = next(e for e in doc["entries"] if e["id"] == "transcript.agent_hours")
+    del entry["report_controls"]
+    with pytest.raises(RegistryError, match="require report_controls and caveat_copy"):
+        Registry(doc)
+
+    doc = packaged_doc()
+    entry = next(e for e in doc["entries"] if e["id"] == "transcript.agent_hours")
+    entry["caveat_copy"].pop("capture-dependent-and-inflatable")
+    with pytest.raises(RegistryError, match="caveat_copy keys"):
+        Registry(doc)
+
+    doc = packaged_doc()
+    entry = next(e for e in doc["entries"] if e["id"] == "transcript.agent_hours")
+    entry["output_schema"]["properties"]["trust_tier"] = {"type": "string"}
+    with pytest.raises(RegistryError, match="controlled trust-tier const"):
+        Registry(doc)
 
 
 def test_renderability_gate_fires_when_flag_flips():
@@ -568,8 +656,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.5.0"',
-            b'"registry_version": "0.5.0", "registry_version": "0.5.0"',
+            b'"registry_version": "0.6.0"',
+            b'"registry_version": "0.6.0", "registry_version": "0.6.0"',
             1,
         )
     )

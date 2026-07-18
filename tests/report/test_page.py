@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from mybench.registry import Registry, _packaged_registry_bytes
 from mybench.report.page import PageError, render_page
 from mybench.scorer.score import score
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
@@ -16,6 +17,110 @@ ANCHORS = "https://github.com/synthetic/mybench-anchors"
 
 def fixed_report():
     return json.loads(fixed_report_bytes())
+
+
+def v2_report(registry=None):
+    registry = registry or Registry.load()
+    field = {
+        "registry_id": "transcript.agent_hours",
+        "registry_version": "1.0.0",
+        "claim_digest": "a" * 64,
+        "derivation_class": "measured",
+        "execution_env": "local-unattested",
+        "trust_tier": "ANCHORED",
+        "anchor_state": "covered",
+        "disclosure": "PUBLISHABLE",
+        "inference_risk": "R1",
+        "coverage_basis_points": 9000,
+        "confidence": "HIGH",
+        "caveats": [
+            "capture-dependent-and-inflatable",
+            "observed-at-coverage-limits-backfill",
+        ],
+        "value": [
+            {"dimensions": ["active_time_band"], "value": "40h-to-under-160h"},
+            {"dimensions": ["active_time_coverage_band"], "value": "90-to-100-percent"},
+            {
+                "dimensions": ["active_time_definition"],
+                "value": "sum-observed-gaps-no-greater-than-30m",
+            },
+            {"dimensions": ["backfill_annotation"], "value": "14-days-plus"},
+            {"dimensions": ["close_normalizer_version"], "value": "1.0.0"},
+            {
+                "dimensions": ["observed_boundary_coverage_band"],
+                "value": "90-to-100-percent",
+            },
+            {
+                "dimensions": ["wall_clock_definition"],
+                "value": "sum-observed-open-to-observed-or-scan-inferred-close",
+            },
+            {"dimensions": ["wall_clock_time_band"], "value": "40h-to-under-160h"},
+        ],
+    }
+    empty = {"status": "not-supported", "fields": []}
+    return {
+        "schema_version": "2",
+        "report_version": "v0.2.0",
+        "generated_at": "2026-07-18T00:00:00Z",
+        "scorer_version": "0.4.0",
+        "input_schema_versions": {
+            "ledger": ["2"],
+            "anchor": ["2"],
+            "normalized_events": ["1"],
+        },
+        "registry": {"version": registry.version, "digest": registry.digest()},
+        "evidence_period": {"start": "2026-07-01", "end": "2026-07-18"},
+        "metrics": [{"name": "anchored_span_days", "value": 17, "trust_tier": "PROVEN"}],
+        "catalog_metrics": [field],
+        "fingerprint": {
+            "workflow_summary": dict(empty),
+            "workflow_map": dict(empty),
+            "model_role_profile": dict(empty),
+            "context_management_profile": dict(empty),
+            "orchestration_topology": dict(empty),
+            "token_cost_profile": dict(empty),
+            "evidence_coverage": dict(empty),
+        },
+    }
+
+
+def variant_registry(*, characterization=False, attested=False):
+    doc = json.loads(_packaged_registry_bytes())
+    entry = next(e for e in doc["entries"] if e["id"] == "transcript.agent_hours")
+    if characterization:
+        entry["class"] = "characterization"
+    if attested:
+        entry["output_schema"]["properties"]["trust_tier"] = {"const": "TEE-VERIFIED"}
+    return Registry(doc)
+
+
+def topology_field():
+    return {
+        "registry_id": "fingerprint.topology.file_structure",
+        "registry_version": "1.0.0",
+        "claim_digest": "b" * 64,
+        "derivation_class": "measured",
+        "execution_env": "local-unattested",
+        "trust_tier": "ANCHORED",
+        "anchor_state": "covered",
+        "disclosure": "PUBLISHABLE",
+        "inference_risk": "R1",
+        "coverage_basis_points": 10000,
+        "confidence": "HIGH",
+        "caveats": ["scan-time-state-not-evidence-period"],
+        "value": [
+            {"dimensions": ["file_structure_coverage_basis_points"], "value": 10000},
+            {"dimensions": ["k_suppression_floor"], "value": 5},
+            {"dimensions": ["kind"], "value": "orchestration-topology-aggregate"},
+            {"dimensions": ["observed_week"], "value": "2026-W29"},
+            {"dimensions": ["schema_version"], "value": "1"},
+            {"dimensions": ["state_basis"], "value": "scan-time-state-not-evidence-period"},
+            {
+                "dimensions": ["transcript_delegation_coverage_basis_points"],
+                "value": "UNKNOWN",
+            },
+        ],
+    }
 
 
 # --- Determinism (AC #1) ----------------------------------------------------------
@@ -38,14 +143,14 @@ def test_every_metric_renders_with_its_tier_badge():
     page = render_page(report, anchors_url=ANCHORS).decode()
     for metric in report["metrics"]:
         assert metric["name"].replace("_", " ") in page
-    badge_count = page.count('class="badge"')
+    badge_count = page.count('class="badge tier--')
     legend_badges = 5  # five-rung ladder (handoff #5)
     assert badge_count == len(report["metrics"]) + legend_badges
     for rung in ("IMPORTED", "ANCHORED", "PROVEN", "TEE-VERIFIED", "JUDGED"):
         assert rung in page
     assert "uvx mybench-verify" in page and "python -m mybench.verify" in page
     assert ANCHORS in page
-    assert "not in scope in v0" in page  # unused rungs marked, not offered
+    assert "unreachable until" in page and "reserved until" in page
 
 
 # --- Whitelist build (AC #3, the strict option) ---------------------------------------
@@ -63,6 +168,129 @@ def test_injected_metric_field_fails_the_build():
     report["metrics"][0]["sample"] = "MYBENCH-CANARY-page-1badc0de"
     with pytest.raises(PageError, match="non-conforming"):
         render_page(report, anchors_url=ANCHORS)
+
+
+def test_v2_claim_fields_validate_then_render_from_the_registry():
+    report = v2_report()
+    page = render_page(report, anchors_url=ANCHORS).decode()
+    assert "Workflow fingerprint" in page
+    assert "Additional catalog metrics" in page
+    assert "Lifecycle duration and agent-hours profile" in page
+    assert "Lifecycle volume only; it does not measure utility" in page
+    assert "computed locally — unattested" in page
+    assert ">MEASURED<" in page
+    assert 'class="badge tier--anchored">ANCHORED</span>' in page
+    assert "Capture-derived duration bands depend on observed lifecycle markers" in page
+
+
+def test_v2_claim_renders_in_its_closed_fingerprint_section():
+    report = v2_report()
+    report["fingerprint"]["orchestration_topology"] = {
+        "status": "available",
+        "fields": [topology_field()],
+    }
+    page = render_page(report, anchors_url=ANCHORS).decode()
+    assert "Orchestration topology" in page
+    assert "File-structure orchestration topology" in page
+    assert "This structure snapshot describes scan-time state" in page
+
+
+def test_v2_unknown_envelope_and_field_metadata_fail_the_build():
+    report = v2_report()
+    report["private_note"] = "synthetic forbidden widening"
+    with pytest.raises(PageError, match="non-conforming"):
+        render_page(report, anchors_url=ANCHORS)
+
+    report = v2_report()
+    report["catalog_metrics"][0]["display_copy"] = "synthetic forbidden widening"
+    with pytest.raises(PageError, match="non-conforming"):
+        render_page(report, anchors_url=ANCHORS)
+
+
+def test_v2_registry_identity_location_caveats_and_reserved_blocks_fail_closed():
+    report = v2_report()
+    report["registry"]["digest"] = "0" * 64
+    with pytest.raises(PageError, match="unpinned registry"):
+        render_page(report, anchors_url=ANCHORS)
+
+    report = v2_report()
+    field = report["catalog_metrics"].pop()
+    report["fingerprint"]["workflow_summary"] = {"status": "available", "fields": [field]}
+    with pytest.raises(PageError, match="report location"):
+        render_page(report, anchors_url=ANCHORS)
+
+    report = v2_report()
+    report["catalog_metrics"][0]["caveats"] = ["capture-dependent-and-inflatable"]
+    with pytest.raises(PageError, match="caveats"):
+        render_page(report, anchors_url=ANCHORS)
+
+    report = v2_report()
+    report["catalog_metrics"][0]["reference_frame"] = {
+        "reference_corpus_id": "synthetic.cohort",
+        "reference_version": "0.1.0",
+        "as_of_date": "2026-07-18",
+        "percentile_band": "p50-p74",
+    }
+    with pytest.raises(PageError, match="reference frames are not active"):
+        render_page(report, anchors_url=ANCHORS)
+
+    report = v2_report()
+    report["catalog_metrics"][0]["tier_qualifier"] = "attested"
+    with pytest.raises(PageError, match="non-conforming"):
+        render_page(report, anchors_url=ANCHORS)
+
+
+def test_characterization_pill_confidence_and_weak_geometry_are_visible():
+    registry = variant_registry(characterization=True)
+    report = v2_report(registry)
+    field = report["catalog_metrics"][0]
+    field["derivation_class"] = "characterization"
+    field["confidence"] = "MEDIUM"
+    page = render_page(report, anchors_url=ANCHORS, registry=registry).decode()
+    assert ">CHARACTERIZATION<" in page
+    assert "confidence MEDIUM" in page
+    assert 'class="badge tier--characterization">ANCHORED</span>' in page
+    assert 'class="claim tier--characterization"' in page
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_local_and_attested_presentations_are_distinct_in_both_themes(theme):
+    local_page = render_page(v2_report(), anchors_url=ANCHORS, theme=theme).decode()
+
+    registry = variant_registry(attested=True)
+    attested = v2_report(registry)
+    field = attested["catalog_metrics"][0]
+    field.update(execution_env="tee-attested", trust_tier="TEE-VERIFIED")
+    attested_page = render_page(
+        attested, anchors_url=ANCHORS, registry=registry, theme=theme
+    ).decode()
+
+    assert f'data-theme="{theme}"' in local_page and f'data-theme="{theme}"' in attested_page
+    assert "computed locally — unattested" in local_page
+    assert 'tier--anchored">ANCHORED' in local_page
+    assert "computed in an attested execution environment" in attested_page
+    assert 'tier--tee-verified">TEE-VERIFIED' in attested_page
+    assert "provider" not in local_page.split("Trust tiers", 1)[0].lower()
+
+
+def test_attested_environment_cannot_retain_a_local_tier_label():
+    report = v2_report()
+    report["catalog_metrics"][0]["execution_env"] = "tee-attested"
+    with pytest.raises(PageError, match="attested tier label"):
+        render_page(report, anchors_url=ANCHORS)
+
+
+def test_v2_coverage_keeps_basis_point_precision_without_rounding_up():
+    report = v2_report()
+    report["catalog_metrics"][0]["coverage_basis_points"] = 9950
+    page = render_page(report, anchors_url=ANCHORS).decode()
+    assert "coverage 99.5%" in page
+    assert "coverage 100%" not in page
+
+
+def test_v2_public_render_path_is_absent_until_the_preview_gate():
+    with pytest.raises(PageError, match="public fingerprint rendering is unavailable"):
+        render_page(v2_report(), anchors_url=ANCHORS, public=True)
 
 
 def test_free_text_fields_are_escaped():
@@ -163,6 +391,14 @@ def test_cli_end_to_end(tmp_path, capsys):
     bad.write_text(json.dumps(report))
     assert main(["--report", str(bad), "--anchors-url", ANCHORS, "--out", str(out)]) == 1
 
+    # The arbitrary-output compatibility path is public-capable, so the
+    # private v2 fingerprint surface must stay structurally unavailable here.
+    v2_src = tmp_path / "report-v2.json"
+    v2_src.write_text(json.dumps(v2_report()))
+    v2_out = tmp_path / "fingerprint.html"
+    assert main(["--report", str(v2_src), "--out", str(v2_out)]) == 1
+    assert not v2_out.exists()
+
 
 def test_component_cli_refuses_prebuilt_report_bundle_pairing_and_serve(tmp_path):
     from mybench.report.__main__ import main
@@ -185,8 +421,15 @@ def backfill_dominated_report():
     from mybench.scorer.score import score
     from tests.scorer.test_score import FIXED_ENROLLED, FIXED_ROWS
 
-    return json.loads(score(FIXED_ROWS, [], generated_at="2026-07-09T00:00:00Z",
-                            enrolled=FIXED_ENROLLED, allow_synthetic=True))
+    return json.loads(
+        score(
+            FIXED_ROWS,
+            [],
+            generated_at="2026-07-09T00:00:00Z",
+            enrolled=FIXED_ENROLLED,
+            allow_synthetic=True,
+        )
+    )
 
 
 def test_backfill_dominated_annotations():
@@ -207,7 +450,7 @@ def test_identity_canonical_and_og_tags():
     assert 'name="twitter:card" content="summary_large_image"' in page
     assert '<svg class="stamp"' in page and "<text" not in page  # glyph, no font render
     without = render_page(fixed_report(), anchors_url=ANCHORS).decode()
-    assert "canonical" not in without and "@ckeenan" not in without
+    assert 'rel="canonical"' not in without and "@ckeenan" not in without
 
 
 def test_buckets_render_prettified_but_data_stays_sortable():
@@ -239,8 +482,7 @@ def test_missing_anchor_renders_honest_freshness_state():
 def test_brand_tokens_and_no_reserved_hues():
     page = render_page(fixed_report(), anchors_url=ANCHORS).decode()
     # Verdigris tokens present; evidence face declared; paper document surface.
-    for token in ("--ink:#171A19", "--paper:#F2EFE7", "--accent-display:#4FA095",
-                  "IBM Plex Mono"):
+    for token in ("--ink:#171A19", "--paper:#F2EFE7", "--accent-display:#4FA095", "IBM Plex Mono"):
         assert token in page
     # Reserved registers/hues absent (BRAND §3.4/§5.3/§9): foil hues, and no
     # filled die (the stamp rect must remain stroke-only, fill="none" root).

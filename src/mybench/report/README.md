@@ -8,6 +8,23 @@ set and has no upload path.
 `cli.py` owns canonical report bytes, the report content address, the
 closed evidence-manifest whitelist, exact-byte Ed25519 signing, and write-once
 storage. `page.py` remains the one zero-JavaScript whitelist renderer.
+It accepts schema-v1 activity reports and registry-pinned schema-v2 Workflow
+Fingerprint reports through the same validate-then-render path. V2 fields
+must cite an active registry entry with an explicit report location and exact
+version, disclosure, inference-risk, caveat, and derivation metadata; unknown
+wrapper fields and inactive reserved blocks fail the build.
+For multi-property claims, each report-v2 value cell names exactly one registry
+output property and cells remain dimension-sorted; the renderer reconstructs the output object, adds the
+wrapper's tier/caveats, and validates it against the entry's closed output
+schema before emitting HTML. Registry-owned controls activate optional report
+metadata and registry-owned caveat copy turns wrapper codes into display text.
+Evidence tiers use labelled border geometry,
+derivation class is a text pill, and rule-based
+characterizations show confidence without being called JUDGED. The renderer
+refuses a public v2 mode: publication preview remains a separate gated task.
+The legacy `--report/--out` compatibility command is treated as public-capable
+and therefore refuses v2; v2 HTML is emitted only inside the private,
+content-addressed local bundle.
 The stateful boundary captures one immutable input snapshot for scoring and
 manifest derivation and opens the completed page as a file URL only as a best
 effort. It never starts a network listener. The v0 page inlines its CSS and

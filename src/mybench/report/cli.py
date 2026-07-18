@@ -162,9 +162,7 @@ def canonical_report_bytes(report: dict) -> bytes:
     if not isinstance(report, dict):
         raise BundleError("report must be a JSON object")
     schema_version = report.get("schema_version")
-    schema_name = {"1": "report.schema.json", "2": "report-v2.schema.json"}.get(
-        schema_version
-    )
+    schema_name = {"1": "report.schema.json", "2": "report-v2.schema.json"}.get(schema_version)
     if schema_name is None:
         raise BundleError("unsupported report schema version")
     errors = sorted(load_validator(schema_name).iter_errors(report), key=str)
@@ -191,9 +189,7 @@ def content_address(report_bytes: bytes) -> str:
 
 def validate_evidence_manifest(manifest: dict) -> None:
     """Enforce the closed local-only evidence reference schema."""
-    errors = sorted(
-        load_validator("evidence-manifest.schema.json").iter_errors(manifest), key=str
-    )
+    errors = sorted(load_validator("evidence-manifest.schema.json").iter_errors(manifest), key=str)
     if errors:
         raise BundleError(f"evidence manifest failed schema validation: {errors[0].message}")
     for row_range in manifest["ledger"]["row_ranges"]:
@@ -264,9 +260,7 @@ def evidence_manifest(
         "ledger": ledger,
         "anchors": {"event_dates": sorted(set(anchor_dates))},
         "corpora": {
-            "commitments": sorted(
-                {row["session_root"] for row in rows if "session_root" in row}
-            )
+            "commitments": sorted({row["session_root"] for row in rows if "session_root" in row})
         },
         "claims": {
             "digests": sorted(
@@ -375,8 +369,6 @@ def assemble_bundle(
 ) -> Path:
     """Build or byte-verify one immutable bundle below the private data dir."""
     report_bytes = canonical_report_bytes(report)
-    if report.get("schema_version") != "1":
-        raise BundleError("the v0 bundle renderer currently accepts report schema 1")
     manifest_bytes = canonical_manifest_bytes(manifest)
     page_bytes = render_page(
         report,

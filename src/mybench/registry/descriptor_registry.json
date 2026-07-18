@@ -1,6 +1,6 @@
 {
-  "registry_version": "0.5.0",
-  "format_status": "provisional-json-pending-OQ-31",
+  "registry_version": "0.6.0",
+  "format_status": "ratified-json",
   "entries": [
     {
       "id": "transcript.wellformed",
@@ -1415,6 +1415,16 @@
       ],
       "neutrality_note": "Lifecycle volume only; it does not measure utility, quality, productivity, or raw compute and never publishes a session point or exact total",
       "notes": "Activated only after the MYB-19.7 owner ruling landed as THREAT_MODEL v0.2.1. Report location: fingerprint catalog_metrics. Required caveats are output-schema constants. Codex close normalizer v1 uses only a timestamped structural task_complete record; absent terminal evidence is UNKNOWN.",
+      "report_location": "catalog_metrics",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "capture-dependent-and-inflatable": "Capture-derived duration bands depend on observed lifecycle markers and may be inflated by incomplete close evidence.",
+        "observed-at-coverage-limits-backfill": "Coverage limits and backfilled history qualify these duration bands."
+      },
       "risk_note": "Even coarse duration volume can reveal work-pattern intensity in combination with other disclosures; exact totals, session points, identifiers, and timestamps stay local"
     },
     {
@@ -1893,7 +1903,16 @@
       ],
       "neutrality_note": "Structure inventory only; it does not measure orchestration quality, effectiveness, or subject capability",
       "risk_note": "Even coarse orchestration structure can contribute to rare-topology identification in combination; names, paths, exact counts, exact depths, and below-k fields stay local",
-      "notes": "Report location: fingerprint.orchestration_topology fields. ACTIVE only for the MYB-13.7 file-structure aggregate; the broader fingerprint.orchestration_topology section placeholder and transcript-derived delegation distributions remain reserved. Required caveat and k-suppression floor are output-schema constants."
+      "notes": "Report location: fingerprint.orchestration_topology fields. ACTIVE only for the MYB-13.7 file-structure aggregate; the broader fingerprint.orchestration_topology section placeholder and transcript-derived delegation distributions remain reserved. Required caveat and k-suppression floor are output-schema constants.",
+      "report_location": "fingerprint.orchestration_topology",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "scan-time-state-not-evidence-period": "This structure snapshot describes scan-time state, not the full evidence period."
+      }
     },
     {
       "id": "fingerprint.orchestration_topology",
