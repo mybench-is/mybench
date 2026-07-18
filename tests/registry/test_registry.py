@@ -51,7 +51,7 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.1.0"
+    assert registry.version == "0.1.1"
     assert len(registry.ids()) == 41
     # OQ #31 is owner-gated: the file must say its format is provisional.
     assert packaged_doc()["format_status"] == "provisional-json-pending-OQ-31"
@@ -334,6 +334,7 @@ def test_manifest_is_deterministic_and_carries_rejected_section(registry):
     topics = " ".join(r["topic"] for r in a["rejected"])
     assert "lexical statistics" in topics  # AC #2: §7.2 initial entries present
     assert "cognitive-trait" in topics
+    assert "utility, quality, or effectiveness" in topics
 
 
 def test_reserved_entries_are_excluded_with_reason(registry):
@@ -521,8 +522,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.1.0"',
-            b'"registry_version": "0.1.0", "registry_version": "0.1.0"',
+            b'"registry_version": "0.1.1"',
+            b'"registry_version": "0.1.1", "registry_version": "0.1.1"',
             1,
         )
     )

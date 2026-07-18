@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.1.0",
+  "registry_version": "0.1.1",
   "format_status": "provisional-json-pending-OQ-31",
   "entries": [
     {
@@ -1557,7 +1557,11 @@
     },
     {
       "topic": "ordered event sequences and per-session point values",
-      "rationale": "metrics-v0 pinned exclusions: distributions/aggregates only; ordered sequences and per-session values leak activity shape (THREAT_MODEL \u00a73 discipline; workflow-map transition frequencies await the MYB-16.2 ruling)"
+      "rationale": "metrics-v0 pinned exclusions: distributions/aggregates only; ordered sequences and per-session values leak activity shape. THREAT_MODEL v0.2.1 admits only control-bound aggregates and top-coded headline bands; it does not admit ordered streams or exact point/extreme values"
+    },
+    {
+      "topic": "utility, quality, or effectiveness judgments inferred from deterministic activity structure",
+      "rationale": "structural counts, bands, and histograms support descriptive workflow claims only; usefulness, correctness, quality, and effectiveness are JUDGED interpretations and remain unadmitted pending the MYB-7 governance track"
     },
     {
       "topic": "hour-of-day activity grain",
