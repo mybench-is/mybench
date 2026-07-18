@@ -54,9 +54,9 @@ publishes them.
 jobs add an internal `--scheduled` marker so a private schedule receipt records
 the attempt result; it does not widen capture inputs or network access.
 
-`mybench report [--generated-at UTC-RFC3339]
+`mybench report [--format html,json] [--generated-at UTC-RFC3339]
 [--report-version VERSION] [--enrolled-repo NAME=PATH --public NAME ...]
-[--handle HANDLE] [--anchors-url URL] [--open] [--serve [--port PORT]]
+[--handle HANDLE] [--anchors-url URL] [--open]
 [--json]` builds one complete signed bundle. Reports live only under the
 private 0700 data directory at `reports/<report-id>/`; each bundle contains
 mode-0600 `index.html`, `report.json`, `report.sig`, and
@@ -66,11 +66,14 @@ self-contained, so `assets/` is intentionally empty.
 The ID is the domain-separated SHA-256 content address of canonical
 `report.json`. The device key signs those exact bytes with Ed25519. Repeating
 the same report is idempotent; any attempt to change another artifact under
-the same ID fails closed. `--open` is best effort and leaves a usable bundle
-when no browser exists. `--serve` binds IPv4 `127.0.0.1` only; port zero (the
-default) selects an available local port. Neither operation publishes or
-uploads anything. See [Local report bundles](local-report-bundles.md) for the
-verification recipe and privacy boundary.
+the same ID fails closed. The scorer and evidence manifest consume one
+immutable in-memory snapshot of ledger, anchor, and opted-in repository inputs.
+`--format` remains compatible with the original HTML/JSON selector while the
+complete bundle is always assembled. `--open` is best effort, uses a `file:`
+URL, and leaves a usable bundle when no browser exists. Mybench starts no
+report server and listens on no network port. See
+[Local report bundles](local-report-bundles.md) for the verification recipe
+and privacy boundary.
 
 `mybench capture enable --repo PATH [--repo PATH ...]
 [--schedule|--no-schedule] [--archive] [--json]` opts only the named repos into

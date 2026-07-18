@@ -28,6 +28,7 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_USAGE = 2
 EXIT_UNAVAILABLE = 3
+_REPORT_FORMATS = frozenset({"html", "json"})
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="emit one machine-readable JSON object")
@@ -120,6 +121,12 @@ def _parser() -> argparse.ArgumentParser:
 
     report = sub.add_parser("report", help="build a deterministic private local report")
     report.add_argument(
+        "--format",
+        default="html,json",
+        metavar="html,json",
+        help="rendering compatibility selector: html, json (the full bundle is always built)",
+    )
+    report.add_argument(
         "--generated-at",
         help="UTC RFC3339 scorer time (default: current UTC; provide for reproducible builds)",
     )
@@ -144,14 +151,7 @@ def _parser() -> argparse.ArgumentParser:
         default="https://mybench.is/anchors",
         help="public anchors URL rendered into the page",
     )
-    report.add_argument("--open", action="store_true", help="open the private local report")
-    report.add_argument("--serve", action="store_true", help="serve on 127.0.0.1 only")
-    report.add_argument(
-        "--port",
-        type=int,
-        default=0,
-        help="loopback serve port (default: an available ephemeral port; requires --serve)",
-    )
+    report.add_argument("--open", action="store_true", help="open the private file URL")
     _add_json(report)
 
     capture = sub.add_parser("capture", help="manage explicit evidence capture")
@@ -514,70 +514,59 @@ def _generated_at(raw: str | None) -> str:
     return parsed.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _formats(raw: str) -> tuple[str, ...]:
+    values = tuple(part.strip() for part in raw.split(",") if part.strip())
+    if not values or len(set(values)) != len(values) or any(
+        value not in _REPORT_FORMATS for value in values
+    ):
+        raise ValueError("invalid report format")
+    return values
+
+
 def _report(args: argparse.Namespace) -> int:
-    if args.port and not args.serve:
-        return _failed("report", as_json=args.json)
-    server = None
     try:
         from mybench.report.cli import (
-            BUNDLE_FILES,
             assemble_bundle,
-            create_server,
-            local_evidence_manifest,
+            capture_report_inputs,
+            derive_report_artifacts,
             open_report,
-            report_url,
         )
-        from mybench.scorer.__main__ import build_report
 
-        report_bytes = build_report(
-            generated_at=_generated_at(args.generated_at),
-            report_version=args.report_version,
+        formats = _formats(args.format)
+        snapshot = capture_report_inputs(
             enrolled_specs=args.enrolled_repo,
             public_names=args.public,
         )
-        report = json.loads(report_bytes)
+        report, manifest = derive_report_artifacts(
+            snapshot,
+            generated_at=_generated_at(args.generated_at),
+            report_version=args.report_version,
+        )
         directory = assemble_bundle(
             report,
-            local_evidence_manifest(report),
+            manifest,
             anchors_url=args.anchors_url,
             handle=args.handle,
         )
-        url = None
-        if args.serve:
-            server = create_server(directory, port=args.port)
-            url = report_url(server)
-        opened = open_report(url or directory / "index.html") if args.open else None
+        opened = open_report(directory / "index.html") if args.open else None
     except Exception:  # noqa: BLE001 - scorer inputs and local paths stay out of CLI errors
-        if server is not None:
-            server.server_close()
         return _failed("report", as_json=args.json)
     payload = {
-        "artifacts": [*BUNDLE_FILES, "assets/"],
         "command": "report",
+        "formats": list(formats),
         "report_id": directory.name,
         "status": "ok",
     }
     if args.open:
         payload["opened"] = opened
-    if url is not None:
-        payload["served_at"] = url
     _emit(
         payload,
         as_json=args.json,
         human=(
             f"report ready: id={directory.name} (private, local only)"
-            + (f"; serving {url}" if url else "")
             + ("; browser unavailable" if args.open and not opened else "")
         ),
     )
-    if server is not None:
-        sys.stdout.flush()
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            server.server_close()
     return EXIT_OK
 
 

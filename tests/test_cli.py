@@ -86,6 +86,8 @@ def test_init_scan_report_synthetic_e2e_is_deterministic_and_leak_free(
 
     report_args = [
         "report",
+        "--format",
+        "html,json",
         "--generated-at",
         "2026-01-08T12:34:56Z",
         "--json",
@@ -100,14 +102,8 @@ def test_init_scan_report_synthetic_e2e_is_deterministic_and_leak_free(
     )
     first_bytes = tuple(path.read_bytes() for path in artifacts)
     assert first_summary == {
-        "artifacts": [
-            "index.html",
-            "report.json",
-            "report.sig",
-            "evidence-manifest.json",
-            "assets/",
-        ],
         "command": "report",
+        "formats": ["html", "json"],
         "report_id": report_dir.name,
         "status": "ok",
     }
@@ -144,6 +140,12 @@ def test_init_scan_report_synthetic_e2e_is_deterministic_and_leak_free(
     planted.write_text(fx.content_canaries[0])
     with pytest.raises(CanaryLeakError):
         assert_no_canaries([planted], canaries)
+
+
+def test_report_has_no_network_listener_flag():
+    with pytest.raises(SystemExit) as removed_serve:
+        cli.main(["report", "--serve"])
+    assert removed_serve.value.code == 2
 
 
 def test_historical_scan_dry_run_import_and_rescan_are_safe_and_leak_free(

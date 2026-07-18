@@ -1,6 +1,11 @@
-"""CLI: assemble a signed, immutable private local report bundle.
+"""CLI: render legacy HTML or assemble a signed private local report bundle.
 
-    python -m mybench.report --report report.json --open
+Legacy renderer compatibility::
+
+    python -m mybench.report --report report.json --out index.html
+
+Bundle assembly captures the local scorer inputs itself so a supplied report
+can never be paired with unrelated current evidence state.
 """
 
 from __future__ import annotations
@@ -8,41 +13,90 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mybench.report.cli import (
-    BundleError,
     assemble_bundle,
-    create_server,
-    local_evidence_manifest,
+    capture_report_inputs,
+    derive_report_artifacts,
     open_report,
-    report_url,
 )
+from mybench.report.page import PageError, render_page
+
+
+def _generated_at(raw: str | None) -> str:
+    if raw is None:
+        return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() != datetime.now(UTC).utcoffset():
+        raise ValueError("generated-at must be UTC")
+    return parsed.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _legacy_render(args: argparse.Namespace) -> int:
+    try:
+        page = render_page(
+            json.loads(Path(args.report).read_bytes()),
+            anchors_url=args.anchors_url,
+            handle=args.handle,
+        )
+        Path(args.out).write_bytes(page)
+    except (OSError, ValueError, PageError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"wrote {args.out} ({len(page)} bytes)")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mybench-report")
-    parser.add_argument("--report", required=True, help="path to the scorer's report JSON")
-    parser.add_argument("--anchors-url", default="https://mybench.is/anchors",
-                        help="anchors location (default: the mybench.is redirect)")
+    parser.add_argument("--report", help="legacy renderer input report JSON (requires --out)")
+    parser.add_argument("--out", help="legacy renderer output HTML (requires --report)")
+    parser.add_argument(
+        "--anchors-url",
+        default="https://mybench.is/anchors",
+        help="anchors location rendered into the page",
+    )
     parser.add_argument("--handle", help="owner handle for page identity + canonical URL")
     parser.add_argument(
-        "--evidence-manifest",
-        help="closed evidence-manifest JSON (default: derive references from local scorer inputs)",
+        "--generated-at",
+        help="UTC RFC3339 scorer time (default: current UTC; provide for reproducible builds)",
     )
-    parser.add_argument("--open", action="store_true", help="open the private local report")
-    parser.add_argument("--serve", action="store_true", help="serve on 127.0.0.1 only")
-    parser.add_argument("--port", type=int, default=0, help="loopback port (requires --serve)")
+    parser.add_argument("--report-version", default="v0")
+    parser.add_argument(
+        "--enrolled-repo",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="public named repo scorer input (repeatable)",
+    )
+    parser.add_argument(
+        "--public",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="assert that an enrolled named repo is public (repeatable)",
+    )
+    parser.add_argument("--open", action="store_true", help="open the private file URL")
     args = parser.parse_args(argv)
-    if args.port and not args.serve:
-        parser.error("--port requires --serve")
-    server = None
+
+    if bool(args.report) != bool(args.out):
+        parser.error("--report and --out must be used together")
+    if args.report:
+        if args.open or args.enrolled_repo or args.public or args.generated_at:
+            parser.error("bundle assembly options cannot be combined with --report/--out")
+        return _legacy_render(args)
+
     try:
-        report = json.loads(Path(args.report).read_bytes())
-        manifest = (
-            json.loads(Path(args.evidence_manifest).read_bytes())
-            if args.evidence_manifest
-            else local_evidence_manifest(report)
+        snapshot = capture_report_inputs(
+            enrolled_specs=args.enrolled_repo,
+            public_names=args.public,
+        )
+        report, manifest = derive_report_artifacts(
+            snapshot,
+            generated_at=_generated_at(args.generated_at),
+            report_version=args.report_version,
         )
         directory = assemble_bundle(
             report,
@@ -50,29 +104,14 @@ def main(argv: list[str] | None = None) -> int:
             anchors_url=args.anchors_url,
             handle=args.handle,
         )
-        url = None
-        if args.serve:
-            server = create_server(directory, port=args.port)
-            url = report_url(server)
-        opened = open_report(url or directory / "index.html") if args.open else None
-    except (BundleError, OSError, ValueError):
-        if server is not None:
-            server.server_close()
+        opened = open_report(directory / "index.html") if args.open else None
+    except Exception:  # noqa: BLE001 - local scorer paths and state stay out of CLI errors
         print("error: local report bundle failed", file=sys.stderr)
         return 1
     print(
         f"report ready: id={directory.name} (private, local only)"
-        + (f"; serving {url}" if url else "")
         + ("; browser unavailable" if args.open and not opened else "")
     )
-    if server is not None:
-        sys.stdout.flush()
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            server.server_close()
     return 0
 
 

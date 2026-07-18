@@ -21,13 +21,25 @@ anything.
 Build and view a report with:
 
 ```sh
-mybench report --generated-at 2026-07-18T00:00:00Z --open
-mybench report --generated-at 2026-07-18T00:00:00Z --serve
+mybench report --format html,json --generated-at 2026-07-18T00:00:00Z --open
 ```
 
-`--open` succeeds even when no browser is available. `--serve` uses only
-`127.0.0.1`; it never binds a LAN or wildcard interface and performs no
-network upload.
+`--open` hands the private `index.html` file URL to the user's browser and
+succeeds even when no browser is available. Mybench does not start a local
+HTTP server or listen on any network port, preserving THREAT_MODEL ADV-4.
+The compatibility `--format` selector is retained; assembly always writes the
+complete signed bundle.
+
+The component's original static-renderer form also remains available:
+
+```sh
+python -m mybench.report --report report.json --out index.html
+```
+
+That form renders only the explicitly supplied report. Bundle mode does not
+accept a prebuilt report: it captures ledger rows, anchor events, and opted-in
+repository facts once as an immutable in-memory snapshot, then derives both
+the scored report and evidence manifest from that exact snapshot.
 
 ## Identity and signature
 

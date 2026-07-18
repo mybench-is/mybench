@@ -13,15 +13,16 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mybench.report.cli import (
     BUNDLE_FILES,
     BundleError,
+    ReportInputSnapshot,
     assemble_bundle,
     canonical_report_bytes,
+    capture_report_inputs,
     content_address,
+    derive_report_artifacts,
     evidence_manifest,
+    open_report,
     validate_evidence_manifest,
     verify_signature,
-    create_server,
-    open_report,
-    report_url,
 )
 from mybench.scorer.score import score
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
@@ -138,20 +139,60 @@ def test_manifest_references_are_content_free_sorted_and_strict():
     assert manifest["versions"]["schemas"]["evidence_manifest"] == "1"
 
 
-def test_server_is_ipv4_loopback_only_and_open_is_headless_safe(monkeypatch):
+def test_open_uses_a_file_url_and_is_headless_safe(monkeypatch):
     directory = assemble_bundle(_report(), _manifest(_report()), private_key=SYNTHETIC_KEY)
-    server = create_server(directory)
-    try:
-        assert server.server_address[0] == "127.0.0.1"
-        assert report_url(server).startswith("http://127.0.0.1:")
-    finally:
-        server.server_close()
+    opened = []
+
+    def record_url(url, **_kwargs):
+        opened.append(url)
+        return True
+
+    monkeypatch.setattr("webbrowser.open", record_url)
+    assert open_report(directory / "index.html") is True
+    assert opened[0].startswith("file://")
 
     def no_browser(*_args, **_kwargs):
         raise RuntimeError("synthetic headless environment")
 
     monkeypatch.setattr("webbrowser.open", no_browser)
     assert open_report(directory / "index.html") is False
+
+
+def test_scored_report_and_manifest_share_one_immutable_input_snapshot(tmp_path, monkeypatch):
+    from mybench.ledger import GENESIS_PREV, row_hash
+
+    fx = generate_fixtures(tmp_path / "snapshot-fixtures")
+    ledger, _canaries = build_canary_ledger(fx)
+    source_rows = ledger.rows()
+    for index, row in enumerate(source_rows):
+        row.pop("h")
+        row["prev"] = GENESIS_PREV if index == 0 else source_rows[index - 1]["h"]
+        if row.get("source") == "synthetic":
+            row["source"] = "codex"
+        row["h"] = row_hash(row)
+    expected_tip = source_rows[-1]["h"]
+    row_reads = 0
+
+    def rows_once(_ledger):
+        nonlocal row_reads
+        row_reads += 1
+        if row_reads > 1:
+            raise AssertionError("report assembly reread mutable ledger state")
+        return source_rows
+
+    monkeypatch.setattr("mybench.ledger.Ledger.rows", rows_once)
+    monkeypatch.setattr("mybench.scorer.__main__._anchor_events", lambda: [])
+    snapshot = capture_report_inputs()
+    assert isinstance(snapshot, ReportInputSnapshot)
+    source_rows[-1]["h"] = "0" * 64
+
+    report, manifest = derive_report_artifacts(
+        snapshot,
+        generated_at="2026-07-09T00:00:00Z",
+    )
+    assert row_reads == 1
+    assert report["schema_version"] == "1"
+    assert manifest["ledger"]["chain_tip"] == expected_tip
 
 
 def test_entire_canary_bundle_and_logs_are_leak_free_and_firing_test_detects(tmp_path, caplog):

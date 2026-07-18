@@ -7,14 +7,13 @@ mybench data directory and is never a publication or upload surface.
 from __future__ import annotations
 
 import hashlib
-import functools
-import http.server
 import json
 import os
 import stat
 import tempfile
 import webbrowser
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
@@ -34,6 +33,123 @@ BUNDLE_FILES = ("index.html", "report.json", "report.sig", "evidence-manifest.js
 
 class BundleError(RuntimeError):
     """A local report could not be assembled without weakening its invariants."""
+
+
+def _snapshot_bytes(value: object, context: str) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+    except (TypeError, ValueError, UnicodeEncodeError) as exc:
+        raise BundleError(f"{context} is not a valid report input snapshot") from exc
+
+
+@dataclass(frozen=True)
+class ReportInputSnapshot:
+    """Owned immutable bytes for all state consulted by one report build."""
+
+    _rows: bytes
+    _anchors: bytes
+    _enrolled: bytes
+
+    @classmethod
+    def from_values(
+        cls,
+        rows: Sequence[dict],
+        anchors: Sequence[dict],
+        enrolled: dict[str, dict],
+    ) -> ReportInputSnapshot:
+        return cls(
+            _snapshot_bytes(rows, "ledger rows"),
+            _snapshot_bytes(anchors, "anchor events"),
+            _snapshot_bytes(enrolled, "enrolled repositories"),
+        )
+
+    def materialize(self) -> tuple[list[dict], list[dict], dict[str, dict]]:
+        """Return fresh mutable scorer inputs owned by this immutable snapshot."""
+        return json.loads(self._rows), json.loads(self._anchors), json.loads(self._enrolled)
+
+
+def _validate_ledger_snapshot(rows: Sequence[dict]) -> None:
+    """Validate exactly the rows captured, without a second filesystem read."""
+    from mybench.ledger import GENESIS_PREV, PROVENANCE_SCHEMA_VERSION, LedgerError, row_hash
+
+    provenance_boundary_seen = False
+    for index, row in enumerate(rows):
+        if row["i"] != index:
+            raise LedgerError(f"row {index}: index out of sequence")
+        if (row["type"] == "genesis") != (index == 0):
+            raise LedgerError(f"row {index}: genesis must appear exactly once, at row 0")
+        expected_previous = GENESIS_PREV if index == 0 else rows[index - 1]["h"]
+        if row["prev"] != expected_previous:
+            raise LedgerError(f"row {index}: previous hash does not match")
+        if row_hash(row) != row["h"]:
+            raise LedgerError(f"row {index}: row hash does not match")
+        if row["type"] == "schema_version":
+            if provenance_boundary_seen:
+                raise LedgerError("provenance schema boundary appears more than once")
+            provenance_boundary_seen = True
+        elif row["schema_version"] == PROVENANCE_SCHEMA_VERSION and not provenance_boundary_seen:
+            raise LedgerError(f"row {index}: provenance row precedes its schema boundary")
+
+
+def capture_report_inputs(
+    *,
+    enrolled_specs: Sequence[str] = (),
+    public_names: Sequence[str] = (),
+) -> ReportInputSnapshot:
+    """Capture local scorer and manifest inputs once into immutable owned bytes."""
+    from mybench.ledger import Ledger
+    from mybench.scorer.__main__ import _anchor_events, _repo_facts
+    from mybench.scorer.score import ScoreError
+
+    enrolled = {}
+    for spec in enrolled_specs:
+        name, separator, path = spec.partition("=")
+        if not separator or not name or not path or name in enrolled:
+            raise ScoreError("--enrolled-repo entries must be unique NAME=PATH values")
+        enrolled[name] = _repo_facts(Path(path))
+    unknown = sorted(set(public_names) - set(enrolled))
+    if unknown:
+        raise ScoreError(f"--public names no --enrolled-repo entry: {', '.join(unknown)}")
+    for name in public_names:
+        enrolled[name]["public"] = True
+
+    rows = Ledger().rows()
+    _validate_ledger_snapshot(rows)
+    anchors = _anchor_events()
+    return ReportInputSnapshot.from_values(rows, anchors, enrolled)
+
+
+def derive_report_artifacts(
+    snapshot: ReportInputSnapshot,
+    *,
+    generated_at: str,
+    report_version: str = "v0",
+) -> tuple[dict, dict]:
+    """Score and derive a manifest from one materialization of ``snapshot``."""
+    from mybench.scorer.score import score
+
+    if not isinstance(snapshot, ReportInputSnapshot):
+        raise BundleError("report build requires an immutable input snapshot")
+    rows, anchors, enrolled = snapshot.materialize()
+    report_bytes = score(
+        rows,
+        anchors,
+        generated_at=generated_at,
+        report_version=report_version,
+        enrolled=enrolled or None,
+    )
+    report = json.loads(report_bytes)
+    errors = sorted(load_validator("report.schema.json").iter_errors(report), key=str)
+    if errors:
+        raise BundleError(f"report failed schema validation: {errors[0].message}")
+    manifest = evidence_manifest(report, rows, [event["date"] for event in anchors])
+    return report, manifest
 
 
 def canonical_report_bytes(report: dict) -> bytes:
@@ -161,16 +277,6 @@ def evidence_manifest(
     }
     validate_evidence_manifest(manifest)
     return manifest
-
-
-def local_evidence_manifest(report: dict) -> dict:
-    """Gather the same private ledger/anchor reference classes used by scoring."""
-    from mybench.ledger import Ledger
-    from mybench.scorer.__main__ import _anchor_events
-
-    ledger = Ledger()
-    ledger.verify_chain()
-    return evidence_manifest(report, ledger.rows(), [event["date"] for event in _anchor_events()])
 
 
 def signature_bytes(report_bytes: bytes, private_key: Ed25519PrivateKey) -> bytes:
@@ -325,11 +431,6 @@ def assemble_bundle(
     return directory
 
 
-class _QuietHandler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, _format: str, *args: object) -> None:
-        """Do not put private local paths or request details into logs."""
-
-
 def _validated_bundle(directory: Path) -> Path:
     try:
         candidate = directory.resolve(strict=True)
@@ -341,28 +442,12 @@ def _validated_bundle(directory: Path) -> Path:
     return candidate
 
 
-def create_server(directory: Path, *, port: int = 0) -> http.server.ThreadingHTTPServer:
-    """Create an IPv4 server whose bind host is structurally fixed to loopback."""
-    if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
-        raise BundleError("serve port must be an integer from 0 through 65535")
-    bundle = _validated_bundle(directory)
-    handler = functools.partial(_QuietHandler, directory=str(bundle))
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
-    server.daemon_threads = True
-    return server
-
-
-def report_url(server: http.server.ThreadingHTTPServer) -> str:
-    host, port = server.server_address[:2]
-    if host != "127.0.0.1":
-        raise BundleError("report server is not bound to IPv4 loopback")
-    return f"http://127.0.0.1:{port}/index.html"
-
-
-def open_report(location: Path | str) -> bool:
+def open_report(location: Path) -> bool:
     """Best-effort browser opening; headless failures never fail bundle creation."""
     try:
-        target = location.resolve(strict=True).as_uri() if isinstance(location, Path) else location
-        return bool(webbrowser.open(target, new=2))
+        bundle = _validated_bundle(location.parent)
+        if location.resolve(strict=True) != bundle / "index.html":
+            raise BundleError("refusing to open anything except the private report page")
+        return bool(webbrowser.open(location.resolve(strict=True).as_uri(), new=2))
     except Exception:  # noqa: BLE001 - browser discovery is intentionally best-effort
         return False

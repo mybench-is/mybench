@@ -151,19 +151,30 @@ def test_page_from_canary_report_is_leak_free(tmp_path):
 
 def test_cli_end_to_end(tmp_path, capsys):
     from mybench.report.__main__ import main
-    from mybench import paths
 
     src = tmp_path / "report.json"
     src.write_bytes(fixed_report_bytes())
-    assert main(["--report", str(src), "--anchors-url", ANCHORS]) == 0
-    output = capsys.readouterr()
-    report_id = output.out.split("id=", 1)[1].split(" ", 1)[0]
-    assert (paths.report_dir(report_id) / "index.html").read_bytes().startswith(b"<!DOCTYPE html>")
+    out = tmp_path / "index.html"
+    assert main(["--report", str(src), "--anchors-url", ANCHORS, "--out", str(out)]) == 0
+    assert out.read_bytes().startswith(b"<!DOCTYPE html>")
     bad = tmp_path / "bad.json"
     report = fixed_report()
     report["extra"] = "x"
     bad.write_text(json.dumps(report))
-    assert main(["--report", str(bad), "--anchors-url", ANCHORS]) == 1
+    assert main(["--report", str(bad), "--anchors-url", ANCHORS, "--out", str(out)]) == 1
+
+
+def test_component_cli_refuses_prebuilt_report_bundle_pairing_and_serve(tmp_path):
+    from mybench.report.__main__ import main
+
+    src = tmp_path / "report.json"
+    src.write_bytes(fixed_report_bytes())
+    with pytest.raises(SystemExit) as missing_out:
+        main(["--report", str(src)])
+    assert missing_out.value.code == 2
+    with pytest.raises(SystemExit) as removed_serve:
+        main(["--serve"])
+    assert removed_serve.value.code == 2
 
 
 # --- MYB-5.8: identity, backfill honesty, pretty buckets --------------------------------
