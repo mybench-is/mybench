@@ -81,6 +81,45 @@ def test_directory_scan_does_not_treat_private_parent_as_bundle_output(tmp_path)
     assert assert_no_canaries_in_directory(bundle, [CANARY]) == 1
 
 
+def test_content_hit_diagnostic_uses_only_bundle_relative_label(tmp_path):
+    private_parent = tmp_path / "synthetic-private-parent"
+    bundle = private_parent / "synthetic-private-report-root"
+    target = bundle / "nested" / "artifact.json"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b'{"private":"' + CANARY + b'"}')
+
+    with pytest.raises(CanaryLeakError) as raised:
+        assert_no_canaries_in_directory(bundle, [CANARY])
+
+    diagnostic = str(raised.value)
+    assert "nested/artifact.json: raw form" in diagnostic
+    assert str(private_parent) not in diagnostic
+    assert str(bundle) not in diagnostic
+    assert str(target) not in diagnostic
+    assert private_parent.name not in diagnostic
+    assert bundle.name not in diagnostic
+
+
+def test_filename_hit_diagnostic_redacts_name_and_absolute_target(tmp_path):
+    private_parent = tmp_path / "synthetic-private-parent"
+    bundle = private_parent / "synthetic-private-report-root"
+    target = bundle / "nested" / CANARY.decode()
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"content is otherwise clean")
+
+    with pytest.raises(CanaryLeakError) as raised:
+        assert_no_canaries_in_directory(bundle, [CANARY])
+
+    diagnostic = str(raised.value)
+    assert "nested/<redacted-canary-name>: path:raw form" in diagnostic
+    assert str(private_parent) not in diagnostic
+    assert str(bundle) not in diagnostic
+    assert str(target) not in diagnostic
+    assert private_parent.name not in diagnostic
+    assert bundle.name not in diagnostic
+    assert target.name not in diagnostic
+
+
 @pytest.mark.parametrize("class_name", NEW_CANARY_CLASSES)
 def test_generated_fixture_fires_for_each_new_canary_class(tmp_path, class_name):
     fixtures = generate_fixtures(tmp_path / "fixtures", seed=41)

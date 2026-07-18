@@ -66,26 +66,51 @@ def _haystacks(data: bytes) -> list[tuple[str, bytes]]:
     return stacks
 
 
-def scan_file(path: Path, canaries: list[bytes]) -> list[str]:
+def scan_file(
+    path: Path,
+    canaries: list[bytes],
+    *,
+    label: Path | str | None = None,
+) -> list[str]:
+    """Scan one file's bytes, using an optional safe diagnostic label."""
     data = path.read_bytes()
+    diagnostic_label = path if label is None else Path(label)
     hits = []
     for where, stack in _haystacks(data):
         for canary in canaries:
             for encoding, needle in _needles(canary):
                 if needle in stack:
-                    hits.append(f"{path}: {where}{encoding} form of canary {canary[:12]!r}…")
+                    hits.append(
+                        f"{diagnostic_label}: {where}{encoding} form of canary {canary[:12]!r}…"
+                    )
                     break  # one hit per (haystack, canary) is enough detail
     return hits
 
 
-def _scan_path(entry: Path, bundle_path: Path, canaries: list[bytes]) -> list[str]:
+def _redacted_path_label(bundle_path: Path, needle: bytes) -> Path:
+    """Return a useful relative label without echoing a canary-bearing name."""
+    parts = []
+    redacted = False
+    for part in bundle_path.parts:
+        if needle in part.encode(errors="surrogateescape"):
+            parts.append("<redacted-canary-name>")
+            redacted = True
+        else:
+            parts.append(part)
+    if not redacted:
+        return Path("<redacted-canary-path>")
+    return Path(*parts)
+
+
+def _scan_path(bundle_path: Path, canaries: list[bytes]) -> list[str]:
     """Scan a bundle-relative path without treating its private parent as output."""
     path_bytes = str(bundle_path).encode(errors="surrogateescape")
     hits = []
     for canary in canaries:
         for encoding, needle in _needles(canary):
             if needle in path_bytes:
-                hits.append(f"{entry}: path:{encoding} form of canary {canary[:12]!r}…")
+                safe_label = _redacted_path_label(bundle_path, needle)
+                hits.append(f"{safe_label}: path:{encoding} form of canary {canary[:12]!r}…")
                 break
     return hits
 
@@ -98,22 +123,27 @@ def assert_no_canaries(paths: list[Path] | list[str], canaries: list[bytes]) -> 
     """
     if not canaries:
         raise ValueError("no canaries given — refusing a vacuous scan")
-    files: list[Path] = []
+    files: list[tuple[Path, Path]] = []
     path_hits: list[str] = []
     for p in map(Path, paths):
         if p.is_dir():
             for entry in (p, *sorted(p.rglob("*"))):
-                relative = Path(p.name) if entry == p else Path(p.name) / entry.relative_to(p)
-                path_hits.extend(_scan_path(entry, relative, canaries))
+                relative = Path(".") if entry == p else entry.relative_to(p)
+                path_hits.extend(_scan_path(relative, canaries))
                 if entry.is_file():
-                    files.append(entry)
+                    files.append((entry, relative))
         else:
-            path_hits.extend(_scan_path(p, Path(p.name), canaries))
+            relative = Path(p.name)
+            path_hits.extend(_scan_path(relative, canaries))
             if p.is_file():
-                files.append(p)
+                files.append((p, relative))
     if not files:
         raise ValueError(f"no files to scan under {list(map(str, paths))} — vacuous scan")
-    hits = path_hits + [hit for f in sorted(files) for hit in scan_file(f, canaries)]
+    hits = path_hits + [
+        hit
+        for file_path, relative in sorted(files)
+        for hit in scan_file(file_path, canaries, label=relative)
+    ]
     if hits:
         raise CanaryLeakError(
             "canary data found in published artifacts (invariant #1):\n  " + "\n  ".join(hits)
