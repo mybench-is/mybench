@@ -150,6 +150,16 @@ def _session_timing_output() -> Invocation:
     return Invocation(args=(synthetic_codex_normalizer_input().sessions,), kwargs={})
 
 
+def _workflow_phase_output() -> Invocation:
+    # Derive a fixed normalized event sequence from the synthetic Codex corpus.
+    # The production classifier receives no path, content, or ambient authority.
+    from mybench.normalizer.codex import normalize_codex
+    from tests.normalizer.synthetic import synthetic_codex_normalizer_input
+
+    corpus = json.loads(normalize_codex(synthetic_codex_normalizer_input().sessions))
+    return Invocation(args=(corpus["events"],), kwargs={})
+
+
 def _agent_hours_profile() -> Invocation:
     from tests.scorer.test_agent_hours import _timing
 
@@ -190,6 +200,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
+    "workflow-phase-output": _workflow_phase_output,
 }
 
 # Parser/publication-preview implementations remain reserved fail-closed roots.
@@ -233,6 +244,16 @@ STAGES = (
         ResultEncoding.BYTES,
         True,
         ("mybench.normalizer.session_timing",),
+    ),
+    Stage(
+        "workflow-phase-output",
+        EntryPoint(
+            "mybench.normalizer.workflow_phase",
+            "workflow_phase_artifact",
+        ),
+        ResultEncoding.BYTES,
+        True,
+        ("mybench.normalizer.workflow_phase",),
     ),
     Stage(
         "git-normalized-corpus",

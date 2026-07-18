@@ -34,6 +34,7 @@
       "properties": {
         "sessions": {"type": "integer", "minimum": 1},
         "commits": {"type": "integer", "minimum": 1},
+        "roots": {"type": "integer", "minimum": 1},
         "window_days": {"type": "integer", "minimum": 1},
         "repos": {"type": "integer", "minimum": 1}
       }
@@ -139,6 +140,7 @@
             "properties": {
               "sessions": {"type": "integer", "minimum": 1},
               "commits": {"type": "integer", "minimum": 1},
+              "roots": {"type": "integer", "minimum": 1},
               "window_days": {"type": "integer", "minimum": 1},
               "repos": {"type": "integer", "minimum": 1},
               "per_conditioning_cell": {

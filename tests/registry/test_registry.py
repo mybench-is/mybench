@@ -51,8 +51,8 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.2.0"
-    assert len(registry.ids()) == 42
+    assert registry.version == "0.3.0"
+    assert len(registry.ids()) == 43
     # OQ #31 is owner-gated: the file must say its format is provisional.
     assert packaged_doc()["format_status"] == "provisional-json-pending-OQ-31"
 
@@ -146,6 +146,57 @@ def test_scorers_read_bands_and_min_support_from_the_registry(registry):
         registry.entry("transcript.nonexistent")
 
 
+def test_file_structure_topology_descriptor_pins_publication_controls(registry):
+    entry = registry.entry("fingerprint.topology.file_structure")
+    assert entry["status"] == "active"
+    assert entry["version"] == "1.0.0"
+    assert entry["class"] == "measured"
+    assert entry["inference_risk"] == "R1"
+    assert entry["presets"] == ["full"]
+    assert entry["min_support"] == {"roots": 1}
+    assert "fingerprint.orchestration_topology" in entry["notes"]
+    properties = entry["output_schema"]["properties"]
+    assert properties["trust_tier"] == {"const": "ANCHORED"}
+    assert properties["k_suppression_floor"] == {"const": 5}
+    assert properties["caveats"] == {"const": ["scan-time-state-not-evidence-period"]}
+    assert "fingerprint.topology.file_structure" in registry.renderable_ids()
+    assert "fingerprint.topology.file_structure" in registry.preset_ids("full")
+    assert "fingerprint.topology.file_structure" not in registry.preset_ids(EMPLOYER_SAFE)
+    assert registry.entry("fingerprint.orchestration_topology")["status"] == "reserved"
+
+    base_output = {
+        "schema_version": "1",
+        "kind": "orchestration-topology-aggregate",
+        "file_structure_coverage_basis_points": 10000,
+        "transcript_delegation_coverage_basis_points": "UNKNOWN",
+        "state_basis": "scan-time-state-not-evidence-period",
+        "observed_week": "2026-W29",
+        "k_suppression_floor": 5,
+        "trust_tier": "ANCHORED",
+        "caveats": ["scan-time-state-not-evidence-period"],
+    }
+
+    def check(output):
+        registry.check_claim(
+            {
+                "registry_id": entry["id"],
+                "registry_version": entry["version"],
+                "derivation_class": entry["class"],
+                "output": output,
+            }
+        )
+
+    check(base_output)
+    with pytest.raises(RegistryError, match="does not conform"):
+        check({**base_output, "skills_count_band": "1-4", "skills_present": True})
+    with pytest.raises(RegistryError, match="does not conform"):
+        check({**base_output, "skills_count_band": "5-19"})
+    with pytest.raises(RegistryError, match="does not conform"):
+        check({**base_output, "observed_week": "2026-07-18"})
+    with pytest.raises(RegistryError, match="does not conform"):
+        check({**base_output, "observed_on": "2026-07-18"})
+
+
 def test_conditioning_declarations_and_per_cell_support_are_registry_inputs():
     doc = packaged_doc()
     add_tool_mix_conditioning(doc)
@@ -199,35 +250,31 @@ def test_active_conditioned_entry_requires_condition_shape_and_cell_support():
             "taxonomy_id": "arrival-pattern",
             "taxonomy_version": "0.1.0",
         }
-        entry["min_support"]["per_conditioning_cell"] = {
-            "cold-start": {"sessions": 5}
-        }
+        entry["min_support"]["per_conditioning_cell"] = {"cold-start": {"sessions": 5}}
 
     with pytest.raises(RegistryError, match="require an enumerated string output.condition"):
         Registry(mutated(omit_condition_output))
 
     def omit_cell_support(doc):
         add_tool_mix_conditioning(doc)
-        entry_by_id(doc, "transcript.tool_mix")["min_support"].pop(
-            "per_conditioning_cell"
-        )
+        entry_by_id(doc, "transcript.tool_mix")["min_support"].pop("per_conditioning_cell")
 
     with pytest.raises(RegistryError, match="require min_support.per_conditioning_cell"):
         Registry(mutated(omit_cell_support))
 
     def support_without_axis(doc):
-        entry_by_id(doc, "transcript.tool_mix")["min_support"][
-            "per_conditioning_cell"
-        ] = {"cold-start": {"sessions": 5}}
+        entry_by_id(doc, "transcript.tool_mix")["min_support"]["per_conditioning_cell"] = {
+            "cold-start": {"sessions": 5}
+        }
 
     with pytest.raises(RegistryError, match="support requires conditioning_axis"):
         Registry(mutated(support_without_axis))
 
     def mismatched_cell_keys(doc):
         add_tool_mix_conditioning(doc)
-        entry_by_id(doc, "transcript.tool_mix")["min_support"][
-            "per_conditioning_cell"
-        ].pop("prepared-spec")
+        entry_by_id(doc, "transcript.tool_mix")["min_support"]["per_conditioning_cell"].pop(
+            "prepared-spec"
+        )
 
     with pytest.raises(RegistryError, match="condition enum and per-cell support keys must match"):
         Registry(mutated(mismatched_cell_keys))
@@ -236,9 +283,9 @@ def test_active_conditioned_entry_requires_condition_shape_and_cell_support():
 def test_conditioning_support_thresholds_are_positive():
     def zero_support(doc):
         add_tool_mix_conditioning(doc)
-        entry_by_id(doc, "transcript.tool_mix")["min_support"][
-            "per_conditioning_cell"
-        ]["cold-start"]["sessions"] = 0
+        entry_by_id(doc, "transcript.tool_mix")["min_support"]["per_conditioning_cell"][
+            "cold-start"
+        ]["sessions"] = 0
 
     with pytest.raises(RegistryError, match="schema violation"):
         Registry(mutated(zero_support))
@@ -260,9 +307,7 @@ def test_registry_severity_vocabulary_cannot_embed_judge_weights():
 def test_conditioning_declaration_identifiers_and_versions_are_exact():
     def newline_taxonomy_version(doc):
         add_tool_mix_conditioning(doc)
-        entry_by_id(doc, "transcript.tool_mix")["conditioning_axis"][
-            "taxonomy_version"
-        ] = "0.1.0\n"
+        entry_by_id(doc, "transcript.tool_mix")["conditioning_axis"]["taxonomy_version"] = "0.1.0\n"
 
     with pytest.raises(RegistryError, match="taxonomy_version is not exact semver"):
         Registry(mutated(newline_taxonomy_version))
@@ -439,6 +484,7 @@ def test_banned_framings_match_word_boundaries_not_substrings():
     Registry(mutated(unique_title))  # loads fine
     # ...while dotted initialisms and hyphenated variants MUST trip it.
     for bad in ("Cognitive I.Q. proxy band", "Reasoning-ability band"):
+
         def trait_title(doc, bad=bad):
             entry_by_id(doc, "transcript.tool_mix")["title"] = bad
 
@@ -522,8 +568,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.2.0"',
-            b'"registry_version": "0.2.0", "registry_version": "0.2.0"',
+            b'"registry_version": "0.3.0"',
+            b'"registry_version": "0.3.0", "registry_version": "0.3.0"',
             1,
         )
     )
@@ -537,6 +583,7 @@ def test_wave_zero_is_exactly_the_fingerprint_namespace():
 
     with pytest.raises(RegistryError, match="fingerprint"):
         Registry(mutated(wave_zero_elsewhere))
+
     def fingerprint_wave_two(doc):
         entry_by_id(doc, "fingerprint.workflow_map")["wave"] = 2
 
