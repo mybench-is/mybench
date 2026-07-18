@@ -49,12 +49,15 @@ The pure `mybench.normalizer.repo` stage emits four record classes:
 - opaque keyed-HMAC worktree ids whose HEAD is subject-authored.
 
 Commit structure contains fixed change-kind counts and fixed file-class counts
-(`manifest`, `lockfile`, `ci`, `other`). Filenames and paths are inspected only
-long enough to assign one of those classes. A subject-authored merge is kept as
-a commit pointer but its tree structure is `unknown`: a merge diff may carry
-third-party branch content. Non-subject commits create no record, parent,
-pointer, commitment, counter, or failure and a non-subject side branch is
-artifact-byte-invisible.
+(`manifest`, `lockfile`, `ci`, `docs`, `spec`, `plan`, `handoff`, `other`). The
+specific document classes take precedence over the general `docs` class, and
+only documentation-shaped files may enter them. Filenames and paths are
+inspected only long enough to assign one class; they are then discarded and
+never enter a normalized artifact, join, error, or log. A subject-authored
+merge is kept as a commit pointer but its tree structure is `unknown`: a merge
+diff may carry third-party branch content. Non-subject commits create no
+record, parent, pointer, commitment, counter, or failure and a non-subject side
+branch is artifact-byte-invisible.
 
 Each eligible Git target uses a closed pointer containing only the keyed-HMAC
 `repo_id`, Git object type, object id, the matching `git-sha1` or `git-sha256`
@@ -186,6 +189,24 @@ tool invocation. This proves which committed invocation was classified; it
 does not claim to commit the bytes of a file named by that invocation or any
 pasted tool output. Enrolled-repository target pointers are a separate
 extractor contract described above.
+
+## Commitment-only reference joins
+
+The optional cross-stream join stage consumes an already-normalized transcript
+corpus, an already-normalized repository corpus, and trusted-boundary matches.
+Each match contains only the transcript tool-input pointer coordinates and a
+Git blob commitment. The stage verifies that the pointer names an admitted
+`reference` event and that the Git commitment names an admitted, unambiguous
+repository target, then writes a separate content-addressed A8 corpus. Its
+manifest binds both input corpus commitments.
+
+The trusted boundary may inspect a referenced filename transiently to resolve
+the match, but a join record has no filename, path, source bytes, transcript
+bytes, or repository bytes. A dangling or unverified match is refused rather
+than inferred. The join corpus is local-only normalized evidence; it adds no
+report, claim, registry, or other publication field. Externalization presence
+or consumption remains ineligible for publication until the MYB-19.7 class
+sitting admits an exact form and controls.
 
 ## Consent and authorship
 

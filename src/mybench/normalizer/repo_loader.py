@@ -59,6 +59,36 @@ _LOCKFILE_NAMES = frozenset(
     }
 )
 _CI_NAMES = frozenset({b".gitlab-ci.yml", b"azure-pipelines.yml", b"jenkinsfile"})
+_DOCUMENT_EXTENSIONS = frozenset(
+    {b".adoc", b".asciidoc", b".markdown", b".md", b".mdx", b".rst", b".txt"}
+)
+_DOC_STEMS = frozenset(
+    {
+        b"architecture",
+        b"changelog",
+        b"code_of_conduct",
+        b"contributing",
+        b"readme",
+        b"security",
+    }
+)
+_HANDOFF_NAMES = frozenset({b"agents.md", b"claude.md", b"handoff.md"})
+_SPEC_NAMES = frozenset(
+    {
+        b"api-spec.md",
+        b"asyncapi.json",
+        b"asyncapi.yaml",
+        b"asyncapi.yml",
+        b"openapi.json",
+        b"openapi.yaml",
+        b"openapi.yml",
+        b"spec.md",
+        b"specification.md",
+        b"swagger.json",
+        b"swagger.yaml",
+        b"swagger.yml",
+    }
+)
 
 
 class RepoEvidenceLoaderError(RuntimeError):
@@ -218,6 +248,42 @@ def _file_class(raw_path: bytes) -> str:
         return "lockfile"
     if name in _MANIFEST_NAMES:
         return "manifest"
+    segments = tuple(part for part in lowered.split(b"/") if part)
+    stem, separator, extension = name.rpartition(b".")
+    suffix = separator + extension if separator else b""
+    document_like = suffix in _DOCUMENT_EXTENSIONS
+    if document_like and (
+        name in _HANDOFF_NAMES
+        or stem in {b"context", b"handoff"}
+        or stem.startswith(b"handoff-")
+        or stem.endswith(b"-handoff")
+        or b"handoffs" in segments
+    ):
+        return "handoff"
+    if document_like and (
+        stem in {b"plan", b"roadmap", b"setup_todo"}
+        or stem.startswith((b"plan-", b"roadmap-"))
+        or stem.endswith((b"-plan", b"-roadmap"))
+        or b"plans" in segments
+        or b"roadmaps" in segments
+    ):
+        return "plan"
+    if name in _SPEC_NAMES or (
+        document_like
+        and (
+            stem in {b"spec", b"specification"}
+            or stem.startswith((b"adr-", b"rfc-", b"spec-"))
+            or stem.endswith(b"-spec")
+            or any(part in {b"adrs", b"decisions", b"rfcs", b"specs"} for part in segments)
+        )
+    ):
+        return "spec"
+    if document_like and (
+        stem in _DOC_STEMS
+        or any(part in {b"doc", b"docs", b"documentation"} for part in segments)
+        or suffix != b".txt"
+    ):
+        return "docs"
     return "other"
 
 

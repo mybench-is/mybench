@@ -149,11 +149,24 @@ def _git_normalized_corpus() -> Invocation:
     return Invocation(args=(synthetic_repo_evidence_input().snapshots,), kwargs={})
 
 
+def _reference_target_join_corpus() -> Invocation:
+    # Both normalized inputs and every candidate edge come from fixed synthetic
+    # fixtures. The production join stage receives commitments only.
+    from tests.normalizer.reference_synthetic import synthetic_reference_target_input
+
+    synthetic = synthetic_reference_target_input()
+    return Invocation(
+        args=(synthetic.transcript_artifact, synthetic.repo_artifact, synthetic.joins),
+        kwargs={},
+    )
+
+
 RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
     "git-normalized-corpus": _git_normalized_corpus,
+    "reference-target-join-corpus": _reference_target_join_corpus,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
@@ -190,6 +203,16 @@ STAGES = (
         ResultEncoding.BYTES,
         True,
         ("mybench.normalizer.repo",),
+    ),
+    Stage(
+        "reference-target-join-corpus",
+        EntryPoint(
+            "mybench.normalizer.reference_join",
+            "normalize_reference_target_joins",
+        ),
+        ResultEncoding.BYTES,
+        True,
+        ("mybench.normalizer.reference_join",),
     ),
     Stage(
         "signed-claim",

@@ -40,6 +40,12 @@ from mybench.normalizer.repo import (
     normalize_repo_evidence,
     validate_repo_corpus_artifact,
 )
+from mybench.normalizer.reference_join import (
+    REFERENCE_JOIN_NORMALIZER_VERSION,
+    ReferenceTargetJoin,
+    normalize_reference_target_joins,
+    validate_reference_target_corpus_artifact,
+)
 
 __all__ = [
     "ARRIVAL_PATTERN_CLASSIFIER_VERSION",
@@ -62,7 +68,9 @@ __all__ = [
     "ResolutionRecord",
     "GIT_ADAPTER_VERSION",
     "REPO_NORMALIZER_VERSION",
+    "REFERENCE_JOIN_NORMALIZER_VERSION",
     "RefEvidence",
+    "ReferenceTargetJoin",
     "RepoTarget",
     "VerifiedRecord",
     "VerifiedRepoSnapshot",
@@ -71,10 +79,12 @@ __all__ = [
     "normalize_claude",
     "normalize_codex",
     "normalize_repo_evidence",
+    "normalize_reference_target_joins",
     "resolve_content_pointer",
     "resolution_coverage",
     "token_accounting_includes",
     "validate_corpus_artifact",
     "validate_repo_corpus_artifact",
     "classify_forge_invocation",
+    "validate_reference_target_corpus_artifact",
 ]
