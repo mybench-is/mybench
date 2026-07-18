@@ -118,8 +118,13 @@ def test_page_has_no_javascript_and_pinned_references_only():
     assert "<script" not in page and "javascript:" not in page
     hrefs = set(re.findall(r'href="([^"]+)"', page))
     canonical = "https://mybench.is/@ckeenan/2026-W28"
-    assert hrefs == {ANCHORS, "report.json", "https://mybench.is",
-                     "https://mybench.is/how-it-works", "favicon.svg", canonical}
+    assert hrefs == {
+        ANCHORS,
+        "report.json",
+        "https://mybench.is",
+        "https://mybench.is/how-it-works",
+        canonical,
+    }
     assert "src=" not in page  # no images/iframes/external fetches (SVG is inline)
 
 
@@ -157,6 +162,19 @@ def test_cli_end_to_end(tmp_path, capsys):
     report["extra"] = "x"
     bad.write_text(json.dumps(report))
     assert main(["--report", str(bad), "--anchors-url", ANCHORS, "--out", str(out)]) == 1
+
+
+def test_component_cli_refuses_prebuilt_report_bundle_pairing_and_serve(tmp_path):
+    from mybench.report.__main__ import main
+
+    src = tmp_path / "report.json"
+    src.write_bytes(fixed_report_bytes())
+    with pytest.raises(SystemExit) as missing_out:
+        main(["--report", str(src)])
+    assert missing_out.value.code == 2
+    with pytest.raises(SystemExit) as removed_serve:
+        main(["--serve"])
+    assert removed_serve.value.code == 2
 
 
 # --- MYB-5.8: identity, backfill honesty, pretty buckets --------------------------------

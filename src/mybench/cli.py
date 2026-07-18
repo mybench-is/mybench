@@ -18,11 +18,8 @@ explicit ``scan --upgrade`` and online ``verify`` flags.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
-import os
-import stat
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,10 +28,7 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_USAGE = 2
 EXIT_UNAVAILABLE = 3
-
-_REPORT_DOMAIN = b"mybench:v1:local-report\x00"
-_REPORT_FILES = {"html": "index.html", "json": "report.json"}
-
+_REPORT_FORMATS = frozenset({"html", "json"})
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="emit one machine-readable JSON object")
@@ -130,7 +124,7 @@ def _parser() -> argparse.ArgumentParser:
         "--format",
         default="html,json",
         metavar="html,json",
-        help="comma-separated output formats: html, json (default: html,json)",
+        help="rendering compatibility selector: html, json (the full bundle is always built)",
     )
     report.add_argument(
         "--generated-at",
@@ -157,8 +151,7 @@ def _parser() -> argparse.ArgumentParser:
         default="https://mybench.is/anchors",
         help="public anchors URL rendered into the page",
     )
-    report.add_argument("--open", action="store_true", help="reserved browser opener")
-    report.add_argument("--serve", action="store_true", help="reserved local report server")
+    report.add_argument("--open", action="store_true", help="open the private file URL")
     _add_json(report)
 
     capture = sub.add_parser("capture", help="manage explicit evidence capture")
@@ -512,17 +505,6 @@ def _scan(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def _formats(raw: str) -> tuple[str, ...]:
-    values = tuple(part.strip() for part in raw.split(",") if part.strip())
-    if (
-        not values
-        or len(set(values)) != len(values)
-        or any(value not in _REPORT_FILES for value in values)
-    ):
-        raise ValueError("invalid report format")
-    return values
-
-
 def _generated_at(raw: str | None) -> str:
     if raw is None:
         return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -532,100 +514,58 @@ def _generated_at(raw: str | None) -> str:
     return parsed.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _report_id(report_bytes: bytes, page_bytes: bytes) -> str:
-    framed = (
-        _REPORT_DOMAIN
-        + len(report_bytes).to_bytes(8, "big")
-        + report_bytes
-        + len(page_bytes).to_bytes(8, "big")
-        + page_bytes
-    )
-    return hashlib.sha256(framed).hexdigest()
-
-
-def _private_file(directory: Path, name: str, content: bytes) -> None:
-    """Idempotently install one fixed-name 0600 report file without symlink following."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    directory_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        try:
-            fd = os.open(name, flags, 0o600, dir_fd=directory_fd)
-        except FileExistsError:
-            fd = os.open(
-                name,
-                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=directory_fd,
-            )
-            try:
-                info = os.fstat(fd)
-                existing = b""
-                while chunk := os.read(fd, 1024 * 1024):
-                    existing += chunk
-            finally:
-                os.close(fd)
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or info.st_nlink != 1
-                or stat.S_IMODE(info.st_mode) != 0o600
-                or existing != content
-            ):
-                raise RuntimeError("local report storage refused")
-            return
-        try:
-            view = memoryview(content)
-            while view:
-                written = os.write(fd, view)
-                if written <= 0:
-                    raise RuntimeError("local report storage refused")
-                view = view[written:]
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+def _formats(raw: str) -> tuple[str, ...]:
+    values = tuple(part.strip() for part in raw.split(",") if part.strip())
+    if not values or len(set(values)) != len(values) or any(
+        value not in _REPORT_FORMATS for value in values
+    ):
+        raise ValueError("invalid report format")
+    return values
 
 
 def _report(args: argparse.Namespace) -> int:
-    if args.open or args.serve:
-        surface = "report --open" if args.open else "report --serve"
-        return _unavailable(surface, as_json=args.json)
     try:
-        from mybench import paths
-        from mybench.report.page import render_page
-        from mybench.scorer.__main__ import build_report
+        from mybench.report.cli import (
+            assemble_bundle,
+            capture_report_inputs,
+            derive_report_artifacts,
+            open_report,
+        )
 
         formats = _formats(args.format)
-        report_bytes = build_report(
-            generated_at=_generated_at(args.generated_at),
-            report_version=args.report_version,
+        snapshot = capture_report_inputs(
             enrolled_specs=args.enrolled_repo,
             public_names=args.public,
         )
-        report = json.loads(report_bytes)
-        page_bytes = render_page(
+        report, manifest = derive_report_artifacts(
+            snapshot,
+            generated_at=_generated_at(args.generated_at),
+            report_version=args.report_version,
+        )
+        directory = assemble_bundle(
             report,
+            manifest,
             anchors_url=args.anchors_url,
             handle=args.handle,
-            report_json_href="report.json",
         )
-        report_id = _report_id(report_bytes, page_bytes)
-        directory = paths.ensure_report_dir(report_id)
-        artifacts = {"html": page_bytes, "json": report_bytes}
-        for selected in formats:
-            _private_file(directory, _REPORT_FILES[selected], artifacts[selected])
+        opened = open_report(directory / "index.html") if args.open else None
     except Exception:  # noqa: BLE001 - scorer inputs and local paths stay out of CLI errors
         return _failed("report", as_json=args.json)
     payload = {
         "command": "report",
         "formats": list(formats),
-        "report_id": report_id,
+        "report_id": directory.name,
         "status": "ok",
     }
+    if args.open:
+        payload["opened"] = opened
     _emit(
         payload,
         as_json=args.json,
-        human=f"report ready: id={report_id} formats={','.join(formats)} (private, local only)",
+        human=(
+            f"report ready: id={directory.name} (private, local only)"
+            + ("; browser unavailable" if args.open and not opened else "")
+        ),
     )
     return EXIT_OK
 

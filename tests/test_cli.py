@@ -96,7 +96,10 @@ def test_init_scan_report_synthetic_e2e_is_deterministic_and_leak_free(
     first_report_output = capsys.readouterr()
     first_summary = json.loads(first_report_output.out)
     report_dir = paths.report_dir(first_summary["report_id"])
-    artifacts = (report_dir / "report.json", report_dir / "index.html")
+    artifacts = tuple(
+        report_dir / name
+        for name in ("report.json", "index.html", "report.sig", "evidence-manifest.json")
+    )
     first_bytes = tuple(path.read_bytes() for path in artifacts)
     assert first_summary == {
         "command": "report",
@@ -131,12 +134,18 @@ def test_init_scan_report_synthetic_e2e_is_deterministic_and_leak_free(
         + second_report_output.err
         + caplog.text
     )
-    assert assert_no_canaries([*artifacts, cli_surface], canaries) == 3
+    assert assert_no_canaries([*artifacts, cli_surface], canaries) == 5
 
     planted = tmp_path / "planted-cli-output.log"
     planted.write_text(fx.content_canaries[0])
     with pytest.raises(CanaryLeakError):
         assert_no_canaries([planted], canaries)
+
+
+def test_report_has_no_network_listener_flag():
+    with pytest.raises(SystemExit) as removed_serve:
+        cli.main(["report", "--serve"])
+    assert removed_serve.value.code == 2
 
 
 def test_historical_scan_dry_run_import_and_rescan_are_safe_and_leak_free(
@@ -284,8 +293,6 @@ def test_reserved_surfaces_are_side_effect_free_and_publish_never_networks(capsy
     commands = (
         (["publish", "--json"], "publish", True),
         (["publish", "--preview", "--json"], "publish --preview", True),
-        (["report", "--open", "--json"], "report --open", False),
-        (["report", "--serve", "--json"], "report --serve", False),
     )
     for argv, command, publication in commands:
         assert cli.main(argv) == 3
