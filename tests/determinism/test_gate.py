@@ -153,6 +153,7 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
         "mybench.report.page",
         "mybench.scorer.agent_hours",
         "mybench.scorer.score",
+        "mybench.scorer.workflow_map",
     }
     validate_manifest_and_audit()
 

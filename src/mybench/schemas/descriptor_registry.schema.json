@@ -33,6 +33,9 @@
       "minProperties": 1,
       "properties": {
         "sessions": {"type": "integer", "minimum": 1},
+        "episodes": {"type": "integer", "minimum": 1},
+        "events": {"type": "integer", "minimum": 1},
+        "transitions": {"type": "integer", "minimum": 1},
         "commits": {"type": "integer", "minimum": 1},
         "roots": {"type": "integer", "minimum": 1},
         "window_days": {"type": "integer", "minimum": 1},
@@ -115,7 +118,7 @@
             "minProperties": 1
           },
           "band_definitions": {
-            "description": "Coarse band edges (handoff §8.1: bands, not point values). Empty only while reserved.",
+            "description": "Coarse band edges (handoff §8.1: bands, not point values). May be empty for an active exact aggregate whose closed output schema contains no enum band surface.",
             "type": "array",
             "items": {
               "type": "object",
@@ -139,6 +142,9 @@
             "additionalProperties": false,
             "properties": {
               "sessions": {"type": "integer", "minimum": 1},
+              "episodes": {"type": "integer", "minimum": 1},
+              "events": {"type": "integer", "minimum": 1},
+              "transitions": {"type": "integer", "minimum": 1},
               "commits": {"type": "integer", "minimum": 1},
               "roots": {"type": "integer", "minimum": 1},
               "window_days": {"type": "integer", "minimum": 1},

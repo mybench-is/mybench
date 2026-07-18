@@ -51,8 +51,8 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.3.0"
-    assert len(registry.ids()) == 43
+    assert registry.version == "0.4.0"
+    assert len(registry.ids()) == 51
     # OQ #31 is owner-gated: the file must say its format is provisional.
     assert packaged_doc()["format_status"] == "provisional-json-pending-OQ-31"
 
@@ -123,7 +123,7 @@ def test_active_entries_need_bands_support_and_concrete_schema():
     ):
         doc = packaged_doc()
         strip(entry_by_id(doc, "transcript.tool_mix"))
-        with pytest.raises(RegistryError, match="active entries need"):
+        with pytest.raises(RegistryError, match="(?:active entries|enum output fields) need"):
             Registry(doc)
 
 
@@ -568,8 +568,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.3.0"',
-            b'"registry_version": "0.3.0", "registry_version": "0.3.0"',
+            b'"registry_version": "0.4.0"',
+            b'"registry_version": "0.4.0", "registry_version": "0.4.0"',
             1,
         )
     )
@@ -589,6 +589,50 @@ def test_wave_zero_is_exactly_the_fingerprint_namespace():
 
     with pytest.raises(RegistryError, match="fingerprint"):
         Registry(mutated(fingerprint_wave_two))
+
+
+def test_workflow_map_descriptors_pin_episode_support_privacy_and_risk(registry):
+    expected_support = {
+        "fingerprint.summary.recurring_sequences": {"episodes": 5},
+        "fingerprint.summary.task_episode_total": {"episodes": 5},
+        "fingerprint.workflow_map.transition_shares.band": {"transitions": 5},
+        "fingerprint.workflow_map.authorship_shares.band": {"events": 5},
+        "fingerprint.workflow_map.model_routing.band": {"events": 5},
+        "fingerprint.workflow_map.rework_loop_rate.band": {"episodes": 5},
+        "fingerprint.workflow_map.context_boundary_rate.band": {"transitions": 5},
+        "fingerprint.workflow_map.unknown_phase_share": {"events": 5},
+    }
+    for registry_id, support in expected_support.items():
+        entry = registry.entry(registry_id)
+        assert entry["status"] == "active"
+        assert entry["version"] == "1.0.0"
+        assert entry["class"] == "measured"
+        assert entry["min_support"] == support
+        assert entry["output_schema"]["additionalProperties"] is False
+        assert registry_id in registry.renderable_ids()
+    assert registry.entry("fingerprint.summary.recurring_sequences")["output_schema"]["properties"][
+        "k_suppression_floor"
+    ] == {"const": 5}
+    assert registry.entry("fingerprint.workflow_map.model_routing.band")["inference_risk"] == "R1"
+    assert "fingerprint.workflow_map.model_routing.band" not in registry.preset_ids(EMPLOYER_SAFE)
+    assert "fingerprint.workflow_map.transition_shares.band" in registry.preset_ids(EMPLOYER_SAFE)
+
+
+def test_active_exact_aggregate_needs_support_but_not_artificial_bands(registry):
+    entry = registry.entry("fingerprint.summary.task_episode_total")
+    assert entry["band_definitions"] == []
+    registry.check_claim(
+        {
+            "registry_id": entry["id"],
+            "registry_version": entry["version"],
+            "derivation_class": entry["class"],
+            "output": {
+                "task_episode_total": 5,
+                "episode_stitcher_version": "2.0.0",
+                "trust_tier": "ANCHORED",
+            },
+        }
+    )
 
 
 def test_packaged_load_is_cached_and_path_load_is_fresh(tmp_path, registry):

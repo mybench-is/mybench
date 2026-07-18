@@ -90,9 +90,7 @@ class RegistryError(RuntimeError):
 
 
 def _packaged_registry_bytes() -> bytes:
-    return (
-        resources.files("mybench.registry").joinpath("descriptor_registry.json").read_bytes()
-    )
+    return resources.files("mybench.registry").joinpath("descriptor_registry.json").read_bytes()
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
@@ -226,18 +224,14 @@ class Registry:
         if denominator is not None:
             for field in ("condition_class", "denominator_source"):
                 if not _VOCABULARY_ID_RE.fullmatch(denominator[field]):
-                    raise RegistryError(
-                        f"{eid}: conditional_denominator {field} is not exact"
-                    )
+                    raise RegistryError(f"{eid}: conditional_denominator {field} is not exact")
         cell_ids = entry["min_support"].get("per_conditioning_cell", {}).keys()
         severity_classes = entry.get("severity_weight_vocabulary", {}).get("classes", [])
         for value in (*cell_ids, *severity_classes):
             if not _VOCABULARY_ID_RE.fullmatch(value):
                 raise RegistryError(f"{eid}: vocabulary cell id is not exact: {value!r}")
 
-        band_labels = [
-            band for bd in entry["band_definitions"] for band in bd["bands"]
-        ]
+        band_labels = [band for bd in entry["band_definitions"] for band in bd["bands"]]
         registry_vocabulary = []
         if "conditioning_axis" in entry:
             registry_vocabulary.append(entry["conditioning_axis"]["taxonomy_id"])
@@ -276,9 +270,7 @@ class Registry:
                 f"{eid}: internal-feature-only entries may not appear in any preset"
             )
         if (entry["wave"] == 0) != eid.startswith("fingerprint."):
-            raise RegistryError(
-                f"{eid}: wave 0 is exactly the fingerprint.* placeholder namespace"
-            )
+            raise RegistryError(f"{eid}: wave 0 is exactly the fingerprint.* placeholder namespace")
 
         schema = entry["output_schema"]
         if _contains_ref(schema):
@@ -292,8 +284,6 @@ class Registry:
             raise RegistryError(f"{eid}: output_schema is not a valid schema") from exc
 
         if entry["status"] == "active":
-            if not entry["band_definitions"]:
-                raise RegistryError(f"{eid}: active entries need band_definitions")
             if not entry["min_support"]:
                 raise RegistryError(f"{eid}: active entries need min_support")
             if "properties" not in schema:
@@ -337,6 +327,8 @@ class Registry:
             non_band_fields = {"condition"} if conditioning is not None else set()
             enum_props = dict(_iter_enum_properties(schema, non_band_fields))
             declared = {bd["field"]: bd["bands"] for bd in entry["band_definitions"]}
+            if enum_props and not declared:
+                raise RegistryError(f"{eid}: enum output fields need band_definitions")
             for prop, enum in enum_props.items():
                 if prop not in declared:
                     raise RegistryError(
@@ -484,9 +476,7 @@ class Registry:
         """
         entry = self._entry(claim["registry_id"])
         if entry["status"] != "active":
-            raise RegistryError(
-                f"{claim['registry_id']} is reserved — no claims may cite it yet"
-            )
+            raise RegistryError(f"{claim['registry_id']} is reserved — no claims may cite it yet")
         if claim["registry_version"] != entry["version"]:
             raise RegistryError(
                 f"{claim['registry_id']}: claim cites version {claim['registry_version']}, "

@@ -169,6 +169,43 @@ def _agent_hours_profile() -> Invocation:
     )
 
 
+def _workflow_map_output() -> Invocation:
+    # Fixed, synthetic episode identities and structural markers only. Private
+    # grouping ids are consumed in memory and do not enter the stage artifact.
+    episodes = [{"task_episode_id": f"ep-{index:032x}"} for index in range(5)]
+    events = []
+    for index, episode in enumerate(episodes):
+        common = {
+            "task_episode_id": episode["task_episode_id"],
+            "session_id": f"synthetic-workflow-session-{index}",
+        }
+        events.extend(
+            [
+                {**common, "event_kind": "turn", "authorship": "human-turn"},
+                {
+                    **common,
+                    "event_kind": "reference",
+                    "authorship": "agent-turn",
+                    "reference_kind": "plan",
+                },
+                {
+                    **common,
+                    "event_kind": "tool-call",
+                    "authorship": "agent-turn",
+                    "tool_family": "edit",
+                },
+                {**common, "event_kind": "test", "authorship": "agent-turn"},
+            ]
+        )
+    return Invocation(
+        args=(events,),
+        kwargs={
+            "episodes": episodes,
+            "episode_stitcher_version": "2.0.0",
+        },
+    )
+
+
 def _git_normalized_corpus() -> Invocation:
     # Fixed, path-free subject-only repository records. The production stage
     # receives no Git, enrollment, filesystem, or author-identity authority.
@@ -201,6 +238,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
     "workflow-phase-output": _workflow_phase_output,
+    "workflow-map-output": _workflow_map_output,
 }
 
 # Parser/publication-preview implementations remain reserved fail-closed roots.
@@ -220,6 +258,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.agent_hours",),
+    ),
+    Stage(
+        "workflow-map-output",
+        EntryPoint("mybench.scorer.workflow_map", "score_workflow_map"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.workflow_map",),
     ),
     Stage(
         "claude-normalized-corpus",

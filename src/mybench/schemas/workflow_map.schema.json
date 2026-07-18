@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/workflow_map.schema.json",
+  "title": "Mybench workflow-map scorer section",
+  "description": "Closed local aggregate and support-qualified publishable projection. Neither form admits an episode/session id or a per-episode ordered stream.",
+  "$defs": {
+    "basisPointsOrUnknown": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 10000},
+        {"const": "UNKNOWN"}
+      ]
+    },
+    "knownPhase": {
+      "enum": ["TASK", "PLAN", "BUILD", "TEST", "DEBUG", "REVIEW", "COMMIT"]
+    },
+    "shareBand": {
+      "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+    },
+    "transitionLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_phase", "to_phase", "count"],
+      "properties": {
+        "from_phase": {"$ref": "#/$defs/knownPhase"},
+        "to_phase": {"$ref": "#/$defs/knownPhase"},
+        "count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "shareLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "basis_points"],
+      "properties": {
+        "phase": {"$ref": "#/$defs/knownPhase"},
+        "authorship": {"enum": ["HUMAN", "AGENT", "UNKNOWN"]},
+        "model": {
+          "enum": [
+            "gpt-5",
+            "gpt-5-codex",
+            "o-series",
+            "claude-sonnet",
+            "claude-opus",
+            "claude-haiku",
+            "synthetic",
+            "other",
+            "UNKNOWN"
+          ]
+        },
+        "basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"}
+      },
+      "oneOf": [
+        {"required": ["authorship"], "not": {"required": ["model"]}},
+        {"required": ["model"], "not": {"required": ["authorship"]}}
+      ]
+    },
+    "recurringLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "supporting_episodes", "eligible_episodes"],
+      "properties": {
+        "sequence": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 5,
+          "items": {"$ref": "#/$defs/knownPhase"}
+        },
+        "supporting_episodes": {"type": "integer", "minimum": 5},
+        "eligible_episodes": {"type": "integer", "minimum": 5}
+      }
+    },
+    "taskEpisodeTotal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_episode_total", "episode_stitcher_version", "trust_tier"],
+      "properties": {
+        "task_episode_total": {"type": "integer", "minimum": 5},
+        "episode_stitcher_version": {"const": "2.0.0"},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "recurringPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequences", "classifier_version", "k_suppression_floor", "trust_tier"],
+      "properties": {
+        "sequences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sequence", "share_band"],
+            "properties": {
+              "sequence": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 5,
+                "items": {"$ref": "#/$defs/knownPhase"}
+              },
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "classifier_version": {"const": "1.0.0"},
+        "k_suppression_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "transitionPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells", "classifier_version", "cell_support_floor", "trust_tier"],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from_phase", "to_phase", "share_band"],
+            "properties": {
+              "from_phase": {"$ref": "#/$defs/knownPhase"},
+              "to_phase": {"$ref": "#/$defs/knownPhase"},
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "classifier_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "authorshipPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells", "authorship_policy_version", "cell_support_floor", "trust_tier"],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "authorship", "share_band"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/knownPhase"},
+              "authorship": {"enum": ["HUMAN", "AGENT", "UNKNOWN"]},
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "authorship_policy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "modelPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells", "model_vocabulary_version", "cell_support_floor", "trust_tier"],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "model", "share_band"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/knownPhase"},
+              "model": {
+                "enum": [
+                  "gpt-5",
+                  "gpt-5-codex",
+                  "o-series",
+                  "claude-sonnet",
+                  "claude-opus",
+                  "claude-haiku",
+                  "synthetic",
+                  "other",
+                  "UNKNOWN"
+                ]
+              },
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "model_vocabulary_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "ratePublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rate_band", "trust_tier"],
+      "properties": {
+        "rate_band": {"$ref": "#/$defs/shareBand"},
+        "definition_version": {"const": "1.0.0"},
+        "context_identity_version": {"const": "1.0.0"},
+        "trust_tier": {"const": "ANCHORED"}
+      },
+      "oneOf": [
+        {"required": ["definition_version"], "not": {"required": ["context_identity_version"]}},
+        {"required": ["context_identity_version"], "not": {"required": ["definition_version"]}}
+      ]
+    },
+    "unknownPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unknown_phase_share", "graph_confidence", "classifier_version", "trust_tier"],
+      "properties": {
+        "unknown_phase_share": {"$ref": "#/$defs/shareBand"},
+        "graph_confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+        "classifier_version": {"const": "1.0.0"},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "scorer_version",
+    "classifier_version",
+    "local",
+    "publishable"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "workflow-map-section"},
+    "scorer_version": {"const": "1.0.0"},
+    "classifier_version": {"const": "1.0.0"},
+    "local": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_episode_total",
+        "episode_stitcher_version",
+        "episodes_with_events",
+        "transition_counts",
+        "authorship_shares_basis_points",
+        "model_routing_basis_points",
+        "rework_loop_rate_basis_points",
+        "context_boundary_rate_basis_points",
+        "unknown_phase_share_basis_points",
+        "graph_coverage_basis_points",
+        "recurring_sequences"
+      ],
+      "properties": {
+        "task_episode_total": {"type": "integer", "minimum": 5},
+        "episode_stitcher_version": {"const": "2.0.0"},
+        "episodes_with_events": {"type": "integer", "minimum": 0},
+        "transition_counts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/transitionLocal"}
+        },
+        "authorship_shares_basis_points": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/shareLocal"}
+        },
+        "model_routing_basis_points": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/shareLocal"}
+        },
+        "rework_loop_rate_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "context_boundary_rate_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "unknown_phase_share_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "graph_coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "recurring_sequences": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/recurringLocal"}
+        }
+      }
+    },
+    "publishable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fingerprint.summary.task_episode_total",
+        "fingerprint.workflow_map.rework_loop_rate.band"
+      ],
+      "properties": {
+        "fingerprint.summary.recurring_sequences": {"$ref": "#/$defs/recurringPublic"},
+        "fingerprint.summary.task_episode_total": {"$ref": "#/$defs/taskEpisodeTotal"},
+        "fingerprint.workflow_map.transition_shares.band": {"$ref": "#/$defs/transitionPublic"},
+        "fingerprint.workflow_map.authorship_shares.band": {"$ref": "#/$defs/authorshipPublic"},
+        "fingerprint.workflow_map.model_routing.band": {"$ref": "#/$defs/modelPublic"},
+        "fingerprint.workflow_map.rework_loop_rate.band": {"$ref": "#/$defs/ratePublic"},
+        "fingerprint.workflow_map.context_boundary_rate.band": {"$ref": "#/$defs/ratePublic"},
+        "fingerprint.workflow_map.unknown_phase_share": {"$ref": "#/$defs/unknownPublic"}
+      }
+    }
+  }
+}
