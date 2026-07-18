@@ -1,14 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.is/schemas/v1/normalized_corpus.schema.json",
+  "$id": "https://mybench.is/schemas/v5/normalized_corpus.schema.json",
   "title": "Mybench Normalized Evidence Corpus",
-  "description": "Closed A8 schema (MYB-10.4). It can represent derived structure, opaque identities, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
+  "description": "Closed A8 schema v5 (MYB-10.4, MYB-19.1, MYB-19.3, MYB-19.5, MYB-19.11). It can represent derived structure, opaque identities, closed lane markers, versioned episode and forge-action markers, pointers, and commitments, but no transcript text, commands, tool arguments/results, PR identifiers/URLs, filenames, paths, UUIDs, or content copies.",
   "$defs": {
     "hex64": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
       "minLength": 64,
       "maxLength": 64
+    },
+    "hex16": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "minLength": 16,
+      "maxLength": 16
     },
     "opaqueId": {
       "type": "string",
@@ -26,6 +32,12 @@
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
       "maxLength": 32
+    },
+    "timestampOrUnknown": {
+      "type": "string",
+      "pattern": "^(?:unknown|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)$",
+      "minLength": 7,
+      "maxLength": 27
     },
     "shape": {
       "type": "object",
@@ -137,13 +149,13 @@
         "parent_link"
       ],
       "properties": {
-        "schema_version": {"const": "1"},
+        "schema_version": {"const": "5"},
         "kind": {"const": "normalized-event"},
         "source": {"enum": ["claude-code", "codex"]},
         "session_id": {"$ref": "#/$defs/opaqueId"},
         "record_index": {"type": "integer", "minimum": 0},
         "subevent_index": {"type": "integer", "minimum": 0},
-        "event_kind": {"enum": ["turn", "pasted-span", "tool-call", "tool-result", "lifecycle", "model", "token-usage", "reference", "test"]},
+        "event_kind": {"enum": ["turn", "pasted-span", "tool-call", "tool-result", "lifecycle", "model", "token-usage", "reference", "test", "forge-action"]},
         "authorship": {"enum": ["human-turn", "agent-turn", "pasted-content-span"]},
         "task_episode_id": {"$ref": "#/$defs/episodeId"},
         "observed_at": {
@@ -325,6 +337,27 @@
       ],
       "unevaluatedProperties": false
     },
+    "forgeActionEvent": {
+      "description": "Local transcript derivation over a subject-agent invocation pointer. Outcome joins only the existing normalized result_status field; tool-result bytes and PR identifiers are structurally unavailable.",
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["forge_action_kind", "classifier_version", "outcome", "pointer", "tool_relation"],
+          "properties": {
+            "event_kind": {"const": "forge-action"},
+            "authorship": {"const": "agent-turn"},
+            "forge_action_kind": {"enum": ["pr-open", "pr-comment", "pr-review-request", "pr-merge-attempt", "push", "other"]},
+            "classifier_version": {"const": "1.0.0"},
+            "outcome": {"enum": ["success", "error", "unknown"]},
+            "repo_id": {"$ref": "#/$defs/hex16"},
+            "pointer": {"$ref": "#/$defs/toolInputPointer"},
+            "tool_relation": {"$ref": "#/$defs/toolRelation"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "event": {
       "oneOf": [
         {"$ref": "#/$defs/turnEvent"},
@@ -335,7 +368,8 @@
         {"$ref": "#/$defs/modelEvent"},
         {"$ref": "#/$defs/tokenUsageEvent"},
         {"$ref": "#/$defs/referenceEvent"},
-        {"$ref": "#/$defs/testEvent"}
+        {"$ref": "#/$defs/testEvent"},
+        {"$ref": "#/$defs/forgeActionEvent"}
       ]
     }
   },
@@ -343,25 +377,31 @@
   "additionalProperties": false,
   "required": ["schema_version", "kind", "corpus_commitment", "manifest", "events"],
   "properties": {
-    "schema_version": {"const": "1"},
+    "schema_version": {"const": "5"},
     "kind": {"const": "normalized-corpus-artifact"},
     "corpus_commitment": {"$ref": "#/$defs/hex64"},
     "manifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "kind", "normalizer", "adapters", "sessions", "coverage", "event_count"],
+      "required": ["schema_version", "kind", "normalizer", "adapters", "sessions", "episodes", "coverage", "event_count"],
       "properties": {
-        "schema_version": {"const": "1"},
+        "schema_version": {"const": "5"},
         "kind": {"const": "normalized-corpus-manifest"},
         "normalizer": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version"],
+          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version", "token_accounting_policy_version", "arrival_pattern_classifier_version", "arrival_pattern_taxonomy_version", "episode_outcome_classifier_version", "episode_open_marker_version", "forge_action_classifier_version"],
           "properties": {
             "name": {"const": "mybench.normalizer"},
-            "version": {"const": "1.0.0"},
+            "version": {"const": "5.0.0"},
             "authorship_policy_version": {"const": "1.0.0"},
-            "episode_stitcher_version": {"const": "1.0.0"}
+            "episode_stitcher_version": {"const": "2.0.0"},
+            "token_accounting_policy_version": {"const": "1.0.0"},
+            "arrival_pattern_classifier_version": {"const": "1.0.0"},
+            "arrival_pattern_taxonomy_version": {"const": "1.0.0"},
+            "episode_outcome_classifier_version": {"const": "1.0.0"},
+            "episode_open_marker_version": {"const": "1.0.0"},
+            "forge_action_classifier_version": {"const": "1.0.0"}
           }
         },
         "adapters": {
@@ -376,7 +416,7 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "claude-code"},
-                  "version": {"const": "1.0.0"}
+                  "version": {"const": "5.0.0"}
                 }
               },
               {
@@ -385,10 +425,29 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "codex"},
-                  "version": {"const": "1.0.0"}
+                  "version": {"const": "5.0.0"}
                 }
               }
             ]
+          }
+        },
+        "episodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["task_episode_id", "arrival_pattern", "classifier_version", "taxonomy_version", "episode_outcome", "outcome_classifier_version", "episode_opened_at", "open_marker_version"],
+            "properties": {
+              "task_episode_id": {"$ref": "#/$defs/episodeId"},
+              "arrival_pattern": {"enum": ["cold-start", "prepared-spec", "iterative-emergence", "unknown"]},
+              "classifier_version": {"const": "1.0.0"},
+              "taxonomy_version": {"const": "1.0.0"},
+              "episode_outcome": {"enum": ["closed-with-bound-commit", "abandoned", "unknown"]},
+              "outcome_classifier_version": {"const": "1.0.0"},
+              "episode_opened_at": {"$ref": "#/$defs/timestampOrUnknown"},
+              "open_marker_version": {"const": "1.0.0"}
+            }
           }
         },
         "sessions": {
@@ -396,12 +455,16 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["source", "session_id", "admitted_record_count"],
+            "required": ["source", "session_id", "admitted_record_count", "started_at", "git_closure_evidence"],
             "properties": {
               "source": {"enum": ["claude-code", "codex"]},
               "session_id": {"$ref": "#/$defs/opaqueId"},
               "admitted_record_count": {"type": "integer", "minimum": 1},
+              "started_at": {"$ref": "#/$defs/timestampOrUnknown"},
+              "git_closure_evidence": {"enum": ["bound-commit", "ended-without-head-change", "unknown"]},
               "parent_session_id": {"$ref": "#/$defs/opaqueId"},
+              "lane_role": {"enum": ["primary", "subagent"]},
+              "launcher_marker": {"const": "queue-operation"},
               "task_episode_id": {"$ref": "#/$defs/episodeId"},
               "episode_predecessor": {
                 "type": "object",
@@ -414,7 +477,23 @@
                   }
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": ["source"],
+                  "properties": {"source": {"const": "codex"}}
+                },
+                "then": {
+                  "not": {
+                    "anyOf": [
+                      {"required": ["lane_role"]},
+                      {"required": ["launcher_marker"]}
+                    ]
+                  }
+                }
+              }
+            ]
           }
         },
         "coverage": {

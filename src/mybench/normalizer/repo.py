@@ -22,8 +22,8 @@ from mybench.normalizer.contract import (
 )
 
 SCHEMA_VERSION = "1"
-REPO_NORMALIZER_VERSION = "1.0.0"
-GIT_ADAPTER_VERSION = "1.0.0"
+REPO_NORMALIZER_VERSION = "1.1.0"
+GIT_ADAPTER_VERSION = "1.1.0"
 
 _HEX16 = re.compile(r"[0-9a-f]{16}\Z")
 _HEX40 = re.compile(r"[0-9a-f]{40}\Z")
@@ -33,7 +33,7 @@ _OBJECT_TYPES = frozenset({"blob", "commit"})
 _PROVENANCE = frozenset({"IMPORTED", "LIVE"})
 _STRUCTURE_STATUS = frozenset({"observed", "unknown"})
 CHANGE_KINDS = ("added", "modified", "deleted", "type_changed", "other")
-FILE_CLASSES = ("manifest", "lockfile", "ci", "other")
+FILE_CLASSES = ("manifest", "lockfile", "ci", "docs", "spec", "plan", "handoff", "other")
 _EVENT_KINDS = frozenset({"commit", "branch-tip", "reflog", "worktree"})
 _COVERAGE_KEYS = (
     "repositories_admitted",

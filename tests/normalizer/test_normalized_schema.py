@@ -11,7 +11,7 @@ from mybench.schemas import load_validator
 
 
 COMMON = {
-    "schema_version": "1",
+    "schema_version": "5",
     "kind": "normalized-event",
     "source": "codex",
     "session_id": "opaque-synthetic-session",
@@ -84,6 +84,15 @@ def _event(event_kind: str, **fields) -> dict:
             test_status="passed",
             pointer=TOOL_INPUT_POINTER,
         ),
+        _event(
+            "forge-action",
+            forge_action_kind="pr-open",
+            classifier_version="1.0.0",
+            outcome="unknown",
+            repo_id="ab" * 8,
+            pointer=TOOL_INPUT_POINTER,
+            tool_relation={"status": "linked", "record_index": 0, "subevent_index": 0},
+        ),
     ],
     ids=[
         "agent-turn",
@@ -96,6 +105,7 @@ def _event(event_kind: str, **fields) -> dict:
         "token-usage",
         "reference",
         "test",
+        "forge-action",
     ],
 )
 def test_each_closed_event_variant_accepts_its_own_fields(event):
@@ -123,6 +133,23 @@ def test_each_closed_event_variant_accepts_its_own_fields(event):
             lifecycle_marker="session-start",
             context_generation_id=1,
         ),
+        _event(
+            "forge-action",
+            forge_action_kind="pr-open",
+            classifier_version="1.0.0",
+            outcome="unknown",
+            pointer=TEXT_POINTER,
+            tool_relation={"status": "linked", "record_index": 0, "subevent_index": 0},
+        ),
+        _event(
+            "forge-action",
+            forge_action_kind="pr-open",
+            classifier_version="1.0.0",
+            outcome="unknown",
+            pointer=TOOL_INPUT_POINTER,
+            tool_relation={"status": "linked", "record_index": 0, "subevent_index": 0},
+            pull_request_url="synthetic-forbidden",
+        ),
     ],
     ids=[
         "human-pointer",
@@ -134,6 +161,8 @@ def test_each_closed_event_variant_accepts_its_own_fields(event):
         "cross-kind-pointer",
         "generation-without-boundary",
         "generation-on-non-boundary-lifecycle",
+        "forge-text-pointer",
+        "forge-rung-two-field",
     ],
 )
 def test_event_union_rejects_wrong_authorship_pointer_and_cross_kind_fields(event):

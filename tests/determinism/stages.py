@@ -141,6 +141,24 @@ def _codex_normalized_corpus() -> Invocation:
     return Invocation(args=(synthetic_codex_normalizer_input().sessions,), kwargs={})
 
 
+def _session_timing_output() -> Invocation:
+    # The exact timestamp-bearing artifact is private/local-only and uses the
+    # fixed synthetic Codex canary corpus. The production output is already
+    # closed and identifier-free.
+    from tests.normalizer.synthetic import synthetic_codex_normalizer_input
+
+    return Invocation(args=(synthetic_codex_normalizer_input().sessions,), kwargs={})
+
+
+def _agent_hours_profile() -> Invocation:
+    from tests.scorer.test_agent_hours import _timing
+
+    return Invocation(
+        args=([_timing() for _ in range(5)],),
+        kwargs={"anchored_span_days": 20},
+    )
+
+
 def _git_normalized_corpus() -> Invocation:
     # Fixed, path-free subject-only repository records. The production stage
     # receives no Git, enrollment, filesystem, or author-identity authority.
@@ -149,11 +167,26 @@ def _git_normalized_corpus() -> Invocation:
     return Invocation(args=(synthetic_repo_evidence_input().snapshots,), kwargs={})
 
 
+def _reference_target_join_corpus() -> Invocation:
+    # Both normalized inputs and every candidate edge come from fixed synthetic
+    # fixtures. The production join stage receives commitments only.
+    from tests.normalizer.reference_synthetic import synthetic_reference_target_input
+
+    synthetic = synthetic_reference_target_input()
+    return Invocation(
+        args=(synthetic.transcript_artifact, synthetic.repo_artifact, synthetic.joins),
+        kwargs={},
+    )
+
+
 RUNNERS: dict[str, InvocationFactory] = {
+    "agent-hours-profile": _agent_hours_profile,
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
     "git-normalized-corpus": _git_normalized_corpus,
+    "reference-target-join-corpus": _reference_target_join_corpus,
+    "session-timing-output": _session_timing_output,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
@@ -171,6 +204,13 @@ STAGES = (
         ("mybench.scorer.score",),
     ),
     Stage(
+        "agent-hours-profile",
+        EntryPoint("mybench.scorer.agent_hours", "score_agent_hours"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.agent_hours",),
+    ),
+    Stage(
         "claude-normalized-corpus",
         EntryPoint("mybench.normalizer.claude", "normalize_claude"),
         ResultEncoding.BYTES,
@@ -185,11 +225,31 @@ STAGES = (
         ("mybench.normalizer.codex",),
     ),
     Stage(
+        "session-timing-output",
+        EntryPoint(
+            "mybench.normalizer.session_timing",
+            "normalize_session_timing_bytes",
+        ),
+        ResultEncoding.BYTES,
+        True,
+        ("mybench.normalizer.session_timing",),
+    ),
+    Stage(
         "git-normalized-corpus",
         EntryPoint("mybench.normalizer.repo", "normalize_repo_evidence"),
         ResultEncoding.BYTES,
         True,
         ("mybench.normalizer.repo",),
+    ),
+    Stage(
+        "reference-target-join-corpus",
+        EntryPoint(
+            "mybench.normalizer.reference_join",
+            "normalize_reference_target_joins",
+        ),
+        ResultEncoding.BYTES,
+        True,
+        ("mybench.normalizer.reference_join",),
     ),
     Stage(
         "signed-claim",
@@ -236,9 +296,7 @@ def validate_registration(
     if missing_audit_roots:
         raise ValueError(f"determinism stages missing audit roots: {missing_audit_roots}")
     unaudited_entries = sorted(
-        stage.name
-        for stage in stages
-        if stage.entrypoint.module not in stage.audit_roots
+        stage.name for stage in stages if stage.entrypoint.module not in stage.audit_roots
     )
     if unaudited_entries:
         raise ValueError(f"entry-point modules absent from their audit roots: {unaudited_entries}")
@@ -263,22 +321,19 @@ def execute_stage(
     if stage.result_encoding is ResultEncoding.BYTES:
         if not isinstance(result, bytes):
             raise TypeError(
-                f"determinism stage {stage.name!r} returned "
-                f"{type(result).__name__}, not bytes"
+                f"determinism stage {stage.name!r} returned {type(result).__name__}, not bytes"
             )
         return result
     if stage.result_encoding is ResultEncoding.CANONICAL_JSON_LINE:
         if not isinstance(result, dict):
             raise TypeError(
-                f"determinism stage {stage.name!r} returned "
-                f"{type(result).__name__}, not dict"
+                f"determinism stage {stage.name!r} returned {type(result).__name__}, not dict"
             )
         from mybench.claims import canonical_bytes
 
         return canonical_bytes(result) + b"\n"
     raise ValueError(
-        f"determinism stage {stage.name!r} has unknown result encoding: "
-        f"{stage.result_encoding!r}"
+        f"determinism stage {stage.name!r} has unknown result encoding: {stage.result_encoding!r}"
     )
 
 

@@ -1,6 +1,6 @@
 # Mybench Threat Model
 
-**Version:** 0.2.0
+**Version:** 0.2.1
 **Status:** Living document. Every feature must be justifiable against this model.
 If a proposed change isn't covered here, work stops and this document is updated first.
 
@@ -87,6 +87,12 @@ act, never by default.
 | Class | Granularity ceiling + required controls | Tier |
 |---|---|---|
 | Counts, durations, cadence histograms, coverage percentages, streak lengths (the v0 set) | Ledger metadata; aggregates + coarse histograms per docs/metrics-v0.md | per metrics-v0 |
+| Lifecycle-derived duration and agent-hours profile | Evidence-period totals only as coarse, top-coded bands; active-time vs wall-clock definition, idle-gap rule, and band edges versioned; descriptor min-support and observed-boundary coverage required; aggregate distributions follow §3.4; REQUIRED caveat: capture-dependent and inflatable; never exact totals or session-duration points | ANCHORED |
+| Autonomous-run length distributions | Coarse, top-coded run-length bands over the full evidence period; cell support k ≥ 5; an optional longest-run headline is itself a top-coded band, never an exact maximum; no per-session values | ANCHORED |
+| Cross-session concurrency aggregates | Banded/top-coded distribution of concurrent lane counts over the full evidence period; cell support k ≥ 5; an optional peak-lanes headline is itself a top-coded band; no session identifiers, timestamps, or period-keyed series | ANCHORED |
+| Episode-latency distributions | Bucketed, top-coded distribution only; per-cell min-support; observed-time coverage required and UNKNOWN preserved; never per-episode points or timestamps | ANCHORED |
+| Externalization presence and consumption aggregates | Banded presence/consumption rates over a pinned structural file/reference taxonomy; min-support and k ≥ 5 where grouped by structure; no names, paths, target identifiers, or contents; missing targets reduce coverage / become UNKNOWN; no quality inference | ANCHORED |
+| Interleaving activity histograms | Banded/top-coded lane-switch and utilization histograms over a pinned structural taxonomy; cell support k ≥ 5; no lane names, ordered event streams, or quality/effectiveness language | ANCHORED |
 | Corpus-level phase-transition aggregates | First-order transition shares over the pinned coarse phase taxonomy (≤8 symbols, versioned); banded; cell min-support; aggregated over the full evidence period; NEVER per-session | ANCHORED |
 | Recurring phase-sequence n-grams | Same taxonomy; length ≤ 5; corpus support k ≥ 5; top-N listing; banded shares | ANCHORED |
 | Human-vs-agent activity shares | Banded shares, per phase or corpus-wide; authorship-tag derived; subject-type-neutral wording | ANCHORED |
@@ -112,6 +118,13 @@ Every published metric carries exactly one §6 tier label (unchanged rule).
 - **Top-coding** on open-ended distributions.
 - **Pinned taxonomies/vocabularies:** phase taxonomy, model/provider name
   vocabulary, pricing snapshot — versioned inputs, never network reads.
+- **Arrival-pattern conditioning vocabulary v1:** exactly `cold-start`,
+  `prepared-spec`, `iterative-emergence`, and `unknown`; taxonomy and
+  classifier versions travel with the claim; `unknown` is a first-class
+  fail-closed cell. Labels describe content-opaque structural conditions only,
+  never request meaning, completeness, quality, or difficulty. A conditioned
+  public aggregate must satisfy min-support independently in every emitted
+  cell; per-episode arrival-pattern values never publish.
 - **Inference-risk classes R0/R1/R2** per descriptor; the default
   (employer-safe) preset is R0-only; R1/R2 require individual opt-in with a
   plain-language risk note. Enforced structurally by the registry loader.
@@ -140,6 +153,8 @@ Every published metric carries exactly one §6 tier label (unchanged rule).
 - Filenames, repo names (except repos the user explicitly opts in), project
   names, orchestration file/skill/agent names and paths
 - Per-session or per-episode point values
+- Exact lifecycle-duration/agent-hour totals and exact longest-run or
+  peak-lanes headline extrema (their admitted public forms are top-coded bands)
 - Timestamps finer than §3.4 permits
 - Model/provider strings outside the pinned public vocabulary
 - Effectiveness scores, composite scores, tokens-per-line rankings (see the
@@ -375,4 +390,15 @@ OQ #18 backfill floor (14 days) and OQ #35 cohort grain (quarter) pinned in
 §3.4. §6 synced to the sitting's tier-mapping decisions (ADR-0014/ADR-0015:
 TEE-VERIFIED environment semantics; reserved
 JUDGED(unattested)/JUDGED(attested) qualifier slots via the TIER(qualifier)
-grammar; IMPORTED annotation line).*
+grammar; IMPORTED annotation line).
+0.2.1 — owner-approved MYB-19.7 revision (mybench-ops OPEN_QUESTIONS #57;
+owner-decided 2026-07-17): §3.2 admits coarse, control-bound classes for
+lifecycle durations/agent-hours, autonomous-run lengths, cross-session
+concurrency, episode latency, externalization, and deterministic interleaving
+histograms; optional longest-run and peak-lanes headlines are top-coded bands,
+never exact extrema. §3.3 pins arrival-pattern conditioning v1 to
+`cold-start|prepared-spec|iterative-emergence|unknown` with per-cell support and
+an ordinary fail-closed `unknown` result. All private-derived forms are capped
+at ANCHORED; PROVEN remains limited to public-artifact facts. Exact totals,
+point values, keyed time series, and JUDGED utility/quality interpretations
+remain unadmitted.*

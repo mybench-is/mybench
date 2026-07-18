@@ -18,10 +18,16 @@ from collections.abc import Mapping, Sequence
 
 from mybench.claims.canonical import canonical_bytes
 from mybench.normalizer.claude import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION,
     AUTHORSHIP_POLICY_VERSION,
+    EPISODE_OPEN_MARKER_VERSION,
+    EPISODE_OUTCOME_CLASSIFIER_VERSION,
     EPISODE_STITCHER_VERSION,
+    FORGE_ACTION_CLASSIFIER_VERSION,
     NORMALIZER_VERSION,
     SCHEMA_VERSION,
+    TOKEN_ACCOUNTING_POLICY_VERSION,
     VerifiedRecord,
     VerifiedSession,
     _COVERAGE_KEYS,
@@ -33,10 +39,14 @@ from mybench.normalizer.claude import (
     _check_input_sessions,
     _content_pointer,
     _episode_map,
+    _episode_outputs,
     _event_sort_key,
+    _forge_action_partial,
+    _git_closure_evidence,
     _is_label,
     _is_test_invocation,
     _json_object,
+    _join_forge_outcomes,
     _looks_like_paste,
     _reference_kind,
     _shape,
@@ -45,7 +55,7 @@ from mybench.normalizer.claude import (
     corpus_commitment,
 )
 
-CODEX_ADAPTER_VERSION = "1.0.0"
+CODEX_ADAPTER_VERSION = "5.0.0"
 _SOURCE = "codex"
 
 _MESSAGE_TYPES = frozenset({"input_text", "output_text"})
@@ -247,6 +257,7 @@ def _call_partials(
     payload: Mapping,
     record: VerifiedRecord,
     normalized_record_index: int,
+    repo_id: str | None,
     tool_counts: Counter,
     tool_positions: dict[str, tuple[int, int]],
     coverage: Counter,
@@ -265,8 +276,19 @@ def _call_partials(
     if pointer is not None:
         partial["pointer"] = pointer
         coverage["content_references"] += 1
-    partials = [partial]
     classified = _classification_input(name, raw_input)
+    partials = [partial]
+    forge_action = _forge_action_partial(
+        tool_name=name,
+        tool_input=classified,
+        pointer=pointer,
+        repo_id=repo_id,
+        record_index=normalized_record_index,
+        tool_call_subevent_index=0,
+    )
+    if forge_action is not None:
+        partials.append(forge_action)
+        coverage["content_references"] += 1
     reference_kind = _reference_kind(name, classified)
     if pointer is not None and reference_kind is not None:
         partials.append(
@@ -519,6 +541,7 @@ def _record_partials(
     value: Mapping,
     record: VerifiedRecord,
     normalized_record_index: int,
+    repo_id: str | None,
     tool_counts: Counter,
     tool_positions: dict[str, tuple[int, int]],
     coverage: Counter,
@@ -553,6 +576,7 @@ def _record_partials(
                 payload,
                 record,
                 normalized_record_index,
+                repo_id,
                 tool_counts,
                 tool_positions,
                 coverage,
@@ -602,6 +626,8 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
             "source": session.source,
             "session_id": session.session_id,
             "admitted_record_count": len(admitted_records),
+            "started_at": session.started_at or "unknown",
+            "git_closure_evidence": _git_closure_evidence(session),
         }
         if key in episodes:
             manifest_session["task_episode_id"] = episodes[key]
@@ -633,6 +659,7 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
                 value=value,
                 record=record,
                 normalized_record_index=normalized_record_index,
+                repo_id=session.repo_id,
                 tool_counts=tool_counts,
                 tool_positions=tool_positions,
                 coverage=coverage,
@@ -653,8 +680,10 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
                 )
             )
 
+    _join_forge_outcomes(events)
     events.sort(key=_event_sort_key)
     manifest_sessions.sort(key=lambda item: (item["source"].encode(), item["session_id"].encode()))
+    episode_outputs = _episode_outputs(manifest_sessions, events)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "kind": "normalized-corpus-manifest",
@@ -663,9 +692,16 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
             "version": NORMALIZER_VERSION,
             "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
             "episode_stitcher_version": EPISODE_STITCHER_VERSION,
+            "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
+            "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+            "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+            "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
+            "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
+            "forge_action_classifier_version": FORGE_ACTION_CLASSIFIER_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CODEX_ADAPTER_VERSION}],
         "sessions": manifest_sessions,
+        "episodes": episode_outputs,
         "coverage": {key: coverage[key] for key in _COVERAGE_KEYS},
         "event_count": len(events),
     }

@@ -11,19 +11,29 @@ from jsonschema import ValidationError
 from mybench.commitments import leaf_commitment, session_root
 from mybench.claims.canonical import canonical_bytes
 from mybench.normalizer.claude import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION,
+    EPISODE_OPEN_MARKER_VERSION,
+    EPISODE_OUTCOME_CLASSIFIER_VERSION,
+    FORGE_ACTION_CLASSIFIER_VERSION,
+    GitBindingObservation,
     NoEvidence,
     NormalizationError,
     VerifiedRecord,
     VerifiedSession,
     corpus_commitment,
     normalize_claude,
+    token_accounting_includes,
     validate_corpus_artifact,
 )
+from mybench.normalizer.codex import CODEX_ADAPTER_VERSION
 from mybench.schemas import load_validator
 from tests.fixtures import CanaryLeakError, assert_no_canaries
 from tests.normalizer.synthetic import (
     AGENT_CANARY,
     CONTENT_CANARY,
+    LAUNCHER_PAYLOAD_CANARY,
+    NESTED_CONTENT_CANARY,
     NON_SUBJECT_CANARY,
     PASTE_CANARY,
     PATH_CANARY,
@@ -57,6 +67,86 @@ def _one_record_session(raw: bytes, *, commitment: str | None = None) -> Verifie
     )
 
 
+def _synthetic_session(
+    session_id: str,
+    values: list[dict],
+    *,
+    parent_session_id: str | None = None,
+) -> VerifiedSession:
+    raws = [
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        for value in values
+    ]
+    commitments = [
+        leaf_commitment(bytes([index + 1]) * 32, raw)
+        for index, raw in enumerate(raws)
+    ]
+    return VerifiedSession(
+        source="claude-code",
+        session_id=session_id,
+        session_root=session_root(commitments).hex(),
+        records=tuple(
+            VerifiedRecord(index, raw, commitment.hex(), "subject")
+            for index, (raw, commitment) in enumerate(zip(raws, commitments))
+        ),
+        subject_owned=True,
+        parent_session_id=parent_session_id,
+    )
+
+
+def _arrival_episode(values: list[dict]) -> tuple[bytes, dict]:
+    root = _synthetic_session("opaque-arrival-root", values)
+    child = _synthetic_session(
+        "opaque-arrival-child",
+        [
+            {
+                "isSidechain": True,
+                "message": {"role": "assistant", "content": "synthetic child"},
+                "type": "assistant",
+            }
+        ],
+        parent_session_id=root.session_id,
+    )
+    data = normalize_claude((child, root))
+    episodes = json.loads(data)["manifest"]["episodes"]
+    assert len(episodes) == 1
+    return data, episodes[0]
+
+
+def _human_turn(content: str) -> dict:
+    return {
+        "isSidechain": False,
+        "message": {"role": "user", "content": content},
+        "type": "user",
+    }
+
+
+def _assistant_text(content: str = "synthetic response") -> dict:
+    return {
+        "isSidechain": False,
+        "message": {"role": "assistant", "content": content},
+        "type": "assistant",
+    }
+
+
+def _assistant_tool(name: str, tool_input: dict) -> dict:
+    return {
+        "isSidechain": False,
+        "message": {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "synthetic-arrival-tool",
+                    "name": name,
+                    "input": tool_input,
+                }
+            ],
+        },
+        "type": "assistant",
+    }
+
+
 def _rebound(artifact: dict) -> bytes:
     artifact["manifest"]["event_count"] = len(artifact["events"])
     artifact["corpus_commitment"] = corpus_commitment(
@@ -76,6 +166,29 @@ def test_corpus_is_canonical_schema_valid_and_self_verifying(normalized):
         "agent-turn",
         "pasted-content-span",
     } for event in artifact["events"])
+
+
+def test_normalized_schema_v5_boundary_is_explicit(normalized):
+    _, _, artifact = normalized
+    assert artifact["schema_version"] == artifact["manifest"]["schema_version"] == "5"
+    assert artifact["manifest"]["normalizer"]["token_accounting_policy_version"] == (
+        "1.0.0"
+    )
+    assert artifact["manifest"]["normalizer"] == {
+        "name": "mybench.normalizer",
+        "version": "5.0.0",
+        "authorship_policy_version": "1.0.0",
+        "episode_stitcher_version": "2.0.0",
+        "token_accounting_policy_version": "1.0.0",
+        "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+        "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+        "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
+        "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
+        "forge_action_classifier_version": FORGE_ACTION_CLASSIFIER_VERSION,
+    }
+    artifact["schema_version"] = "4"
+    with pytest.raises(ValidationError):
+        load_validator("normalized_corpus.schema.json").validate(artifact)
 
 
 def test_block_level_authorship_never_treats_tool_result_as_human(normalized):
@@ -199,13 +312,284 @@ def test_observed_context_generation_and_lifecycle_are_not_inferred(normalized):
 
 def test_versioned_episode_stitcher_links_only_recorded_parent_lineage(normalized):
     _, _, artifact = normalized
-    sessions = artifact["manifest"]["sessions"]
-    assert [session["session_id"] for session in sessions] == [
+    sessions = {
+        session["session_id"]: session for session in artifact["manifest"]["sessions"]
+    }
+    assert set(sessions) == {
         "opaque-main-session",
         "opaque-sidechain-session",
-    ]
-    assert sessions[0]["task_episode_id"] == sessions[1]["task_episode_id"]
-    assert sessions[1]["parent_session_id"] == "opaque-main-session"
+        "opaque-nested-sidechain",
+    }
+    assert len({session["task_episode_id"] for session in sessions.values()}) == 1
+    assert sessions["opaque-sidechain-session"]["parent_session_id"] == (
+        "opaque-main-session"
+    )
+    assert sessions["opaque-nested-sidechain"]["parent_session_id"] == (
+        "opaque-sidechain-session"
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (
+            [
+                _human_turn("synthetic brief"),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "cold-start",
+        ),
+        (
+            [
+                _human_turn("```synthetic\nprepared fixture\n```"),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "prepared-spec",
+        ),
+        (
+            [
+                _human_turn("x" * 81),
+                _assistant_tool(
+                    "Read", {"file_path": ".claude/plans/synthetic-plan.md"}
+                ),
+            ],
+            "prepared-spec",
+        ),
+        (
+            [
+                _human_turn("synthetic start"),
+                _assistant_text(),
+                _human_turn("synthetic refine"),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "iterative-emergence",
+        ),
+        (
+            [
+                _human_turn("x" * 81),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "unknown",
+        ),
+    ],
+    ids=["cold", "pasted-spec", "plan-reference", "iterative", "unknown"],
+)
+def test_arrival_pattern_taxonomy_is_pinned_over_structural_markers(values, expected):
+    data, episode = _arrival_episode(values)
+    assert episode["arrival_pattern"] == expected
+    assert episode["classifier_version"] == ARRIVAL_PATTERN_CLASSIFIER_VERSION
+    assert episode["taxonomy_version"] == ARRIVAL_PATTERN_TAXONOMY_VERSION
+    load_validator("normalized_corpus.schema.json").validate(json.loads(data))
+    assert validate_corpus_artifact(data) == json.loads(data)["corpus_commitment"]
+
+
+def test_arrival_classifier_does_not_read_same_shape_free_text():
+    _, first = _arrival_episode(
+        [
+            _human_turn("synthetic alpha"),
+            _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+        ]
+    )
+    _, second = _arrival_episode(
+        [
+            _human_turn("synthetic omega"),
+            _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+        ]
+    )
+    assert first == second
+    assert first["arrival_pattern"] == "cold-start"
+
+
+def test_arrival_pattern_tampering_fails_semantic_validation():
+    data, _ = _arrival_episode(
+        [
+            _human_turn("```synthetic\nprepared fixture\n```"),
+            _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+        ]
+    )
+    artifact = json.loads(data)
+    artifact["manifest"]["episodes"][0]["arrival_pattern"] = "cold-start"
+    with pytest.raises(NormalizationError, match="episode derivation is inconsistent"):
+        validate_corpus_artifact(_rebound(artifact))
+
+
+def _with_git_closure(
+    session: VerifiedSession,
+    *,
+    row_start: int,
+    head_before: str,
+    head_after: str,
+    binding_hash: str | None,
+    started_at: str,
+) -> VerifiedSession:
+    repo_id = "ab" * 8
+    bindings = (
+        ()
+        if binding_hash is None
+        else (GitBindingObservation(row_start + 1, repo_id, binding_hash),)
+    )
+    return replace(
+        session,
+        repo_id=repo_id,
+        head_before=head_before,
+        head_after=head_after,
+        start_row_index=row_start,
+        end_row_index=row_start + 2,
+        binding_observations=bindings,
+        started_at=started_at,
+        ended_at="2026-01-01T00:10:00Z",
+    )
+
+
+def test_episode_outcome_closes_only_on_exact_head_binding_row_join():
+    root = _with_git_closure(
+        _synthetic_session(
+            "opaque-outcome-root",
+            [{"message": {"role": "user", "content": "synthetic"}, "type": "user"}],
+        ),
+        row_start=10,
+        head_before="1" * 40,
+        head_after="2" * 40,
+        binding_hash="2" * 40,
+        started_at="2026-01-01T00:00:00Z",
+    )
+    child = _synthetic_session(
+        "opaque-outcome-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    data = normalize_claude((root, child))
+    artifact = json.loads(data)
+    episode = artifact["manifest"]["episodes"][0]
+    assert episode["episode_outcome"] == "closed-with-bound-commit"
+    assert episode["episode_opened_at"] == "2026-01-01T00:00:00.000000Z"
+    assert episode["outcome_classifier_version"] == EPISODE_OUTCOME_CLASSIFIER_VERSION
+    assert episode["open_marker_version"] == EPISODE_OPEN_MARKER_VERSION
+    assert b"abababababababab" not in data
+    assert ("2" * 40).encode() not in data
+    assert validate_corpus_artifact(data) == artifact["corpus_commitment"]
+
+
+def test_episode_outcome_abandoned_requires_all_members_to_end_without_head_change():
+    root = _synthetic_session(
+        "opaque-abandoned-root",
+        [{"message": {"role": "user", "content": "synthetic"}, "type": "user"}],
+    )
+    child = _synthetic_session(
+        "opaque-abandoned-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    root = _with_git_closure(
+        root,
+        row_start=20,
+        head_before="3" * 40,
+        head_after="3" * 40,
+        binding_hash=None,
+        started_at="2026-01-01T00:00:00Z",
+    )
+    child = _with_git_closure(
+        child,
+        row_start=30,
+        head_before="3" * 40,
+        head_after="3" * 40,
+        binding_hash=None,
+        started_at="2026-01-01T00:06:00Z",
+    )
+    episode = json.loads(normalize_claude((root, child)))["manifest"]["episodes"][0]
+    assert episode["episode_outcome"] == "abandoned"
+
+
+def test_episode_outcome_is_unknown_for_changed_head_without_exact_final_binding():
+    root = _with_git_closure(
+        _synthetic_session(
+            "opaque-unbound-root",
+            [{"message": {"role": "user", "content": "synthetic"}, "type": "user"}],
+        ),
+        row_start=40,
+        head_before="4" * 40,
+        head_after="5" * 40,
+        binding_hash="6" * 40,
+        started_at="2026-01-01T00:00:00Z",
+    )
+    child = _synthetic_session(
+        "opaque-unbound-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    episode = json.loads(normalize_claude((root, child)))["manifest"]["episodes"][0]
+    assert episode["episode_outcome"] == "unknown"
+
+
+def test_episode_open_marker_falls_back_to_root_observed_at():
+    root = _synthetic_session(
+        "opaque-observed-root",
+        [
+            {
+                "isSidechain": False,
+                "message": {"role": "user", "content": "synthetic"},
+                "timestamp": "2026-01-01T00:04:00Z",
+                "type": "user",
+            }
+        ],
+    )
+    child = _synthetic_session(
+        "opaque-observed-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    episode = json.loads(normalize_claude((root, child)))["manifest"]["episodes"][0]
+    assert episode["episode_opened_at"] == "2026-01-01T00:04:00.000000Z"
+
+
+def test_episode_outcome_and_open_timestamp_remain_unknown_when_evidence_is_absent():
+    _, episode = _arrival_episode(
+        [_human_turn("synthetic"), _assistant_tool("Edit", {"file_path": "synthetic.py"})]
+    )
+    assert episode["episode_outcome"] == "unknown"
+    assert episode["episode_opened_at"] == "unknown"
+
+
+def test_episode_outcome_tampering_fails_semantic_validation():
+    data, _ = _arrival_episode([_human_turn("synthetic")])
+    artifact = json.loads(data)
+    artifact["manifest"]["episodes"][0]["episode_outcome"] = (
+        "closed-with-bound-commit"
+    )
+    with pytest.raises(NormalizationError, match="episode derivation is inconsistent"):
+        validate_corpus_artifact(_rebound(artifact))
+
+
+def test_nested_lane_markers_and_token_accounting_views_fire_without_content(normalized):
+    _, data, artifact = normalized
+    sessions = {
+        session["session_id"]: session for session in artifact["manifest"]["sessions"]
+    }
+    assert sessions["opaque-main-session"]["lane_role"] == "primary"
+    assert sessions["opaque-main-session"]["launcher_marker"] == "queue-operation"
+    assert sessions["opaque-sidechain-session"]["lane_role"] == "subagent"
+    assert sessions["opaque-nested-sidechain"]["lane_role"] == "subagent"
+
+    def output_tokens(view):
+        included = {
+            (session["source"], session["session_id"])
+            for session in sessions.values()
+            if token_accounting_includes(session, view=view)
+        }
+        return sum(
+            event["token_usage"].get("output_tokens", 0)
+            for event in artifact["events"]
+            if event["event_kind"] == "token-usage"
+            and (event["source"], event["session_id"]) in included
+        )
+
+    assert output_tokens("orchestrated") == 15
+    assert output_tokens("deduped") == 7
+    assert token_accounting_includes({"source": "codex"}, view="deduped") is True
+    with pytest.raises(NormalizationError, match="view is unsupported"):
+        token_accounting_includes(sessions["opaque-main-session"], view="guessed")
+    assert NESTED_CONTENT_CANARY.encode() not in data
+    assert LAUNCHER_PAYLOAD_CANARY.encode() not in data
 
 
 def test_episode_stitcher_uses_conservative_repo_head_time_continuity():
@@ -263,6 +647,7 @@ def test_standalone_session_does_not_guess_a_task_episode():
     ).encode()
     artifact = json.loads(normalize_claude((_one_record_session(raw),)))
     assert "task_episode_id" not in artifact["manifest"]["sessions"][0]
+    assert artifact["manifest"]["episodes"] == []
     assert all("task_episode_id" not in event for event in artifact["events"])
 
 
@@ -313,10 +698,43 @@ def test_changing_non_subject_bytes_and_commitments_cannot_change_a8():
     assert normalize_claude((changed_main, *synthetic.sessions[1:])) == baseline
 
 
+def test_non_subject_lane_shaped_records_cannot_set_session_markers():
+    primary_raw = (
+        b'{"isSidechain":false,"message":{"content":"synthetic","role":"user"},'
+        b'"type":"user"}'
+    )
+    session = _one_record_session(primary_raw)
+    sidechain_raw = (
+        b'{"isSidechain":true,"message":{"content":"excluded","role":"user"},'
+        b'"type":"user"}'
+    )
+    launcher_raw = b'{"payload":"excluded","type":"queue-operation"}'
+    records = (
+        session.records[0],
+        VerifiedRecord(
+            1,
+            sidechain_raw,
+            leaf_commitment(b"s" * 32, sidechain_raw).hex(),
+            "non-subject",
+        ),
+        VerifiedRecord(
+            2,
+            launcher_raw,
+            leaf_commitment(b"q" * 32, launcher_raw).hex(),
+            "non-subject",
+        ),
+    )
+    baseline = normalize_claude((session,))
+    assert normalize_claude((replace(session, records=records),)) == baseline
+    manifest_session = json.loads(baseline)["manifest"]["sessions"][0]
+    assert manifest_session["lane_role"] == "primary"
+    assert "launcher_marker" not in manifest_session
+
+
 def test_corrupt_duplicate_and_reordered_non_subject_inputs_are_presence_insensitive():
     synthetic = synthetic_normalizer_input()
     baseline = normalize_claude(synthetic.sessions)
-    main, sidechain, non_subject = synthetic.sessions
+    main, sidechain, nested, non_subject = synthetic.sessions
 
     corrupt_record = replace(
         main.records[6],
@@ -329,7 +747,7 @@ def test_corrupt_duplicate_and_reordered_non_subject_inputs_are_presence_insensi
         main,
         records=(*main.records[:6], corrupt_record, *main.records[7:]),
     )
-    assert normalize_claude((corrupt_main, sidechain, non_subject)) == baseline
+    assert normalize_claude((corrupt_main, sidechain, nested, non_subject)) == baseline
 
     corrupt_session = replace(
         non_subject,
@@ -339,15 +757,19 @@ def test_corrupt_duplicate_and_reordered_non_subject_inputs_are_presence_insensi
         records=[],
         parent_session_id=main.session_id,
     )
-    assert normalize_claude((main, sidechain, corrupt_session)) == baseline
+    assert normalize_claude((main, sidechain, nested, corrupt_session)) == baseline
 
     unadjusted = (main.records[6], *main.records[:6], *main.records[7:])
-    assert normalize_claude((replace(main, records=unadjusted), sidechain, non_subject)) == baseline
+    assert normalize_claude(
+        (replace(main, records=unadjusted), sidechain, nested, non_subject)
+    ) == baseline
 
     reordered = tuple(
         replace(record, index=index) for index, record in enumerate(unadjusted)
     )
-    assert normalize_claude((replace(main, records=reordered), sidechain, non_subject)) == baseline
+    assert normalize_claude(
+        (replace(main, records=reordered), sidechain, nested, non_subject)
+    ) == baseline
 
 
 def test_unknown_and_explicit_fenced_pastes_emit_shape_only(normalized):
@@ -379,7 +801,7 @@ def test_malformed_and_future_records_are_total_coverage_not_pipeline_failures(n
     coverage = artifact["manifest"]["coverage"]
     assert coverage["records_malformed"] == 1
     assert coverage["records_unsupported"] == 1
-    assert coverage["records_seen"] == 11
+    assert coverage["records_seen"] == 14
 
 
 def test_artifact_contains_no_raw_content_path_identifier_or_nonce_canaries(tmp_path, normalized):
@@ -396,6 +818,13 @@ def test_privacy_scan_companion_fires_when_a_canary_is_planted(tmp_path):
     artifact.write_text(CONTENT_CANARY)
     with pytest.raises(CanaryLeakError):
         assert_no_canaries([artifact], [CONTENT_CANARY.encode()])
+
+
+def test_nested_lane_leak_scan_fires_when_its_canary_is_planted(tmp_path):
+    artifact = tmp_path / "nested-planted.json"
+    artifact.write_text(NESTED_CONTENT_CANARY)
+    with pytest.raises(CanaryLeakError):
+        assert_no_canaries([artifact], [NESTED_CONTENT_CANARY.encode()])
 
 
 @pytest.mark.parametrize("payload", [PATH_CANARY, CONTENT_CANARY, RESULT_CANARY, AGENT_CANARY])
@@ -507,7 +936,7 @@ def test_zero_session_input_has_no_root():
 
 def test_nonempty_non_subject_input_has_valid_manifest_only_root():
     synthetic = synthetic_normalizer_input()
-    data = normalize_claude((synthetic.sessions[2],))
+    data = normalize_claude((synthetic.sessions[3],))
     artifact = json.loads(data)
     assert artifact["events"] == []
     assert artifact["manifest"]["sessions"] == []
@@ -719,8 +1148,9 @@ def test_shared_schema_and_store_validator_leave_room_for_codex_without_a_fork()
     ).encode()
     artifact = json.loads(normalize_claude((_one_record_session(raw),)))
     manifest = artifact["manifest"]
-    manifest["adapters"] = [{"source": "codex", "version": "1.0.0"}]
+    manifest["adapters"] = [{"source": "codex", "version": CODEX_ADAPTER_VERSION}]
     manifest["sessions"][0]["source"] = "codex"
+    manifest["sessions"][0].pop("lane_role")
     base = artifact["events"][0]
     base["source"] = "codex"
 

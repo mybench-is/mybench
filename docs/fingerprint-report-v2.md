@@ -221,7 +221,7 @@ Every field carries lifecycle-marker coverage from §3.7.
 | `fingerprint.context.one_context_episode_rate` | episodes with exactly one known context generation ÷ episodes with generation coverage | ANCHORED | 5 episodes | R0 |
 | `fingerprint.context.fresh_phase_split` | fresh sessions whose first known phase is PLAN vs BUILD/TEST/DEBUG/REVIEW/COMMIT vs UNKNOWN, divided by fresh sessions | ANCHORED | 5 fresh sessions | R0 |
 | `fingerprint.context.model_change_boundary_rate` | known context boundaries with model change ÷ boundaries with model coverage on both sides | ANCHORED | 5 boundaries | R1 |
-| `fingerprint.context.lane_switch_count_distribution` | LOCAL_ONLY cells `(count_band, exact episode count)`: for each eligible episode, count adjacent `LANES` events whose known normalized lane differs; an unknown lane breaks adjacency without bridging, then histogram the counts | ANCHORED | 5 episodes with lane coverage | no public form until MYB-19.7 |
+| `fingerprint.context.lane_switch_count_distribution` | LOCAL_ONLY cells `(count_band, exact episode count)`: for each eligible episode, count adjacent `LANES` events whose known normalized lane differs; an unknown lane breaks adjacency without bridging, then histogram the counts | ANCHORED | 5 episodes with lane coverage | LOCAL_ONLY; v0.2.1 permits only a separate ACTIVE descriptor with banded/top-coded output and k≥5 support |
 
 For all rows except the two count rows, `.band` means `share_band` or a
 banded distribution as stated. The `.exact` entry is LOCAL_ONLY and `.band`
@@ -246,7 +246,7 @@ scanner or authorize it to read orchestration-file contents.
 | `fingerprint.topology.evidence_sources` | Coverage cells for `file-structure` and `transcript-delegation`; scan-time topology is explicitly labeled, never represented as period-wide. | ANCHORED | one source | PUBLISHABLE (R0) |
 | `fingerprint.topology.peak_parallel_lanes.exact` | LOCAL_ONLY histogram cells `(exact peak lane count, exact session count)`. Per session, peak is the largest number of distinct known `LANES` simultaneously active under the MYB-6.8 scorer's versioned interval rule; no session id, timestamp, or global scalar is retained. | ANCHORED | 5 sessions with lane start/end coverage | LOCAL_ONLY |
 | `fingerprint.topology.peak_parallel_lanes.band` | Cells `(count_band(peak lanes), share_band(sessions in band / eligible sessions))`; a cell is absent below k=5. This is a within-session distribution, never a global peak or cross-session concurrency claim. | ANCHORED | k≥5 sessions per cell | PUBLISHABLE (R1) |
-| `fingerprint.topology.lane_event_share_distribution` | LOCAL_ONLY cells `(share_band, exact lane-episode count)`: within each eligible episode, compute each known lane's tagged-event share, then histogram the shares without lane names or ids. This is a deterministic utilization proxy, not an interleaving-quality judgment. | ANCHORED | 5 episodes with lane coverage | LOCAL_ONLY; no public form until MYB-19.7 |
+| `fingerprint.topology.lane_event_share_distribution` | LOCAL_ONLY cells `(share_band, exact lane-episode count)`: within each eligible episode, compute each known lane's tagged-event share, then histogram the shares without lane names or ids. This is a deterministic utilization proxy, not an interleaving-quality judgment. | ANCHORED | 5 episodes with lane coverage | LOCAL_ONLY; v0.2.1 permits a separate, banded and k-suppressed public descriptor, but does not activate this exact-count entry |
 
 ### 3.6 Token and cost profile
 
@@ -319,22 +319,25 @@ disposition is part of the v2 freeze:
 | Family | v2 disposition |
 |---|---|
 | Token headline bands | token/cost section; PUBLISHABLE under the admitted class with `provider-reported-inflatable` |
-| Within-session peak-parallel-lane distribution | topology section; PUBLISHABLE at k≥5; global peak/cross-session concurrency deferred |
+| Within-session peak-parallel-lane distribution | topology section; PUBLISHABLE at k≥5; v0.2.1 also admits a future cross-session distribution and top-coded peak-lanes band, never an exact global peak |
 | Blame survival, throughput, override survival | future ACTIVE entries in `catalog_metrics`; survival requires `persistence-not-quality`; attribution remains ANCHORED |
-| Deterministic lane-switch/utilization histograms | LOCAL_ONLY rows above; publication waits on MYB-19.7 |
-| Agent-hours/durations, longest-run forms, episode latency, externalization/spec churn | no active v2 field; re-derivable later and gated by MYB-19.7 |
-| One-shot, steering, acceptance | deferred behind the arrival/closure classifiers and OQ #33 practice-signal gate |
+| Deterministic lane-switch/utilization histograms | Current exact-count row remains LOCAL_ONLY; v0.2.1 admits future banded/top-coded, k≥5 public descriptors with no ordered stream or quality framing |
+| Agent-hours/durations | `transcript.agent_hours` v1.0.0 is ACTIVE in `catalog_metrics`: summed active-time and wall-clock bands are top-coded at 160h+, k≥5, carry boundary/`observed_at` coverage and backfill bands, require capture-dependent/inflatable caveats, are R1/full-preset, and remain ANCHORED |
+| Longest-run forms, episode latency, externalization | v0.2.1 admits only the coarse controlled forms; no field becomes active until its registry entry pins bands, support, caveats, risk, and location |
+| One-shot, steering, acceptance | Arrival conditioning may use the pinned v1 structural vocabulary in support-qualified aggregates; the substantive metric families remain behind the closure classifier and OQ #33 practice-signal gate |
 | Interleaving-quality and all other JUDGED families | deferred wholesale to the MYB-7 track; deterministic histograms do not imply quality |
 | Forge actions | normalized-store derivation through MYB-19.11 only; no v2 report field |
 | Percentiles | reserved shape only; never populated or published before the §3/OQ #52 gates |
 
-Exact public token totals, public token-per-line ratios, weekly-keyed LOC
-series, graded first-pass-acceptance framing, published percentiles, and
-headline per-session extrema remain inadmissible without an owner revision.
+Exact public token totals, exact lifecycle-duration/agent-hour totals, public
+token-per-line ratios, weekly-keyed LOC series, graded first-pass-acceptance
+framing, published percentiles, per-session extrema, and exact global
+longest-run/peak-lanes headlines remain inadmissible. THREAT_MODEL v0.2.1
+admits the last two headline families only as top-coded bands.
 
 ## 5. Publishable subset (THREAT_MODEL §3.2 input/output)
 
-Every current PUBLISHABLE field maps to an already-admitted v0.2.0 class:
+Every current PUBLISHABLE field maps to an admitted v0.2.1 class:
 
 | Report field family | THREAT_MODEL §3.2 class |
 |---|---|
@@ -350,6 +353,8 @@ Every current PUBLISHABLE field maps to an already-admitted v0.2.0 class:
 | Token/cost bands, ratios, and bucketed episode distributions | Token/cost profile; task-episode distributions where applicable |
 | Existing schema-v1 activity metrics | Counts, durations, cadence histograms, coverage percentages, streak lengths (the v0 set) |
 | Future `catalog_metrics` blame-survival fields | Blame-survival cohorts |
+| `catalog_metrics.transcript.agent_hours` | Lifecycle-derived duration and agent-hours profile; ACTIVE v1.0.0 with top-coding, k≥5, observed-boundary/`observed_at` coverage, backfill annotation, and required caveats |
+| Future autonomous-run, cross-session-concurrency, episode-latency, externalization, and deterministic-interleaving fields | Their named v0.2.1 classes; each remains absent until an ACTIVE registry entry implements the class-specific controls |
 
 The complete publication-eligible set is exactly the catalog rows marked
 PUBLISHABLE above plus future `catalog_metrics` entries whose ACTIVE registry
@@ -365,7 +370,7 @@ versions cite an already-admitted §3.2 class, subject to all of these gates:
 6. explicit owner preview and publication action.
 
 This list is an instance-level implementation of the class ceilings already
-adopted in THREAT_MODEL v0.2.0; it does not widen those ceilings. A new field
+adopted in THREAT_MODEL v0.2.1; it does not widen those ceilings. A new field
 is LOCAL_ONLY until both this spec/ADR and the threat model admit it.
 
 ## 6. Required implementation and test handoff
