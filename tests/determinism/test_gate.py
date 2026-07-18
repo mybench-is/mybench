@@ -63,13 +63,9 @@ def test_normalizer_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_
     )
     artifact_path = tmp_path / stage.name / "run-1" / "artifact.bin"
     assert artifact_path.read_bytes() == artifact
-    assert assert_no_canaries(
-        [artifact_path], list(synthetic_normalizer_input().canaries)
-    ) == 1
+    assert assert_no_canaries([artifact_path], list(synthetic_normalizer_input().canaries)) == 1
     data_root = tmp_path / stage.name / "run-1" / "data" / "mybench"
-    assert not any(
-        (data_root / name).exists() for name in ("normalized", "ledger", "anchors")
-    )
+    assert not any((data_root / name).exists() for name in ("normalized", "ledger", "anchors"))
 
 
 def test_codex_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_path):
@@ -90,13 +86,11 @@ def test_codex_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_path)
     )
     artifact_path = tmp_path / stage.name / "run-1" / "artifact.bin"
     assert artifact_path.read_bytes() == artifact
-    assert assert_no_canaries(
-        [artifact_path], list(synthetic_codex_normalizer_input().canaries)
-    ) == 1
-    data_root = tmp_path / stage.name / "run-1" / "data" / "mybench"
-    assert not any(
-        (data_root / name).exists() for name in ("normalized", "ledger", "anchors")
+    assert (
+        assert_no_canaries([artifact_path], list(synthetic_codex_normalizer_input().canaries)) == 1
     )
+    data_root = tmp_path / stage.name / "run-1" / "data" / "mybench"
+    assert not any((data_root / name).exists() for name in ("normalized", "ledger", "anchors"))
 
 
 def test_git_subprocess_artifact_and_local_surfaces_have_no_canaries(tmp_path):
@@ -140,9 +134,9 @@ def test_reference_join_subprocess_artifact_has_no_canaries(tmp_path):
     )
     artifact_path = tmp_path / stage.name / "run-1" / "artifact.bin"
     assert artifact_path.read_bytes() == artifact
-    assert assert_no_canaries(
-        [artifact_path], list(synthetic_reference_target_input().canaries)
-    ) == 1
+    assert (
+        assert_no_canaries([artifact_path], list(synthetic_reference_target_input().canaries)) == 1
+    )
 
 
 def test_manifest_runner_registration_and_current_discovery_are_exact():
@@ -154,7 +148,9 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
         "mybench.normalizer.claude",
         "mybench.normalizer.repo",
         "mybench.normalizer.reference_join",
+        "mybench.normalizer.session_timing",
         "mybench.report.page",
+        "mybench.scorer.agent_hours",
         "mybench.scorer.score",
     }
     validate_manifest_and_audit()
@@ -317,9 +313,7 @@ def test_transitive_audit_follows_first_party_helper_and_catches_indirection(tmp
     scorer.mkdir(parents=True)
     (package / "__init__.py").write_text("")
     (scorer / "entry.py").write_text(
-        "from mybench import hidden_helper\n"
-        "def compute():\n"
-        "    return hidden_helper.read()\n"
+        "from mybench import hidden_helper\ndef compute():\n    return hidden_helper.read()\n"
     )
     (package / "hidden_helper.py").write_text(
         "import os\n"
@@ -372,8 +366,7 @@ def test_dynamic_import_is_rejected_without_a_static_import(tmp_path):
 def test_pipeline_caller_cannot_inherit_claim_device_helper_exception(tmp_path):
     candidate = tmp_path / "candidate.py"
     candidate.write_text(
-        "from mybench.claims import sign_with_device_key\n"
-        "claim = sign_with_device_key({})\n"
+        "from mybench.claims import sign_with_device_key\nclaim = sign_with_device_key({})\n"
     )
     issues = audit_source(candidate, module_name="mybench.scorer.candidate")
     assert any("device/environment helper" in issue.message for issue in issues)
@@ -428,10 +421,11 @@ def test_ci_lockfile_is_exact_and_covers_direct_dependencies():
     pins = load_lock_pins(lock)
 
     direct = {
-        name.replace("_", "-")
-        for name in _direct_requirements(REPO_ROOT / "requirements-ci.txt")
+        name.replace("_", "-") for name in _direct_requirements(REPO_ROOT / "requirements-ci.txt")
     }
-    assert direct <= pins.keys(), f"direct dependencies absent from lock: {sorted(direct - pins.keys())}"
+    assert direct <= pins.keys(), (
+        f"direct dependencies absent from lock: {sorted(direct - pins.keys())}"
+    )
 
     missing_transitive = set()
     for package in pins:
@@ -442,7 +436,9 @@ def test_ci_lockfile_is_exact_and_covers_direct_dependencies():
             dependency = requirement.name.lower().replace("_", "-")
             if dependency not in pins:
                 missing_transitive.add(dependency)
-    assert not missing_transitive, f"active transitive dependencies absent from lock: {sorted(missing_transitive)}"
+    assert not missing_transitive, (
+        f"active transitive dependencies absent from lock: {sorted(missing_transitive)}"
+    )
 
 
 def test_installed_runtime_and_test_dependencies_match_lock_exactly(tmp_path):

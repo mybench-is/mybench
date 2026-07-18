@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.1.1",
+  "registry_version": "0.2.0",
   "format_status": "provisional-json-pending-OQ-31",
   "entries": [
     {
@@ -1251,6 +1251,169 @@
       "neutrality_note": "internal feature only: stylometric fingerprint + language-background adverse impact make this permanently non-renderable",
       "notes": "Feeds work-shape features and judge inputs only; the structural non-renderability test target",
       "risk_note": "stylometric fingerprinting risk; never rendered on any surface (handoff \u00a77.1 first member)"
+    },
+    {
+      "id": "transcript.agent_hours",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 2,
+      "title": "Lifecycle duration and agent-hours profile",
+      "inputs": [
+        "normalized-session-timing"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "active_time_band",
+          "wall_clock_time_band",
+          "observed_boundary_coverage_band",
+          "active_time_coverage_band",
+          "backfill_annotation",
+          "active_time_definition",
+          "wall_clock_definition",
+          "close_normalizer_version",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "active_time_band": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "under-1h",
+              "1h-to-under-8h",
+              "8h-to-under-40h",
+              "40h-to-under-160h",
+              "160h-plus"
+            ]
+          },
+          "wall_clock_time_band": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "under-1h",
+              "1h-to-under-8h",
+              "8h-to-under-40h",
+              "40h-to-under-160h",
+              "160h-plus"
+            ]
+          },
+          "observed_boundary_coverage_band": {
+            "type": "string",
+            "enum": [
+              "under-25-percent",
+              "25-to-under-50-percent",
+              "50-to-under-75-percent",
+              "75-to-under-90-percent",
+              "90-to-100-percent"
+            ]
+          },
+          "active_time_coverage_band": {
+            "type": "string",
+            "enum": [
+              "under-25-percent",
+              "25-to-under-50-percent",
+              "50-to-under-75-percent",
+              "75-to-under-90-percent",
+              "90-to-100-percent"
+            ]
+          },
+          "backfill_annotation": {
+            "type": "string",
+            "enum": [
+              "under-14-days",
+              "14-days-plus"
+            ]
+          },
+          "active_time_definition": {
+            "const": "sum-observed-gaps-no-greater-than-30m"
+          },
+          "wall_clock_definition": {
+            "const": "sum-observed-open-to-observed-or-scan-inferred-close"
+          },
+          "close_normalizer_version": {
+            "const": "1.0.0"
+          },
+          "trust_tier": {
+            "const": "ANCHORED"
+          },
+          "caveats": {
+            "const": [
+              "capture-dependent-and-inflatable",
+              "observed-at-coverage-limits-backfill"
+            ]
+          }
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "active_time_band",
+          "bands": [
+            "unknown",
+            "under-1h",
+            "1h-to-under-8h",
+            "8h-to-under-40h",
+            "40h-to-under-160h",
+            "160h-plus"
+          ],
+          "note": "Evidence-period sum of observed inter-record gaps no greater than 30 minutes; longer gaps contribute zero; 160h-plus is top-coded"
+        },
+        {
+          "field": "wall_clock_time_band",
+          "bands": [
+            "unknown",
+            "under-1h",
+            "1h-to-under-8h",
+            "8h-to-under-40h",
+            "40h-to-under-160h",
+            "160h-plus"
+          ],
+          "note": "Evidence-period sum of each covered session's observed open-to-close interval; overlapping sessions are summed; 160h-plus is top-coded"
+        },
+        {
+          "field": "observed_boundary_coverage_band",
+          "bands": [
+            "under-25-percent",
+            "25-to-under-50-percent",
+            "50-to-under-75-percent",
+            "75-to-under-90-percent",
+            "90-to-100-percent"
+          ],
+          "note": "Sessions with both an observed open and observed or versioned scan-inferred close divided by all admitted sessions"
+        },
+        {
+          "field": "active_time_coverage_band",
+          "bands": [
+            "under-25-percent",
+            "25-to-under-50-percent",
+            "50-to-under-75-percent",
+            "75-to-under-90-percent",
+            "90-to-100-percent"
+          ],
+          "note": "Boundary-covered sessions with complete observed_at coverage across eligible structural records divided by all admitted sessions"
+        },
+        {
+          "field": "backfill_annotation",
+          "bands": [
+            "under-14-days",
+            "14-days-plus"
+          ],
+          "note": "THREAT_MODEL v0.2.1 section 3.4 backfill floor; never discloses the exact anchored span"
+        }
+      ],
+      "min_support": {
+        "sessions": 5
+      },
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "Lifecycle volume only; it does not measure utility, quality, productivity, or raw compute and never publishes a session point or exact total",
+      "notes": "Activated only after the MYB-19.7 owner ruling landed as THREAT_MODEL v0.2.1. Report location: fingerprint catalog_metrics. Required caveats are output-schema constants. Codex close normalizer v1 uses only a timestamped structural task_complete record; absent terminal evidence is UNKNOWN.",
+      "risk_note": "Even coarse duration volume can reveal work-pattern intensity in combination with other disclosures; exact totals, session points, identifiers, and timestamps stay local"
     },
     {
       "id": "judge.spec_quality",
