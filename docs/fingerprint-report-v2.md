@@ -248,6 +248,17 @@ scanner or authorize it to read orchestration-file contents.
 | `fingerprint.topology.peak_parallel_lanes.band` | Cells `(count_band(peak lanes), share_band(sessions in band / eligible sessions))`; a cell is absent below k=5. This is a within-session distribution, never a global peak or cross-session concurrency claim. | ANCHORED | k≥5 sessions per cell | PUBLISHABLE (R1) |
 | `fingerprint.topology.lane_event_share_distribution` | LOCAL_ONLY cells `(share_band, exact lane-episode count)`: within each eligible episode, compute each known lane's tagged-event share, then histogram the shares without lane names or ids. This is a deterministic utilization proxy, not an interleaving-quality judgment. | ANCHORED | 5 episodes with lane coverage | LOCAL_ONLY; v0.2.1 permits a separate, banded and k-suppressed public descriptor, but does not activate this exact-count entry |
 
+The MYB-13.7 file-structure scanner walks one explicitly consented root using
+directory enumeration and `stat` only; it never opens a file or follows a
+symlink. Its private A10 artifact contains the sorted relative named hierarchy,
+exact fixed-taxonomy counts, and exact instruction depth. Its closed public
+projection contains only fixed category ids, `count_band` values, and `true`
+presence flags after k≥5 support; below-support categories and depth are absent,
+never zero. The projection labels the file-structure and transcript-delegation
+sources with separate coverage values. The file-structure observation is dated
+at UTC-day grain and explicitly says it reflects scan-time state, not the
+report's evidence period.
+
 ### 3.6 Token and cost profile
 
 Token counts are provider-reported and potentially inflatable. Every token and
