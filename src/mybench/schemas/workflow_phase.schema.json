@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/workflow_phase.schema.json",
+  "title": "Mybench private workflow phase stream",
+  "description": "Closed, identifier-free, local-only A8-derived workflow phase output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "classifier_version", "phases"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "workflow-phase-stream"},
+    "classifier_version": {"const": "1.0.0"},
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["classifier_version", "confidence", "ordinal", "phase", "rule_id"],
+        "properties": {
+          "classifier_version": {"const": "1.0.0"},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "ordinal": {"type": "integer", "minimum": 0},
+          "phase": {
+            "enum": ["TASK", "PLAN", "BUILD", "TEST", "DEBUG", "REVIEW", "COMMIT", "UNKNOWN"]
+          },
+          "rule_id": {
+            "enum": [
+              "human-turn-boundary",
+              "plan-reference",
+              "instruction-reference",
+              "write-tool",
+              "edit-tool",
+              "test-observation",
+              "error-observation",
+              "review-boundary",
+              "no-structural-rule"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"phase": {"const": "UNKNOWN"}}, "required": ["phase"]},
+            "then": {"properties": {"confidence": {"const": "UNKNOWN"}}},
+            "else": {"properties": {"confidence": {"enum": ["LOW", "MEDIUM", "HIGH"]}}}
+          }
+        ]
+      }
+    }
+  }
+}

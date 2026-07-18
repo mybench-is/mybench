@@ -103,6 +103,9 @@ REVIEWED_NON_STAGE_MODULES = frozenset(
         # Trusted enrolled-Git filesystem boundary. It reduces raw repository
         # state to explicit subject-only inputs for the pure repo stage.
         "mybench.normalizer.repo_loader",
+        # Trusted local A8-derived persistence boundary. The registered pure
+        # workflow-phase stage owns classification and canonical bytes.
+        "mybench.normalizer.workflow_phase_store",
     }
 )
 

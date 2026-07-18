@@ -52,6 +52,15 @@ from mybench.normalizer.session_timing import (
     normalize_session_timing_bytes,
     normalize_session_timings,
 )
+from mybench.normalizer.workflow_phase import (
+    WORKFLOW_PHASE_CLASSIFIER_VERSION,
+    WORKFLOW_PHASE_CONFIDENCE,
+    WORKFLOW_PHASE_SCHEMA_VERSION,
+    WORKFLOW_PHASES,
+    WorkflowPhase,
+    classify_workflow_phases,
+    workflow_phase_artifact,
+)
 
 __all__ = [
     "ARRIVAL_PATTERN_CLASSIFIER_VERSION",
@@ -68,6 +77,10 @@ __all__ = [
     "FORGE_ACTION_CLASSIFIER_VERSION",
     "NORMALIZER_VERSION",
     "TOKEN_ACCOUNTING_POLICY_VERSION",
+    "WORKFLOW_PHASE_CLASSIFIER_VERSION",
+    "WORKFLOW_PHASE_CONFIDENCE",
+    "WORKFLOW_PHASE_SCHEMA_VERSION",
+    "WORKFLOW_PHASES",
     "NoEvidence",
     "NormalizationError",
     "ResolutionIntegrityError",
@@ -84,6 +97,8 @@ __all__ = [
     "VerifiedRepoSnapshot",
     "VerifiedSession",
     "WorktreeEvidence",
+    "WorkflowPhase",
+    "classify_workflow_phases",
     "normalize_claude",
     "normalize_codex",
     "normalize_repo_evidence",
@@ -97,4 +112,5 @@ __all__ = [
     "validate_repo_corpus_artifact",
     "classify_forge_invocation",
     "validate_reference_target_corpus_artifact",
+    "workflow_phase_artifact",
 ]
