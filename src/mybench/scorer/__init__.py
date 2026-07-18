@@ -6,6 +6,14 @@ from mybench.scorer.agent_hours import (
     AgentHoursScoringError,
     score_agent_hours,
 )
+from mybench.scorer.topology import (
+    TOPOLOGY_CATEGORIES,
+    TOPOLOGY_REGISTRY_ID,
+    TOPOLOGY_SCHEMA_VERSION,
+    TopologyScanError,
+    scan_orchestration_topology,
+    store_local_topology,
+)
 
 COMPONENT = "scorer"
 RESPONSIBILITY = (
@@ -18,4 +26,10 @@ __all__ = [
     "AGENT_HOURS_SCORER_VERSION",
     "AgentHoursScoringError",
     "score_agent_hours",
+    "TOPOLOGY_CATEGORIES",
+    "TOPOLOGY_REGISTRY_ID",
+    "TOPOLOGY_SCHEMA_VERSION",
+    "TopologyScanError",
+    "scan_orchestration_topology",
+    "store_local_topology",
 ]
