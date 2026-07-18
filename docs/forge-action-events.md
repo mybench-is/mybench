@@ -2,7 +2,9 @@
 
 Status: implemented for private A8 normalized evidence only. There is no forge
 API observation, report field, registry field, publication field, or trust-tier
-change in this task. Any published form remains blocked on MYB-19.7.
+change in this task. MYB-19.7 admitted no forge-action publication class; any
+published form needs a future owner class revision plus a separately reviewed
+ACTIVE descriptor.
 
 ## Versioned exact classifier
 
@@ -72,6 +74,6 @@ artifact-invisible and that attempted rung-2 fields fail the closed schema.
 Coverage is incomplete by construction: browser actions, colleague actions,
 forge automation, auto-merge, and agent actions absent from retained sessions
 are invisible. This private event is not a complete forge history and makes no
-claim that a merge attempt landed. If MYB-19.7 later admits a published class,
-that agent-mediated-coverage caveat is mandatory there; this task adds no
-publishable representation.
+claim that a merge attempt landed. Any future class revision must make that
+agent-mediated-coverage caveat mandatory; this task adds no publishable
+representation.

@@ -128,8 +128,9 @@ resolves a pointer or reads free text. The complete pinned rule table, stability
 assessment, and defer-to-JUDGED boundary are in
 [`arrival-pattern-taxonomy.md`](arrival-pattern-taxonomy.md).
 
-Arrival-pattern output remains local A8 evidence. No conditioned public form is
-authorized before the MYB-19.7 ruling.
+Arrival-pattern output remains local A8 evidence. THREAT_MODEL v0.2.1 permits
+only support-qualified aggregate conditioning through a separately reviewed
+ACTIVE descriptor; this schema never publishes the per-episode value.
 
 ### Episode outcome and open marker (schema v4)
 
@@ -149,8 +150,10 @@ evidence is `unknown`. The pinned aggregation and open-marker rules are in
 [`episode-outcome-closure.md`](episode-outcome-closure.md).
 
 These fields remain private A8 structure. No one-shot or prompt-to-merge value,
-latency bucket, report field, claim, or publication surface is authorized
-before MYB-19.7.
+latency bucket, report field, claim, or publication surface is authorized by
+this schema. A latency aggregate needs a separately reviewed ACTIVE descriptor
+under THREAT_MODEL v0.2.1; one-shot/practice signals retain their OQ #33 and
+registry gates.
 
 ### Transcript-derived forge actions (schema v5)
 
@@ -169,7 +172,9 @@ OQ #61 rung-2 gate, and incomplete agent-mediated coverage caveat are in
 [`forge-action-events.md`](forge-action-events.md).
 
 Forge events remain private A8 structure. This schema adds no report, claim,
-registry, verifier, or publication field; published use remains MYB-19.7-gated.
+registry, verifier, or publication field. MYB-19.7 admitted no forge-action
+class, so published use requires a future owner class revision as well as a
+separately reviewed ACTIVE descriptor.
 
 ## What a pointer means
 
@@ -204,9 +209,10 @@ The trusted boundary may inspect a referenced filename transiently to resolve
 the match, but a join record has no filename, path, source bytes, transcript
 bytes, or repository bytes. A dangling or unverified match is refused rather
 than inferred. The join corpus is local-only normalized evidence; it adds no
-report, claim, registry, or other publication field. Externalization presence
-or consumption remains ineligible for publication until the MYB-19.7 class
-sitting admits an exact form and controls.
+report, claim, registry, or other publication field. THREAT_MODEL v0.2.1 admits
+only banded, support-qualified externalization presence/consumption aggregates;
+publication still requires a separately reviewed ACTIVE descriptor implementing
+those controls.
 
 ## Consent and authorship
 

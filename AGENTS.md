@@ -38,7 +38,7 @@ mybench: a privacy-preserving developer attestation system. Full brief in
   (`.mybench/commit-binding-enabled`). NEVER install a global git hook or set
   `core.hooksPath`. See `src/mybench/hooks/README.md` and
   `../mybench-ops/decisions/ADR-0001-workspace-structure.md`.
-- `docs/THREAT_MODEL.md` v0.2.0 adopted 2026-07-14 at ADR sitting 2
+- `docs/THREAT_MODEL.md` v0.2.1 adopted 2026-07-17 at the MYB-19.7 owner sitting
   (owner-decided; v0.1.0 seed owner-authored 2026-07-08). Invariant
   #4 is live: trace every feature to it (`docs/THREAT_MODEL_TRACEABILITY.md`);
   if it doesn't cover something, stop and flag — the doc gets updated first.

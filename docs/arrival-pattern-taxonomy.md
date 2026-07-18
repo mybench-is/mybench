@@ -1,7 +1,9 @@
 # Arrival-pattern classifier spike (MYB-19.3)
 
-Status: implemented for local A8 normalized evidence only. No arrival-pattern
-value is publishable until MYB-19.7 rules on a conditioned published form.
+Status: implemented for local A8 normalized evidence. THREAT_MODEL v0.2.1
+admits only support-qualified published aggregates conditioned on this pinned
+vocabulary; the per-episode value remains local and no descriptor is activated
+by this document alone.
 
 ## Contract and vocabulary
 
@@ -71,7 +73,8 @@ or provider-specific rules. Structurally ambiguous episodes emit `unknown`.
 
 The episode output stays in the private normalized A8 corpus under the mode-0700
 local data directory. It inherits the normalized-evidence coverage in
-THREAT_MODEL §2 A8, §2.1, §3.5–3.6, §4, ADV-1, ADV-4, and ADV-6. This task adds
-no report, claim, registry, or other publication surface. MYB-19.7 must admit
-and control any future conditioned aggregate before it can leave the local
-store.
+THREAT_MODEL §2 A8, §2.1, §3.2–3.6, §4, ADV-1, ADV-4, and ADV-6. This task adds
+no report, claim, registry, or other publication surface. Under MYB-19.7, a
+future ACTIVE descriptor may publish only an aggregate whose taxonomy/classifier
+versions travel with the claim and whose emitted cells independently meet their
+minimum support; the source per-episode values never leave the local store.
