@@ -13,6 +13,9 @@ from mybench.claims.canonical import canonical_bytes
 from mybench.normalizer.claude import (
     ARRIVAL_PATTERN_CLASSIFIER_VERSION,
     ARRIVAL_PATTERN_TAXONOMY_VERSION,
+    EPISODE_OPEN_MARKER_VERSION,
+    EPISODE_OUTCOME_CLASSIFIER_VERSION,
+    GitBindingObservation,
     NoEvidence,
     NormalizationError,
     VerifiedRecord,
@@ -164,22 +167,24 @@ def test_corpus_is_canonical_schema_valid_and_self_verifying(normalized):
     } for event in artifact["events"])
 
 
-def test_normalized_schema_v3_boundary_is_explicit(normalized):
+def test_normalized_schema_v4_boundary_is_explicit(normalized):
     _, _, artifact = normalized
-    assert artifact["schema_version"] == artifact["manifest"]["schema_version"] == "3"
+    assert artifact["schema_version"] == artifact["manifest"]["schema_version"] == "4"
     assert artifact["manifest"]["normalizer"]["token_accounting_policy_version"] == (
         "1.0.0"
     )
     assert artifact["manifest"]["normalizer"] == {
         "name": "mybench.normalizer",
-        "version": "3.0.0",
+        "version": "4.0.0",
         "authorship_policy_version": "1.0.0",
         "episode_stitcher_version": "2.0.0",
         "token_accounting_policy_version": "1.0.0",
         "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
         "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+        "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
+        "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
     }
-    artifact["schema_version"] = "2"
+    artifact["schema_version"] = "3"
     with pytest.raises(ValidationError):
         load_validator("normalized_corpus.schema.json").validate(artifact)
 
@@ -369,12 +374,9 @@ def test_versioned_episode_stitcher_links_only_recorded_parent_lineage(normalize
 )
 def test_arrival_pattern_taxonomy_is_pinned_over_structural_markers(values, expected):
     data, episode = _arrival_episode(values)
-    assert episode == {
-        "task_episode_id": episode["task_episode_id"],
-        "arrival_pattern": expected,
-        "classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
-        "taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
-    }
+    assert episode["arrival_pattern"] == expected
+    assert episode["classifier_version"] == ARRIVAL_PATTERN_CLASSIFIER_VERSION
+    assert episode["taxonomy_version"] == ARRIVAL_PATTERN_TAXONOMY_VERSION
     load_validator("normalized_corpus.schema.json").validate(json.loads(data))
     assert validate_corpus_artifact(data) == json.loads(data)["corpus_commitment"]
 
@@ -405,7 +407,154 @@ def test_arrival_pattern_tampering_fails_semantic_validation():
     )
     artifact = json.loads(data)
     artifact["manifest"]["episodes"][0]["arrival_pattern"] = "cold-start"
-    with pytest.raises(NormalizationError, match="arrival pattern is inconsistent"):
+    with pytest.raises(NormalizationError, match="episode derivation is inconsistent"):
+        validate_corpus_artifact(_rebound(artifact))
+
+
+def _with_git_closure(
+    session: VerifiedSession,
+    *,
+    row_start: int,
+    head_before: str,
+    head_after: str,
+    binding_hash: str | None,
+    started_at: str,
+) -> VerifiedSession:
+    repo_id = "ab" * 8
+    bindings = (
+        ()
+        if binding_hash is None
+        else (GitBindingObservation(row_start + 1, repo_id, binding_hash),)
+    )
+    return replace(
+        session,
+        repo_id=repo_id,
+        head_before=head_before,
+        head_after=head_after,
+        start_row_index=row_start,
+        end_row_index=row_start + 2,
+        binding_observations=bindings,
+        started_at=started_at,
+        ended_at="2026-01-01T00:10:00Z",
+    )
+
+
+def test_episode_outcome_closes_only_on_exact_head_binding_row_join():
+    root = _with_git_closure(
+        _synthetic_session(
+            "opaque-outcome-root",
+            [{"message": {"role": "user", "content": "synthetic"}, "type": "user"}],
+        ),
+        row_start=10,
+        head_before="1" * 40,
+        head_after="2" * 40,
+        binding_hash="2" * 40,
+        started_at="2026-01-01T00:00:00Z",
+    )
+    child = _synthetic_session(
+        "opaque-outcome-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    data = normalize_claude((root, child))
+    artifact = json.loads(data)
+    episode = artifact["manifest"]["episodes"][0]
+    assert episode["episode_outcome"] == "closed-with-bound-commit"
+    assert episode["episode_opened_at"] == "2026-01-01T00:00:00.000000Z"
+    assert episode["outcome_classifier_version"] == EPISODE_OUTCOME_CLASSIFIER_VERSION
+    assert episode["open_marker_version"] == EPISODE_OPEN_MARKER_VERSION
+    assert b"abababababababab" not in data
+    assert ("2" * 40).encode() not in data
+    assert validate_corpus_artifact(data) == artifact["corpus_commitment"]
+
+
+def test_episode_outcome_abandoned_requires_all_members_to_end_without_head_change():
+    root = _synthetic_session(
+        "opaque-abandoned-root",
+        [{"message": {"role": "user", "content": "synthetic"}, "type": "user"}],
+    )
+    child = _synthetic_session(
+        "opaque-abandoned-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    root = _with_git_closure(
+        root,
+        row_start=20,
+        head_before="3" * 40,
+        head_after="3" * 40,
+        binding_hash=None,
+        started_at="2026-01-01T00:00:00Z",
+    )
+    child = _with_git_closure(
+        child,
+        row_start=30,
+        head_before="3" * 40,
+        head_after="3" * 40,
+        binding_hash=None,
+        started_at="2026-01-01T00:06:00Z",
+    )
+    episode = json.loads(normalize_claude((root, child)))["manifest"]["episodes"][0]
+    assert episode["episode_outcome"] == "abandoned"
+
+
+def test_episode_outcome_is_unknown_for_changed_head_without_exact_final_binding():
+    root = _with_git_closure(
+        _synthetic_session(
+            "opaque-unbound-root",
+            [{"message": {"role": "user", "content": "synthetic"}, "type": "user"}],
+        ),
+        row_start=40,
+        head_before="4" * 40,
+        head_after="5" * 40,
+        binding_hash="6" * 40,
+        started_at="2026-01-01T00:00:00Z",
+    )
+    child = _synthetic_session(
+        "opaque-unbound-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    episode = json.loads(normalize_claude((root, child)))["manifest"]["episodes"][0]
+    assert episode["episode_outcome"] == "unknown"
+
+
+def test_episode_open_marker_falls_back_to_root_observed_at():
+    root = _synthetic_session(
+        "opaque-observed-root",
+        [
+            {
+                "isSidechain": False,
+                "message": {"role": "user", "content": "synthetic"},
+                "timestamp": "2026-01-01T00:04:00Z",
+                "type": "user",
+            }
+        ],
+    )
+    child = _synthetic_session(
+        "opaque-observed-child",
+        [{"message": {"role": "assistant", "content": "synthetic"}, "type": "assistant"}],
+        parent_session_id=root.session_id,
+    )
+    episode = json.loads(normalize_claude((root, child)))["manifest"]["episodes"][0]
+    assert episode["episode_opened_at"] == "2026-01-01T00:04:00.000000Z"
+
+
+def test_episode_outcome_and_open_timestamp_remain_unknown_when_evidence_is_absent():
+    _, episode = _arrival_episode(
+        [_human_turn("synthetic"), _assistant_tool("Edit", {"file_path": "synthetic.py"})]
+    )
+    assert episode["episode_outcome"] == "unknown"
+    assert episode["episode_opened_at"] == "unknown"
+
+
+def test_episode_outcome_tampering_fails_semantic_validation():
+    data, _ = _arrival_episode([_human_turn("synthetic")])
+    artifact = json.loads(data)
+    artifact["manifest"]["episodes"][0]["episode_outcome"] = (
+        "closed-with-bound-commit"
+    )
+    with pytest.raises(NormalizationError, match="episode derivation is inconsistent"):
         validate_corpus_artifact(_rebound(artifact))
 
 

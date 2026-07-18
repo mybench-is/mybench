@@ -14,7 +14,11 @@ import json
 from mybench import archive, commitments, nonces
 from mybench.daemon.capture import capture_scan_lock
 from mybench.ledger import Ledger
-from mybench.normalizer.claude import VerifiedRecord, VerifiedSession
+from mybench.normalizer.claude import (
+    GitBindingObservation,
+    VerifiedRecord,
+    VerifiedSession,
+)
 
 
 class NormalizerLoaderError(RuntimeError):
@@ -64,6 +68,65 @@ def _latest_claude_rows(rows: list[dict]) -> list[dict]:
     return sorted(latest.values(), key=lambda row: row["session_id"].encode())
 
 
+def _lifecycle_observation(rows: list[dict], session_id: str) -> dict:
+    """Return a conservative A3 boundary/binding view for one opaque session."""
+    lifecycle = [
+        row
+        for row in rows
+        if row.get("type") == "event"
+        and row.get("harness") == "claude-code"
+        and row.get("session_id") == session_id
+    ]
+    starts = sorted(
+        (row for row in lifecycle if row.get("event_kind") == "session_start"),
+        key=lambda row: row["i"],
+    )
+    ends = sorted(
+        (row for row in lifecycle if row.get("event_kind") == "session_end"),
+        key=lambda row: row["i"],
+    )
+    result = {
+        "started_at": starts[0]["ts"] if starts else None,
+        "ended_at": ends[-1]["ts"] if ends else None,
+    }
+    # Multiple starts/ends can describe resumes or an ambiguous delivery
+    # history.  Preserve timestamp coverage, but never guess one Git range.
+    if len(starts) != 1 or len(ends) != 1:
+        return result
+    start, end = starts[0], ends[0]
+    if start["i"] >= end["i"]:
+        return result
+    start_fields = {"repo_id", "worktree_id", "head_before"}
+    end_fields = {"repo_id", "worktree_id", "head_after"}
+    if not start_fields <= set(start) or not end_fields <= set(end):
+        return result
+    if (
+        start["repo_id"] != end["repo_id"]
+        or start["worktree_id"] != end["worktree_id"]
+    ):
+        return result
+    bindings = tuple(
+        GitBindingObservation(
+            row_index=row["i"],
+            repo_id=row["repo_id"],
+            commit_hash=row["commit_hash"],
+        )
+        for row in rows
+        if row.get("type") == "binding"
+        and start["i"] < row["i"] < end["i"]
+        and row.get("repo_id") == start["repo_id"]
+    )
+    return {
+        **result,
+        "repo_id": start["repo_id"],
+        "head_before": start["head_before"],
+        "head_after": end["head_after"],
+        "start_row_index": start["i"],
+        "end_row_index": end["i"],
+        "binding_observations": bindings,
+    }
+
+
 def load_owner_claude_sessions(*, confirm_subject_owned: bool) -> tuple[VerifiedSession, ...]:
     """Load a consistent, authenticated owner-corpus snapshot from A2/A3/A9.
 
@@ -80,7 +143,8 @@ def load_owner_claude_sessions(*, confirm_subject_owned: bool) -> tuple[Verified
         with capture_scan_lock():
             ledger = Ledger()
             ledger.verify_chain()
-            rows = _latest_claude_rows(ledger.rows())
+            ledger_rows = ledger.rows()
+            rows = _latest_claude_rows(ledger_rows)
             if not rows:
                 raise NormalizerLoaderError("no committed Claude sessions are available")
 
@@ -98,6 +162,7 @@ def load_owner_claude_sessions(*, confirm_subject_owned: bool) -> tuple[Verified
                     expected_session_root=row["session_root"],
                 )
                 generations = _observed_context_generations(items)
+                lifecycle = _lifecycle_observation(ledger_rows, row["session_id"])
                 records = tuple(
                     VerifiedRecord(
                         index=index,
@@ -117,6 +182,7 @@ def load_owner_claude_sessions(*, confirm_subject_owned: bool) -> tuple[Verified
                         session_root=row["session_root"],
                         records=records,
                         subject_owned=True,
+                        **lifecycle,
                     )
                 )
     except NormalizerLoaderError:

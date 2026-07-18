@@ -27,21 +27,23 @@ from datetime import datetime, timezone
 from mybench.claims.canonical import CanonicalError, canonical_bytes
 from mybench.commitment_tree import leaf_commitment, merkle_root
 
-SCHEMA_VERSION = "3"
-NORMALIZER_VERSION = "3.0.0"
+SCHEMA_VERSION = "4"
+NORMALIZER_VERSION = "4.0.0"
 AUTHORSHIP_POLICY_VERSION = "1.0.0"
 EPISODE_STITCHER_VERSION = "2.0.0"
 TOKEN_ACCOUNTING_POLICY_VERSION = "1.0.0"
 ARRIVAL_PATTERN_CLASSIFIER_VERSION = "1.0.0"
 ARRIVAL_PATTERN_TAXONOMY_VERSION = "1.0.0"
-CLAUDE_ADAPTER_VERSION = "3.0.0"
+EPISODE_OUTCOME_CLASSIFIER_VERSION = "1.0.0"
+EPISODE_OPEN_MARKER_VERSION = "1.0.0"
+CLAUDE_ADAPTER_VERSION = "4.0.0"
 
 DOMAIN_NORMALIZED_MANIFEST = b"mybench:v1:normalized-corpus-manifest"
 DOMAIN_NORMALIZED_EVENT = b"mybench:v1:normalized-event"
 DOMAIN_NORMALIZED_CORPUS = b"mybench:v1:normalized-corpus"
 
 _SOURCE = "claude-code"
-_ADAPTER_VERSIONS = {"claude-code": "3.0.0", "codex": "3.0.0"}
+_ADAPTER_VERSIONS = {"claude-code": "4.0.0", "codex": "4.0.0"}
 _OPAQUE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _HEX16 = re.compile(r"[0-9a-f]{16}\Z")
@@ -110,6 +112,12 @@ _COVERAGE_KEYS = (
 _ARRIVAL_PATTERNS = frozenset(
     {"cold-start", "prepared-spec", "iterative-emergence", "unknown"}
 )
+_EPISODE_OUTCOMES = frozenset(
+    {"closed-with-bound-commit", "abandoned", "unknown"}
+)
+_GIT_CLOSURE_EVIDENCE = frozenset(
+    {"bound-commit", "ended-without-head-change", "unknown"}
+)
 EPISODE_ADJACENCY_SECONDS = 30 * 60
 
 
@@ -141,6 +149,15 @@ class VerifiedRecord:
 
 
 @dataclass(frozen=True)
+class GitBindingObservation:
+    """One content-opaque A3 binding candidate in a lifecycle row range."""
+
+    row_index: int
+    repo_id: str
+    commit_hash: str
+
+
+@dataclass(frozen=True)
 class VerifiedSession:
     """Opaque session metadata and ordered records authenticated by the I/O layer.
 
@@ -158,6 +175,9 @@ class VerifiedSession:
     repo_id: str | None = None
     head_before: str | None = None
     head_after: str | None = None
+    start_row_index: int | None = None
+    end_row_index: int | None = None
+    binding_observations: tuple[GitBindingObservation, ...] = ()
     started_at: str | None = None
     ended_at: str | None = None
 
@@ -306,6 +326,44 @@ def _check_input_sessions(
                 not isinstance(head, str) or not _GIT_HEAD.fullmatch(head)
             ):
                 raise _safe_error("session input has an invalid git observation")
+        for row_index in (session.start_row_index, session.end_row_index):
+            if row_index is not None and (type(row_index) is not int or row_index < 0):
+                raise _safe_error("session input has an invalid lifecycle row index")
+        if not isinstance(session.binding_observations, tuple):
+            raise _safe_error("session binding observations must be an explicit tuple")
+        binding_order = []
+        for binding in session.binding_observations:
+            if (
+                not isinstance(binding, GitBindingObservation)
+                or type(binding.row_index) is not int
+                or binding.row_index < 0
+                or not isinstance(binding.repo_id, str)
+                or not _HEX16.fullmatch(binding.repo_id)
+                or not isinstance(binding.commit_hash, str)
+                or not _GIT_HEAD.fullmatch(binding.commit_hash)
+            ):
+                raise _safe_error("session input has an invalid binding observation")
+            binding_order.append(binding.row_index)
+        if binding_order != sorted(binding_order) or len(binding_order) != len(
+            set(binding_order)
+        ):
+            raise _safe_error("session binding observations are not sorted and unique")
+        row_range = (session.start_row_index, session.end_row_index)
+        if any(value is not None for value in row_range) and not all(
+            value is not None for value in row_range
+        ):
+            raise _safe_error("session input has incomplete lifecycle provenance")
+        if session.start_row_index is not None and any(
+            value is None
+            for value in (session.repo_id, session.head_before, session.head_after)
+        ):
+            raise _safe_error("session input has incomplete lifecycle provenance")
+        if (
+            session.start_row_index is not None
+            and session.end_row_index is not None
+            and session.start_row_index >= session.end_row_index
+        ):
+            raise _safe_error("session lifecycle row range is reversed")
         started_at = (
             _canonical_timestamp(session.started_at)
             if session.started_at is not None
@@ -354,6 +412,9 @@ def _check_input_sessions(
                 repo_id=session.repo_id,
                 head_before=session.head_before,
                 head_after=session.head_after,
+                start_row_index=session.start_row_index,
+                end_row_index=session.end_row_index,
+                binding_observations=session.binding_observations,
                 started_at=started_at,
                 ended_at=ended_at,
             )
@@ -562,24 +623,16 @@ def token_accounting_includes(session: Mapping, *, view: str) -> bool:
     raise _safe_error("token accounting view is unsupported")
 
 
-def _arrival_pattern_for_episode(
-    episode_id: str,
-    sessions: Sequence[Mapping],
-    events: Sequence[Mapping],
-) -> str:
-    """Classify one stitched episode from closed structural fields only.
-
-    The root session's pre-implementation arrival window is the only input.
-    Free text, pointers, commitments, timestamps, and provider-specific raw
-    records are deliberately unavailable to this rule table.
-    """
+def _episode_root(
+    episode_id: str, sessions: Sequence[Mapping]
+) -> tuple[str, str] | None:
     members = {
         (session.get("source"), session.get("session_id"))
         for session in sessions
         if session.get("task_episode_id") == episode_id
     }
     if not members:
-        return "unknown"
+        return None
 
     roots = []
     for session in sessions:
@@ -595,14 +648,29 @@ def _arrival_pattern_for_episode(
             predecessors.add((session.get("source"), predecessor.get("session_id")))
         if not (predecessors & members):
             roots.append(key)
-    if len(roots) != 1:
+    return roots[0] if len(roots) == 1 else None
+
+
+def _arrival_pattern_for_episode(
+    episode_id: str,
+    sessions: Sequence[Mapping],
+    events: Sequence[Mapping],
+) -> str:
+    """Classify one stitched episode from closed structural fields only.
+
+    The root session's pre-implementation arrival window is the only input.
+    Free text, pointers, commitments, timestamps, and provider-specific raw
+    records are deliberately unavailable to this rule table.
+    """
+    root = _episode_root(episode_id, sessions)
+    if root is None:
         return "unknown"
 
     root_events = sorted(
         (
             event
             for event in events
-            if (event.get("source"), event.get("session_id")) == roots[0]
+            if (event.get("source"), event.get("session_id")) == root
         ),
         key=lambda event: (event.get("record_index", -1), event.get("subevent_index", -1)),
     )
@@ -664,7 +732,74 @@ def _arrival_pattern_for_episode(
     return "unknown"
 
 
-def _arrival_pattern_outputs(
+def _git_closure_evidence(session: VerifiedSession) -> str:
+    """Reduce A3 boundary/binding observations to one fail-closed marker."""
+    if any(
+        value is None
+        for value in (
+            session.repo_id,
+            session.head_before,
+            session.head_after,
+            session.start_row_index,
+            session.end_row_index,
+            session.ended_at,
+        )
+    ):
+        return "unknown"
+    bindings = [
+        binding
+        for binding in session.binding_observations
+        if binding.repo_id == session.repo_id
+        and session.start_row_index < binding.row_index < session.end_row_index
+    ]
+    if session.head_before != session.head_after and any(
+        binding.commit_hash == session.head_after for binding in bindings
+    ):
+        return "bound-commit"
+    if session.head_before == session.head_after and not bindings:
+        return "ended-without-head-change"
+    return "unknown"
+
+
+def _episode_opened_at(
+    episode_id: str,
+    sessions: Sequence[Mapping],
+    events: Sequence[Mapping],
+) -> str:
+    root = _episode_root(episode_id, sessions)
+    if root is None:
+        return "unknown"
+    root_session = next(
+        session
+        for session in sessions
+        if (session.get("source"), session.get("session_id")) == root
+    )
+    started_at = root_session.get("started_at")
+    if started_at != "unknown":
+        return started_at
+    observed = sorted(
+        event["observed_at"]
+        for event in events
+        if (event.get("source"), event.get("session_id")) == root
+        and "observed_at" in event
+    )
+    return observed[0] if observed else "unknown"
+
+
+def _episode_outcome(episode_id: str, sessions: Sequence[Mapping]) -> str:
+    evidence = [
+        session["git_closure_evidence"]
+        for session in sessions
+        if session.get("task_episode_id") == episode_id
+    ]
+    if "bound-commit" in evidence:
+        return "closed-with-bound-commit"
+    if evidence and all(value == "ended-without-head-change" for value in evidence):
+        return "abandoned"
+    return "unknown"
+
+
+def _episode_outputs(
     sessions: Sequence[Mapping], events: Sequence[Mapping]
 ) -> list[dict]:
     episode_ids = sorted(
@@ -682,6 +817,10 @@ def _arrival_pattern_outputs(
             ),
             "classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
             "taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+            "episode_outcome": _episode_outcome(episode_id, sessions),
+            "outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
+            "episode_opened_at": _episode_opened_at(episode_id, sessions, events),
+            "open_marker_version": EPISODE_OPEN_MARKER_VERSION,
         }
         for episode_id in episode_ids
     ]
@@ -1351,6 +1490,8 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
             "source": session.source,
             "session_id": session.session_id,
             "admitted_record_count": len(admitted_records),
+            "started_at": session.started_at or "unknown",
+            "git_closure_evidence": _git_closure_evidence(session),
             **lane_markers,
         }
         if key in episodes:
@@ -1448,7 +1589,7 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
 
     events.sort(key=_event_sort_key)
     manifest_sessions.sort(key=lambda item: (item["source"].encode(), item["session_id"].encode()))
-    episode_outputs = _arrival_pattern_outputs(manifest_sessions, events)
+    episode_outputs = _episode_outputs(manifest_sessions, events)
     coverage_dict = {key: coverage[key] for key in _COVERAGE_KEYS}
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -1461,6 +1602,8 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
             "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
             "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
             "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+            "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
+            "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CLAUDE_ADAPTER_VERSION}],
         "sessions": manifest_sessions,
@@ -1725,6 +1868,8 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
         "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
         "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
         "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+        "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
+        "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
     }
     if manifest["normalizer"] != expected_normalizer:
         raise _safe_error("normalized manifest has an unsupported normalizer version")
@@ -1754,6 +1899,8 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
             "source",
             "session_id",
             "admitted_record_count",
+            "started_at",
+            "git_closure_evidence",
         }
         if not _exact_keys(
             session,
@@ -1775,6 +1922,12 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
             "admitted_record_count"
         ] == 0:
             raise _safe_error("normalized manifest session has invalid structural metadata")
+        if session["started_at"] != "unknown" and _canonical_timestamp(
+            session["started_at"]
+        ) != session["started_at"]:
+            raise _safe_error("normalized manifest session has an invalid open observation")
+        if not _is_label(session["git_closure_evidence"], _GIT_CLOSURE_EVIDENCE):
+            raise _safe_error("normalized manifest session has invalid closure evidence")
         if "task_episode_id" in session and not _is_episode_id(session["task_episode_id"]):
             raise _safe_error("normalized manifest session has an invalid episode id")
         if "parent_session_id" in session and not _is_opaque_id(session["parent_session_id"]):
@@ -1817,6 +1970,10 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
                 "arrival_pattern",
                 "classifier_version",
                 "taxonomy_version",
+                "episode_outcome",
+                "outcome_classifier_version",
+                "episode_opened_at",
+                "open_marker_version",
             },
         ):
             raise _safe_error("normalized manifest episode has invalid fields")
@@ -1825,6 +1982,15 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
             or not _is_label(episode["arrival_pattern"], _ARRIVAL_PATTERNS)
             or episode["classifier_version"] != ARRIVAL_PATTERN_CLASSIFIER_VERSION
             or episode["taxonomy_version"] != ARRIVAL_PATTERN_TAXONOMY_VERSION
+            or not _is_label(episode["episode_outcome"], _EPISODE_OUTCOMES)
+            or episode["outcome_classifier_version"]
+            != EPISODE_OUTCOME_CLASSIFIER_VERSION
+            or (
+                episode["episode_opened_at"] != "unknown"
+                and _canonical_timestamp(episode["episode_opened_at"])
+                != episode["episode_opened_at"]
+            )
+            or episode["open_marker_version"] != EPISODE_OPEN_MARKER_VERSION
         ):
             raise _safe_error("normalized manifest episode has invalid classification")
         episode_ids.append(episode["task_episode_id"])
@@ -1925,8 +2091,8 @@ def _validate_identity_semantics(manifest: dict, events: Sequence[dict]) -> None
     for key, session in by_key.items():
         if session.get("task_episode_id") != expected_episodes.get(key):
             raise _safe_error("normalized manifest episode identity is inconsistent")
-    if manifest["episodes"] != _arrival_pattern_outputs(sessions, events):
-        raise _safe_error("normalized manifest arrival pattern is inconsistent")
+    if manifest["episodes"] != _episode_outputs(sessions, events):
+        raise _safe_error("normalized manifest episode derivation is inconsistent")
     if manifest["coverage"]["lineage_unresolved"] != unresolved:
         raise _safe_error("normalized manifest lineage coverage is inconsistent")
 
