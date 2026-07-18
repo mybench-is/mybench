@@ -138,7 +138,7 @@ def test_fixed_production_artifact_locks_schema_and_root_together():
     data = normalize_claude((session,))
     artifact = json.loads(data)
     assert artifact["corpus_commitment"] == (
-        "ef5a99badc4501aadbd9a2b2b0970ba8a4bd9bc44fe66a7a6cb002c3b1944f95"
+        "86dc55650dbef781c4bf89c8e3fc0eb04ca8fc82341cd5083f4d20d7542e8679"
     )
     load_validator("normalized_corpus.schema.json").validate(artifact)
     assert validate_corpus_artifact(data) == artifact["corpus_commitment"]

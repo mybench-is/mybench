@@ -18,6 +18,8 @@ from collections.abc import Mapping, Sequence
 
 from mybench.claims.canonical import canonical_bytes
 from mybench.normalizer.claude import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION,
     AUTHORSHIP_POLICY_VERSION,
     EPISODE_STITCHER_VERSION,
     NORMALIZER_VERSION,
@@ -29,6 +31,7 @@ from mybench.normalizer.claude import (
     _EFFORTS,
     _MODEL,
     _PROVIDERS,
+    _arrival_pattern_outputs,
     _base_event,
     _canonical_timestamp,
     _check_input_sessions,
@@ -46,7 +49,7 @@ from mybench.normalizer.claude import (
     corpus_commitment,
 )
 
-CODEX_ADAPTER_VERSION = "2.0.0"
+CODEX_ADAPTER_VERSION = "3.0.0"
 _SOURCE = "codex"
 
 _MESSAGE_TYPES = frozenset({"input_text", "output_text"})
@@ -656,6 +659,7 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
 
     events.sort(key=_event_sort_key)
     manifest_sessions.sort(key=lambda item: (item["source"].encode(), item["session_id"].encode()))
+    episode_outputs = _arrival_pattern_outputs(manifest_sessions, events)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "kind": "normalized-corpus-manifest",
@@ -665,9 +669,12 @@ def normalize_codex(sessions: Sequence[VerifiedSession]) -> bytes:
             "authorship_policy_version": AUTHORSHIP_POLICY_VERSION,
             "episode_stitcher_version": EPISODE_STITCHER_VERSION,
             "token_accounting_policy_version": TOKEN_ACCOUNTING_POLICY_VERSION,
+            "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+            "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CODEX_ADAPTER_VERSION}],
         "sessions": manifest_sessions,
+        "episodes": episode_outputs,
         "coverage": {key: coverage[key] for key in _COVERAGE_KEYS},
         "event_count": len(events),
     }

@@ -11,6 +11,8 @@ from jsonschema import ValidationError
 from mybench.commitments import leaf_commitment, session_root
 from mybench.claims.canonical import canonical_bytes
 from mybench.normalizer.claude import (
+    ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+    ARRIVAL_PATTERN_TAXONOMY_VERSION,
     NoEvidence,
     NormalizationError,
     VerifiedRecord,
@@ -61,6 +63,86 @@ def _one_record_session(raw: bytes, *, commitment: str | None = None) -> Verifie
     )
 
 
+def _synthetic_session(
+    session_id: str,
+    values: list[dict],
+    *,
+    parent_session_id: str | None = None,
+) -> VerifiedSession:
+    raws = [
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        for value in values
+    ]
+    commitments = [
+        leaf_commitment(bytes([index + 1]) * 32, raw)
+        for index, raw in enumerate(raws)
+    ]
+    return VerifiedSession(
+        source="claude-code",
+        session_id=session_id,
+        session_root=session_root(commitments).hex(),
+        records=tuple(
+            VerifiedRecord(index, raw, commitment.hex(), "subject")
+            for index, (raw, commitment) in enumerate(zip(raws, commitments))
+        ),
+        subject_owned=True,
+        parent_session_id=parent_session_id,
+    )
+
+
+def _arrival_episode(values: list[dict]) -> tuple[bytes, dict]:
+    root = _synthetic_session("opaque-arrival-root", values)
+    child = _synthetic_session(
+        "opaque-arrival-child",
+        [
+            {
+                "isSidechain": True,
+                "message": {"role": "assistant", "content": "synthetic child"},
+                "type": "assistant",
+            }
+        ],
+        parent_session_id=root.session_id,
+    )
+    data = normalize_claude((child, root))
+    episodes = json.loads(data)["manifest"]["episodes"]
+    assert len(episodes) == 1
+    return data, episodes[0]
+
+
+def _human_turn(content: str) -> dict:
+    return {
+        "isSidechain": False,
+        "message": {"role": "user", "content": content},
+        "type": "user",
+    }
+
+
+def _assistant_text(content: str = "synthetic response") -> dict:
+    return {
+        "isSidechain": False,
+        "message": {"role": "assistant", "content": content},
+        "type": "assistant",
+    }
+
+
+def _assistant_tool(name: str, tool_input: dict) -> dict:
+    return {
+        "isSidechain": False,
+        "message": {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "synthetic-arrival-tool",
+                    "name": name,
+                    "input": tool_input,
+                }
+            ],
+        },
+        "type": "assistant",
+    }
+
+
 def _rebound(artifact: dict) -> bytes:
     artifact["manifest"]["event_count"] = len(artifact["events"])
     artifact["corpus_commitment"] = corpus_commitment(
@@ -82,13 +164,22 @@ def test_corpus_is_canonical_schema_valid_and_self_verifying(normalized):
     } for event in artifact["events"])
 
 
-def test_normalized_schema_v2_boundary_is_explicit(normalized):
+def test_normalized_schema_v3_boundary_is_explicit(normalized):
     _, _, artifact = normalized
-    assert artifact["schema_version"] == artifact["manifest"]["schema_version"] == "2"
+    assert artifact["schema_version"] == artifact["manifest"]["schema_version"] == "3"
     assert artifact["manifest"]["normalizer"]["token_accounting_policy_version"] == (
         "1.0.0"
     )
-    artifact["schema_version"] = "1"
+    assert artifact["manifest"]["normalizer"] == {
+        "name": "mybench.normalizer",
+        "version": "3.0.0",
+        "authorship_policy_version": "1.0.0",
+        "episode_stitcher_version": "2.0.0",
+        "token_accounting_policy_version": "1.0.0",
+        "arrival_pattern_classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+        "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+    }
+    artifact["schema_version"] = "2"
     with pytest.raises(ValidationError):
         load_validator("normalized_corpus.schema.json").validate(artifact)
 
@@ -231,6 +322,93 @@ def test_versioned_episode_stitcher_links_only_recorded_parent_lineage(normalize
     )
 
 
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (
+            [
+                _human_turn("synthetic brief"),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "cold-start",
+        ),
+        (
+            [
+                _human_turn("```synthetic\nprepared fixture\n```"),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "prepared-spec",
+        ),
+        (
+            [
+                _human_turn("x" * 81),
+                _assistant_tool(
+                    "Read", {"file_path": ".claude/plans/synthetic-plan.md"}
+                ),
+            ],
+            "prepared-spec",
+        ),
+        (
+            [
+                _human_turn("synthetic start"),
+                _assistant_text(),
+                _human_turn("synthetic refine"),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "iterative-emergence",
+        ),
+        (
+            [
+                _human_turn("x" * 81),
+                _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+            ],
+            "unknown",
+        ),
+    ],
+    ids=["cold", "pasted-spec", "plan-reference", "iterative", "unknown"],
+)
+def test_arrival_pattern_taxonomy_is_pinned_over_structural_markers(values, expected):
+    data, episode = _arrival_episode(values)
+    assert episode == {
+        "task_episode_id": episode["task_episode_id"],
+        "arrival_pattern": expected,
+        "classifier_version": ARRIVAL_PATTERN_CLASSIFIER_VERSION,
+        "taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
+    }
+    load_validator("normalized_corpus.schema.json").validate(json.loads(data))
+    assert validate_corpus_artifact(data) == json.loads(data)["corpus_commitment"]
+
+
+def test_arrival_classifier_does_not_read_same_shape_free_text():
+    _, first = _arrival_episode(
+        [
+            _human_turn("synthetic alpha"),
+            _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+        ]
+    )
+    _, second = _arrival_episode(
+        [
+            _human_turn("synthetic omega"),
+            _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+        ]
+    )
+    assert first == second
+    assert first["arrival_pattern"] == "cold-start"
+
+
+def test_arrival_pattern_tampering_fails_semantic_validation():
+    data, _ = _arrival_episode(
+        [
+            _human_turn("```synthetic\nprepared fixture\n```"),
+            _assistant_tool("Edit", {"file_path": "synthetic.py"}),
+        ]
+    )
+    artifact = json.loads(data)
+    artifact["manifest"]["episodes"][0]["arrival_pattern"] = "cold-start"
+    with pytest.raises(NormalizationError, match="arrival pattern is inconsistent"):
+        validate_corpus_artifact(_rebound(artifact))
+
+
 def test_nested_lane_markers_and_token_accounting_views_fire_without_content(normalized):
     _, data, artifact = normalized
     sessions = {
@@ -318,6 +496,7 @@ def test_standalone_session_does_not_guess_a_task_episode():
     ).encode()
     artifact = json.loads(normalize_claude((_one_record_session(raw),)))
     assert "task_episode_id" not in artifact["manifest"]["sessions"][0]
+    assert artifact["manifest"]["episodes"] == []
     assert all("task_episode_id" not in event for event in artifact["events"])
 
 
