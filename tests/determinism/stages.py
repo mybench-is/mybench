@@ -169,6 +169,41 @@ def _agent_hours_profile() -> Invocation:
     )
 
 
+def _evidence_coverage_aggregate() -> Invocation:
+    # Fixed schema-v1 PROVEN metrics plus fixed, content-free contributions.
+    # The production aggregate receives no raw evidence or ambient authority.
+    from tests.scorer.test_evidence_coverage import LEGACY_METRICS, _contributions
+
+    return Invocation(
+        args=(_contributions(),),
+        kwargs={"legacy_metrics": LEGACY_METRICS},
+    )
+
+
+def _wave1_transcript_claim_set() -> Invocation:
+    # Fixed synthetic normalized evidence, content-free control snapshots, and
+    # a deterministic dev-only key. The production scorer receives no ambient
+    # data, clock, signing-key, environment, or network authority.
+    from mybench.claims import dev_signing_key
+    from tests.fixtures.wave1 import wave1_synthetic_input
+
+    synthetic = wave1_synthetic_input()
+    return Invocation(
+        args=(
+            synthetic.corpus,
+            synthetic.currency_snapshot,
+            synthetic.mcp_observations,
+        ),
+        kwargs={
+            "window_start": "2026-01-01T00:00:00Z",
+            "window_end": "2026-01-01T01:00:00Z",
+            "signed_at": "2026-07-18T00:00:00Z",
+            "private_key": dev_signing_key(b"w" * 32),
+            "signer_kind": "dev",
+        },
+    )
+
+
 def _git_normalized_corpus() -> Invocation:
     # Fixed, path-free subject-only repository records. The production stage
     # receives no Git, enrollment, filesystem, or author-identity authority.
@@ -194,12 +229,14 @@ RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
+    "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
     "reference-target-join-corpus": _reference_target_join_corpus,
     "session-timing-output": _session_timing_output,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
+    "wave1-transcript-claim-set": _wave1_transcript_claim_set,
     "workflow-phase-output": _workflow_phase_output,
 }
 
@@ -220,6 +257,20 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.agent_hours",),
+    ),
+    Stage(
+        "evidence-coverage-aggregate",
+        EntryPoint("mybench.scorer.evidence_coverage", "score_evidence_coverage"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.evidence_coverage",),
+    ),
+    Stage(
+        "wave1-transcript-claim-set",
+        EntryPoint("mybench.scorer.wave1", "score_wave1_claims"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.wave1",),
     ),
     Stage(
         "claude-normalized-corpus",

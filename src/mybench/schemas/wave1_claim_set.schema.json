@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/wave1_claim_set.schema.json",
+  "title": "Mybench Wave-1 Claim Set",
+  "description": "A deterministic local-only container for zero or more individually schema- and registry-validated signed claims.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "claims"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "wave1-transcript-claim-set"},
+    "claims": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {"type": "object"}
+    }
+  }
+}

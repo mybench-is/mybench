@@ -51,7 +51,7 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.4.0"
+    assert registry.version == "0.6.0"
     assert len(registry.ids()) == 43
     # ADR-0016 resolved OQ #31 by ratifying JSON at the owner sitting.
     assert packaged_doc()["format_status"] == "ratified-json"
@@ -656,8 +656,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.4.0"',
-            b'"registry_version": "0.4.0", "registry_version": "0.4.0"',
+            b'"registry_version": "0.6.0"',
+            b'"registry_version": "0.6.0", "registry_version": "0.6.0"',
             1,
         )
     )
@@ -700,6 +700,7 @@ def test_bridge_rejects_free_text_in_slug_arrays(registry):
         registry.check_claim(
             tool_mix_claim(
                 registry_id="transcript.orchestrators",
+                registry_version="0.2.0",
                 output={
                     "harnesses": ["totally normal prose with spaces in it"],
                     "version_currency_band": "older",
@@ -709,6 +710,7 @@ def test_bridge_rejects_free_text_in_slug_arrays(registry):
     registry.check_claim(
         tool_mix_claim(
             registry_id="transcript.orchestrators",
+            registry_version="0.2.0",
             output={"harnesses": ["claude-code", "codex"], "version_currency_band": "older"},
         )
     )
