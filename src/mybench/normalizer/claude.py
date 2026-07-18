@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shlex
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -26,9 +27,8 @@ from datetime import datetime, timezone
 
 from mybench.claims.canonical import CanonicalError, canonical_bytes
 from mybench.commitment_tree import leaf_commitment, merkle_root
-
-SCHEMA_VERSION = "4"
-NORMALIZER_VERSION = "4.0.0"
+SCHEMA_VERSION = "5"
+NORMALIZER_VERSION = "5.0.0"
 AUTHORSHIP_POLICY_VERSION = "1.0.0"
 EPISODE_STITCHER_VERSION = "2.0.0"
 TOKEN_ACCOUNTING_POLICY_VERSION = "1.0.0"
@@ -36,14 +36,15 @@ ARRIVAL_PATTERN_CLASSIFIER_VERSION = "1.0.0"
 ARRIVAL_PATTERN_TAXONOMY_VERSION = "1.0.0"
 EPISODE_OUTCOME_CLASSIFIER_VERSION = "1.0.0"
 EPISODE_OPEN_MARKER_VERSION = "1.0.0"
-CLAUDE_ADAPTER_VERSION = "4.0.0"
+FORGE_ACTION_CLASSIFIER_VERSION = "1.0.0"
+CLAUDE_ADAPTER_VERSION = "5.0.0"
 
 DOMAIN_NORMALIZED_MANIFEST = b"mybench:v1:normalized-corpus-manifest"
 DOMAIN_NORMALIZED_EVENT = b"mybench:v1:normalized-event"
 DOMAIN_NORMALIZED_CORPUS = b"mybench:v1:normalized-corpus"
 
 _SOURCE = "claude-code"
-_ADAPTER_VERSIONS = {"claude-code": "4.0.0", "codex": "4.0.0"}
+_ADAPTER_VERSIONS = {"claude-code": "5.0.0", "codex": "5.0.0"}
 _OPAQUE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _HEX16 = re.compile(r"[0-9a-f]{16}\Z")
@@ -73,6 +74,7 @@ _EVENT_KINDS = frozenset(
         "token-usage",
         "reference",
         "test",
+        "forge-action",
     }
 )
 _PROVIDERS = frozenset(
@@ -118,6 +120,22 @@ _EPISODE_OUTCOMES = frozenset(
 _GIT_CLOSURE_EVIDENCE = frozenset(
     {"bound-commit", "ended-without-head-change", "unknown"}
 )
+_FORGE_ACTION_KINDS = frozenset(
+    {"pr-open", "pr-comment", "pr-review-request", "pr-merge-attempt", "push", "other"}
+)
+_SHELL_TOOLS = frozenset({"bash", "execute", "shell", "exec_command"})
+_GITHUB_MCP_RULES = {
+    "mcp__github__create_pull_request": "pr-open",
+    "mcp__github__add_pull_request_comment": "pr-comment",
+    "mcp__github__request_pull_request_review": "pr-review-request",
+    "mcp__github__request_copilot_review": "pr-review-request",
+    "mcp__github__merge_pull_request": "pr-merge-attempt",
+    "mcp__github__push_files": "push",
+    "mcp__github__create_pull_request_review": "other",
+    "mcp__github__submit_pending_pull_request_review": "other",
+    "mcp__github__update_pull_request": "other",
+    "mcp__github__update_pull_request_branch": "other",
+}
 EPISODE_ADJACENCY_SECONDS = 30 * 60
 
 
@@ -1125,6 +1143,134 @@ def _tool_relation(
     }
 
 
+def _unknown_forge_classification() -> dict[str, str]:
+    return {
+        "classification": "unknown",
+        "classifier_version": FORGE_ACTION_CLASSIFIER_VERSION,
+    }
+
+
+def _known_forge_classification(kind: str) -> dict[str, str]:
+    if kind not in _FORGE_ACTION_KINDS:  # pragma: no cover - closed internal table
+        raise ValueError("forge classifier rule has an unsupported output")
+    return {
+        "classification": "forge-action",
+        "classifier_version": FORGE_ACTION_CLASSIFIER_VERSION,
+        "forge_action_kind": kind,
+    }
+
+
+def _forge_command_tokens(tool_name: str, invocation: object) -> tuple[str, ...] | None:
+    lowered_name = tool_name.lower()
+    if lowered_name not in _SHELL_TOOLS or not isinstance(invocation, Mapping):
+        return None
+    raw_command = invocation.get("cmd") if lowered_name == "exec_command" else None
+    if raw_command is None:
+        raw_command = invocation.get("command")
+    if isinstance(raw_command, Sequence) and not isinstance(raw_command, (str, bytes)):
+        if not raw_command or not all(isinstance(token, str) for token in raw_command):
+            return None
+        return tuple(raw_command)
+    if not isinstance(raw_command, str):
+        return None
+    try:
+        tokens = tuple(shlex.split(raw_command, posix=True))
+    except ValueError:
+        return None
+    return tokens or None
+
+
+def _classify_forge_tokens(tokens: tuple[str, ...]) -> dict[str, str]:
+    if len(tokens) >= 2 and tokens[:2] == ("git", "push"):
+        return _known_forge_classification("push")
+    if not tokens or tokens[0] != "gh":
+        return _unknown_forge_classification()
+    if len(tokens) >= 3 and tokens[1:3] == ("pr", "create"):
+        return _known_forge_classification("pr-open")
+    if len(tokens) >= 3 and tokens[1:3] == ("pr", "comment"):
+        return _known_forge_classification("pr-comment")
+    if len(tokens) >= 3 and tokens[1:3] == ("pr", "merge"):
+        return _known_forge_classification("pr-merge-attempt")
+    if len(tokens) >= 3 and tokens[1:3] == ("pr", "edit") and any(
+        token == "--add-reviewer" or token.startswith("--add-reviewer=")
+        for token in tokens[3:]
+    ):
+        return _known_forge_classification("pr-review-request")
+    return _known_forge_classification("other")
+
+
+def classify_forge_invocation(tool_name: object, invocation: object) -> dict[str, str]:
+    """Return one exact, closed classification without copying invocation bytes."""
+    if not isinstance(tool_name, str):
+        return _unknown_forge_classification()
+    mcp_kind = _GITHUB_MCP_RULES.get(tool_name)
+    if mcp_kind is not None and isinstance(invocation, Mapping):
+        return _known_forge_classification(mcp_kind)
+    tokens = _forge_command_tokens(tool_name, invocation)
+    return _classify_forge_tokens(tokens) if tokens is not None else _unknown_forge_classification()
+
+
+def _forge_action_partial(
+    *,
+    tool_name: object,
+    tool_input: object,
+    pointer: dict | None,
+    repo_id: str | None,
+    record_index: int,
+    tool_call_subevent_index: int,
+) -> dict | None:
+    """Build pointer-only forge structure from one admitted invocation."""
+    classification = classify_forge_invocation(tool_name, tool_input)
+    if classification["classification"] == "unknown" or pointer is None:
+        return None
+    event = {
+        "event_kind": "forge-action",
+        "authorship": "agent-turn",
+        "forge_action_kind": classification["forge_action_kind"],
+        "classifier_version": classification["classifier_version"],
+        "outcome": "unknown",
+        "pointer": pointer,
+        "tool_relation": {
+            "status": "linked",
+            "record_index": record_index,
+            "subevent_index": tool_call_subevent_index,
+        },
+    }
+    if repo_id is not None:
+        event["repo_id"] = repo_id
+    return event
+
+
+def _join_forge_outcomes(events: Sequence[dict]) -> None:
+    """Join only the existing normalized result_status structural field."""
+    statuses: dict[tuple[str, str, int, int], list[str]] = {}
+    for event in events:
+        if event.get("event_kind") != "tool-result":
+            continue
+        relation = event.get("tool_relation")
+        if not isinstance(relation, Mapping) or relation.get("status") != "linked":
+            continue
+        key = (
+            event["source"],
+            event["session_id"],
+            relation["record_index"],
+            relation["subevent_index"],
+        )
+        statuses.setdefault(key, []).append(event["result_status"])
+    for event in events:
+        if event.get("event_kind") != "forge-action":
+            continue
+        relation = event["tool_relation"]
+        key = (
+            event["source"],
+            event["session_id"],
+            relation["record_index"],
+            relation["subevent_index"],
+        )
+        linked = statuses.get(key, ())
+        event["outcome"] = linked[0] if len(linked) == 1 else "unknown"
+
+
 def _message_events(
     *,
     session: VerifiedSession,
@@ -1230,6 +1376,17 @@ def _message_events(
                 event["pointer"] = pointer
                 coverage["content_references"] += 1
             partials.append(event)
+            forge_action = _forge_action_partial(
+                tool_name=block.get("name"),
+                tool_input=block.get("input"),
+                pointer=pointer,
+                repo_id=session.repo_id,
+                record_index=normalized_record_index,
+                tool_call_subevent_index=len(partials) - 1,
+            )
+            if forge_action is not None:
+                partials.append(forge_action)
+                coverage["content_references"] += 1
             reference_kind = _reference_kind(block.get("name"), block.get("input"))
             if pointer is not None and reference_kind is not None:
                 partials.append(
@@ -1587,6 +1744,7 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
             coverage["records_parsed"] += 1
             events.extend(parsed)
 
+    _join_forge_outcomes(events)
     events.sort(key=_event_sort_key)
     manifest_sessions.sort(key=lambda item: (item["source"].encode(), item["session_id"].encode()))
     episode_outputs = _episode_outputs(manifest_sessions, events)
@@ -1604,6 +1762,7 @@ def normalize_claude(sessions: Sequence[VerifiedSession]) -> bytes:
             "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
             "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
             "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
+            "forge_action_classifier_version": FORGE_ACTION_CLASSIFIER_VERSION,
         },
         "adapters": [{"source": _SOURCE, "version": CLAUDE_ADAPTER_VERSION}],
         "sessions": manifest_sessions,
@@ -1723,6 +1882,17 @@ def _validate_event(event: object, allowed_sources: set[str]) -> None:
         "token-usage": ({"token_usage"}, set(), {"agent-turn"}),
         "reference": ({"reference_kind", "pointer"}, set(), {"agent-turn"}),
         "test": ({"test_scope", "test_status"}, {"pointer"}, {"agent-turn"}),
+        "forge-action": (
+            {
+                "forge_action_kind",
+                "classifier_version",
+                "outcome",
+                "pointer",
+                "tool_relation",
+            },
+            {"repo_id"},
+            {"agent-turn"},
+        ),
     }[event_kind]
     kind_required, kind_optional, allowed_authorship = kind_spec
     if not _exact_keys(event, common | kind_required, common_optional | kind_optional):
@@ -1744,7 +1914,7 @@ def _validate_event(event: object, allowed_sources: set[str]) -> None:
             event["authorship"] != "agent-turn" or pointer_field == "tool-input"
         ):
             raise _safe_error("turn pointer violates the authorship or field policy")
-        if event_kind in {"tool-call", "test"} and pointer_field != "tool-input":
+        if event_kind in {"tool-call", "test", "forge-action"} and pointer_field != "tool-input":
             raise _safe_error("tool-derived event has an invalid pointer selector")
     parent_link = event["parent_link"]
     if not isinstance(parent_link, dict) or not _is_label(
@@ -1794,6 +1964,22 @@ def _validate_event(event: object, allowed_sources: set[str]) -> None:
         event["result_status"], {"success", "error", "unknown"}
     ):
         raise _safe_error("normalized event has an invalid result status")
+    if "forge_action_kind" in event and not _is_label(
+        event["forge_action_kind"], _FORGE_ACTION_KINDS
+    ):
+        raise _safe_error("normalized event has an invalid forge action kind")
+    if "classifier_version" in event and event[
+        "classifier_version"
+    ] != FORGE_ACTION_CLASSIFIER_VERSION:
+        raise _safe_error("normalized event has an invalid forge classifier version")
+    if "outcome" in event and not _is_label(
+        event["outcome"], {"success", "error", "unknown"}
+    ):
+        raise _safe_error("normalized event has an invalid forge action outcome")
+    if "repo_id" in event and (
+        not isinstance(event["repo_id"], str) or not _HEX16.fullmatch(event["repo_id"])
+    ):
+        raise _safe_error("normalized event has an invalid opaque repo id")
     if "model" in event and (
         not isinstance(event["model"], str) or not _MODEL.fullmatch(event["model"])
     ):
@@ -1870,6 +2056,7 @@ def _validate_manifest(manifest: object, event_count: int) -> set[str]:
         "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
         "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
         "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
+        "forge_action_classifier_version": FORGE_ACTION_CLASSIFIER_VERSION,
     }
     if manifest["normalizer"] != expected_normalizer:
         raise _safe_error("normalized manifest has an unsupported normalizer version")
@@ -2137,6 +2324,7 @@ def _validate_identity_semantics(manifest: dict, events: Sequence[dict]) -> None
         for values in context_generations.values()
     ):
         raise _safe_error("normalized context generations are not strictly increasing")
+    result_statuses: dict[tuple[tuple[str, str], int, int], list[str]] = {}
     for event in events:
         if event["event_kind"] != "tool-result":
             continue
@@ -2150,6 +2338,32 @@ def _validate_identity_semantics(manifest: dict, events: Sequence[dict]) -> None
             relation["record_index"], relation["subevent_index"]
         ) >= (event["record_index"], event["subevent_index"]):
             raise _safe_error("normalized tool relation does not target a prior tool call")
+        result_statuses.setdefault(target_location, []).append(event["result_status"])
+
+    forge_targets = set()
+    for event in events:
+        if event["event_kind"] != "forge-action":
+            continue
+        relation = event["tool_relation"]
+        key = (event["source"], event["session_id"])
+        target_location = (key, relation["record_index"], relation["subevent_index"])
+        target = by_location.get(target_location)
+        if (
+            relation["status"] != "linked"
+            or target is None
+            or target["event_kind"] != "tool-call"
+            or target.get("pointer") != event["pointer"]
+            or (relation["record_index"], relation["subevent_index"])
+            >= (event["record_index"], event["subevent_index"])
+        ):
+            raise _safe_error("normalized forge event does not bind a prior tool call")
+        if target_location in forge_targets:
+            raise _safe_error("normalized tool call has duplicate forge derivations")
+        forge_targets.add(target_location)
+        statuses = result_statuses.get(target_location, ())
+        expected_outcome = statuses[0] if len(statuses) == 1 else "unknown"
+        if event["outcome"] != expected_outcome:
+            raise _safe_error("normalized forge outcome is inconsistent")
 
     coverage = manifest["coverage"]
     event_records = {

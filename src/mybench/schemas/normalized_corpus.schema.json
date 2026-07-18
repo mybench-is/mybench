@@ -1,14 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.is/schemas/v4/normalized_corpus.schema.json",
+  "$id": "https://mybench.is/schemas/v5/normalized_corpus.schema.json",
   "title": "Mybench Normalized Evidence Corpus",
-  "description": "Closed A8 schema v4 (MYB-10.4, MYB-19.1, MYB-19.3, MYB-19.5). It can represent derived structure, opaque identities, closed lane markers, versioned episode arrival/outcome markers, pointers, and commitments, but no transcript text, commands, tool arguments/results, filenames, paths, UUIDs, or content copies.",
+  "description": "Closed A8 schema v5 (MYB-10.4, MYB-19.1, MYB-19.3, MYB-19.5, MYB-19.11). It can represent derived structure, opaque identities, closed lane markers, versioned episode and forge-action markers, pointers, and commitments, but no transcript text, commands, tool arguments/results, PR identifiers/URLs, filenames, paths, UUIDs, or content copies.",
   "$defs": {
     "hex64": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
       "minLength": 64,
       "maxLength": 64
+    },
+    "hex16": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "minLength": 16,
+      "maxLength": 16
     },
     "opaqueId": {
       "type": "string",
@@ -143,13 +149,13 @@
         "parent_link"
       ],
       "properties": {
-        "schema_version": {"const": "4"},
+        "schema_version": {"const": "5"},
         "kind": {"const": "normalized-event"},
         "source": {"enum": ["claude-code", "codex"]},
         "session_id": {"$ref": "#/$defs/opaqueId"},
         "record_index": {"type": "integer", "minimum": 0},
         "subevent_index": {"type": "integer", "minimum": 0},
-        "event_kind": {"enum": ["turn", "pasted-span", "tool-call", "tool-result", "lifecycle", "model", "token-usage", "reference", "test"]},
+        "event_kind": {"enum": ["turn", "pasted-span", "tool-call", "tool-result", "lifecycle", "model", "token-usage", "reference", "test", "forge-action"]},
         "authorship": {"enum": ["human-turn", "agent-turn", "pasted-content-span"]},
         "task_episode_id": {"$ref": "#/$defs/episodeId"},
         "observed_at": {
@@ -331,6 +337,27 @@
       ],
       "unevaluatedProperties": false
     },
+    "forgeActionEvent": {
+      "description": "Local transcript derivation over a subject-agent invocation pointer. Outcome joins only the existing normalized result_status field; tool-result bytes and PR identifiers are structurally unavailable.",
+      "allOf": [
+        {"$ref": "#/$defs/eventBase"},
+        {
+          "type": "object",
+          "required": ["forge_action_kind", "classifier_version", "outcome", "pointer", "tool_relation"],
+          "properties": {
+            "event_kind": {"const": "forge-action"},
+            "authorship": {"const": "agent-turn"},
+            "forge_action_kind": {"enum": ["pr-open", "pr-comment", "pr-review-request", "pr-merge-attempt", "push", "other"]},
+            "classifier_version": {"const": "1.0.0"},
+            "outcome": {"enum": ["success", "error", "unknown"]},
+            "repo_id": {"$ref": "#/$defs/hex16"},
+            "pointer": {"$ref": "#/$defs/toolInputPointer"},
+            "tool_relation": {"$ref": "#/$defs/toolRelation"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "event": {
       "oneOf": [
         {"$ref": "#/$defs/turnEvent"},
@@ -341,7 +368,8 @@
         {"$ref": "#/$defs/modelEvent"},
         {"$ref": "#/$defs/tokenUsageEvent"},
         {"$ref": "#/$defs/referenceEvent"},
-        {"$ref": "#/$defs/testEvent"}
+        {"$ref": "#/$defs/testEvent"},
+        {"$ref": "#/$defs/forgeActionEvent"}
       ]
     }
   },
@@ -349,7 +377,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "kind", "corpus_commitment", "manifest", "events"],
   "properties": {
-    "schema_version": {"const": "4"},
+    "schema_version": {"const": "5"},
     "kind": {"const": "normalized-corpus-artifact"},
     "corpus_commitment": {"$ref": "#/$defs/hex64"},
     "manifest": {
@@ -357,22 +385,23 @@
       "additionalProperties": false,
       "required": ["schema_version", "kind", "normalizer", "adapters", "sessions", "episodes", "coverage", "event_count"],
       "properties": {
-        "schema_version": {"const": "4"},
+        "schema_version": {"const": "5"},
         "kind": {"const": "normalized-corpus-manifest"},
         "normalizer": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version", "token_accounting_policy_version", "arrival_pattern_classifier_version", "arrival_pattern_taxonomy_version", "episode_outcome_classifier_version", "episode_open_marker_version"],
+          "required": ["name", "version", "authorship_policy_version", "episode_stitcher_version", "token_accounting_policy_version", "arrival_pattern_classifier_version", "arrival_pattern_taxonomy_version", "episode_outcome_classifier_version", "episode_open_marker_version", "forge_action_classifier_version"],
           "properties": {
             "name": {"const": "mybench.normalizer"},
-            "version": {"const": "4.0.0"},
+            "version": {"const": "5.0.0"},
             "authorship_policy_version": {"const": "1.0.0"},
             "episode_stitcher_version": {"const": "2.0.0"},
             "token_accounting_policy_version": {"const": "1.0.0"},
             "arrival_pattern_classifier_version": {"const": "1.0.0"},
             "arrival_pattern_taxonomy_version": {"const": "1.0.0"},
             "episode_outcome_classifier_version": {"const": "1.0.0"},
-            "episode_open_marker_version": {"const": "1.0.0"}
+            "episode_open_marker_version": {"const": "1.0.0"},
+            "forge_action_classifier_version": {"const": "1.0.0"}
           }
         },
         "adapters": {
@@ -387,7 +416,7 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "claude-code"},
-                  "version": {"const": "4.0.0"}
+                  "version": {"const": "5.0.0"}
                 }
               },
               {
@@ -396,7 +425,7 @@
                 "required": ["source", "version"],
                 "properties": {
                   "source": {"const": "codex"},
-                  "version": {"const": "4.0.0"}
+                  "version": {"const": "5.0.0"}
                 }
               }
             ]

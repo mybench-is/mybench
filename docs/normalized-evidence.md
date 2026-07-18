@@ -13,6 +13,8 @@ One corpus artifact contains:
 - closed, structurally observed lane markers and opaque parent-session links;
 - one versioned, content-opaque arrival-pattern, outcome, and open marker per
   stitched episode;
+- versioned, pointer-only forge-action derivations over subject-agent
+  invocations, with outcomes joined only from structural result status;
 - turn, paste, tool, lifecycle, model, token, reference, and test structure;
 - coarse content shapes such as `short` and `single`;
 - pointers to eligible fields in a committed transcript record; and
@@ -150,6 +152,25 @@ These fields remain private A8 structure. No one-shot or prompt-to-merge value,
 latency bucket, report field, claim, or publication surface is authorized
 before MYB-19.7.
 
+### Transcript-derived forge actions (schema v5)
+
+Schema v5 adds a closed `forge-action` event for exact `gh` CLI, `git push`,
+and pinned GitHub-MCP signatures. Every event carries
+`forge_action_classifier_version=1.0.0`, a closed action kind, a pointer to the
+committed subject-agent invocation, and a relation to the ordinary tool-call
+event. The optional repo identity is only the existing keyed-HMAC `repo_id`;
+absence stays absent.
+
+Outcome is recomputed solely from exactly one linked normalized
+`tool-result.result_status`. Tool-result bytes are never read by this join.
+Titles, bodies, review text, PR ids/URLs, and merge confirmation are
+structurally unavailable. The pinned rule table, retroactive A9 derivation,
+OQ #61 rung-2 gate, and incomplete agent-mediated coverage caveat are in
+[`forge-action-events.md`](forge-action-events.md).
+
+Forge events remain private A8 structure. This schema adds no report, claim,
+registry, verifier, or publication field; published use remains MYB-19.7-gated.
+
 ## What a pointer means
 
 A transcript pointer names a field and carries the salted commitment of its
@@ -212,10 +233,11 @@ big-endian length framing. The existing RFC-6962-shaped tree uses
 `mybench:v1:normalized-corpus`.
 
 Schema v2 changed canonical manifest/event bytes for lane evidence. Schema v3
-changed them again for the arrival-pattern output. Schema v4 adds the closure
-evidence, outcome, and episode-open fields. These boundaries produce new corpus
-roots without changing any manifest, event, node, or corpus commitment domain,
-length framing, leaf order, or tree rule.
+changed them again for the arrival-pattern output. Schema v4 added the closure
+evidence, outcome, and episode-open fields. Schema v5 adds versioned
+forge-action events. These boundaries produce new corpus roots without changing
+any manifest, event, node, or corpus commitment domain, length framing, leaf
+order, or tree rule.
 
 Zero transcript sessions or zero verified repository snapshots produce no
 artifact. A nonempty input whose consent filter admits no records produces a
@@ -230,7 +252,7 @@ against capture commitments. The trusted loader takes a consistent snapshot
 under the capture lock, selects the latest committed Claude rows, verifies the
 A9 bytes against their A2 nonces and A3 roots, and only then constructs parser
 inputs. In the same snapshot it joins existing A3 lifecycle boundaries to
-binding rows; no capture field or hook changes for schema v4. It requires an
+binding rows; no capture field or hook changes for schema v4 or v5. It requires an
 explicit owner assertion that the local harness sessions belong to the
 credentialed subject and that subject's own agent fleet.
 

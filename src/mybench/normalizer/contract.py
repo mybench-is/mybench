@@ -1,6 +1,6 @@
 """Shared normalized-corpus contract for every transcript adapter.
 
-Claude owns the v4 contract implementation, while the Claude and Codex sibling
+Claude owns the v5 contract implementation, while the Claude and Codex sibling
 adapters both use this module for the byte contract and artifact validator.
 Keeping that public surface source-neutral prevents an adapter-specific schema
 or Merkle fork.
@@ -16,6 +16,7 @@ from mybench.normalizer.claude import (
     EPISODE_STITCHER_VERSION as EPISODE_STITCHER_VERSION,
     EPISODE_OPEN_MARKER_VERSION as EPISODE_OPEN_MARKER_VERSION,
     EPISODE_OUTCOME_CLASSIFIER_VERSION as EPISODE_OUTCOME_CLASSIFIER_VERSION,
+    FORGE_ACTION_CLASSIFIER_VERSION as FORGE_ACTION_CLASSIFIER_VERSION,
     NORMALIZER_VERSION as NORMALIZER_VERSION,
     TOKEN_ACCOUNTING_POLICY_VERSION as TOKEN_ACCOUNTING_POLICY_VERSION,
     NoEvidence as NoEvidence,
@@ -37,6 +38,7 @@ __all__ = [
     "EPISODE_STITCHER_VERSION",
     "EPISODE_OPEN_MARKER_VERSION",
     "EPISODE_OUTCOME_CLASSIFIER_VERSION",
+    "FORGE_ACTION_CLASSIFIER_VERSION",
     "NORMALIZER_VERSION",
     "TOKEN_ACCOUNTING_POLICY_VERSION",
     "NoEvidence",

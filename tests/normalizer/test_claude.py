@@ -15,6 +15,7 @@ from mybench.normalizer.claude import (
     ARRIVAL_PATTERN_TAXONOMY_VERSION,
     EPISODE_OPEN_MARKER_VERSION,
     EPISODE_OUTCOME_CLASSIFIER_VERSION,
+    FORGE_ACTION_CLASSIFIER_VERSION,
     GitBindingObservation,
     NoEvidence,
     NormalizationError,
@@ -167,15 +168,15 @@ def test_corpus_is_canonical_schema_valid_and_self_verifying(normalized):
     } for event in artifact["events"])
 
 
-def test_normalized_schema_v4_boundary_is_explicit(normalized):
+def test_normalized_schema_v5_boundary_is_explicit(normalized):
     _, _, artifact = normalized
-    assert artifact["schema_version"] == artifact["manifest"]["schema_version"] == "4"
+    assert artifact["schema_version"] == artifact["manifest"]["schema_version"] == "5"
     assert artifact["manifest"]["normalizer"]["token_accounting_policy_version"] == (
         "1.0.0"
     )
     assert artifact["manifest"]["normalizer"] == {
         "name": "mybench.normalizer",
-        "version": "4.0.0",
+        "version": "5.0.0",
         "authorship_policy_version": "1.0.0",
         "episode_stitcher_version": "2.0.0",
         "token_accounting_policy_version": "1.0.0",
@@ -183,8 +184,9 @@ def test_normalized_schema_v4_boundary_is_explicit(normalized):
         "arrival_pattern_taxonomy_version": ARRIVAL_PATTERN_TAXONOMY_VERSION,
         "episode_outcome_classifier_version": EPISODE_OUTCOME_CLASSIFIER_VERSION,
         "episode_open_marker_version": EPISODE_OPEN_MARKER_VERSION,
+        "forge_action_classifier_version": FORGE_ACTION_CLASSIFIER_VERSION,
     }
-    artifact["schema_version"] = "3"
+    artifact["schema_version"] = "4"
     with pytest.raises(ValidationError):
         load_validator("normalized_corpus.schema.json").validate(artifact)
 
