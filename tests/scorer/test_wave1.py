@@ -9,11 +9,16 @@ from pathlib import Path
 import pytest
 
 from mybench.claims import canonical_bytes, dev_signing_key, verify_claim
-from mybench.normalizer.contract import corpus_commitment, validate_corpus_artifact
+from mybench.normalizer.contract import (
+    corpus_commitment,
+    event_leaf_hash,
+    validate_corpus_artifact,
+)
 from mybench.registry import Registry
 from mybench.scorer.wave1 import (
     Wave1ScorerError,
     build_harness_currency_snapshot,
+    build_mcp_category_observations,
     build_mcp_recurrence_snapshot,
     score_autonomy_band,
     score_mcp_breadth,
@@ -38,7 +43,7 @@ def _claims(synthetic):
     return score_wave1_claims(
         synthetic.corpus,
         synthetic.currency_snapshot,
-        synthetic.mcp_snapshot,
+        synthetic.mcp_observations,
         private_key=KEY,
         signer_kind="dev",
         **WINDOW,
@@ -78,7 +83,7 @@ def test_all_six_scorers_emit_expected_registry_bands():
         "harnesses": ["claude-code"],
         "version_currency_band": "within-one-minor",
     }
-    assert score_mcp_breadth(synthetic.corpus, synthetic.mcp_snapshot) == {
+    assert score_mcp_breadth(synthetic.corpus, synthetic.mcp_observations) == {
         "category_breadth_band": "3-5"
     }
 
@@ -102,7 +107,7 @@ def test_claim_set_is_signed_registry_valid_and_bound_to_control_snapshots():
     ]
     assert registry.entry("transcript.mcp_breadth")["inputs"] == [
         "normalized-session-events",
-        "mcp-category-recurrence-snapshot",
+        "mcp-category-event-observations",
     ]
     for claim in claims:
         assert verify_claim(claim)["kind"] == "dev"
@@ -112,7 +117,15 @@ def test_claim_set_is_signed_registry_valid_and_bound_to_control_snapshots():
     by_id = {claim["registry_id"]: claim for claim in claims}
     mcp = by_id["transcript.mcp_breadth"]
     assert mcp["inputs"]["corpus_commitment"] == sorted(
-        [synthetic.corpus["corpus_commitment"], synthetic.mcp_snapshot["digest"]]
+        [
+            synthetic.corpus["corpus_commitment"],
+            synthetic.mcp_observations["digest"],
+            synthetic.mcp_snapshot["digest"],
+        ]
+    )
+    assert (
+        f"mcp-observations:sha256:{synthetic.mcp_observations['digest']}"
+        in mcp["inputs"]["anchor_refs"]
     )
     assert (
         f"mcp-recurrence:sha256:{synthetic.mcp_snapshot['digest']}" in mcp["inputs"]["anchor_refs"]
@@ -131,7 +144,7 @@ def test_below_support_means_no_claim_not_a_zero_claim():
     assert score_autonomy_band(synthetic.corpus) is None
     assert score_verification_ratio(synthetic.corpus) is None
     assert score_orchestrators(synthetic.corpus, synthetic.currency_snapshot) is None
-    assert score_mcp_breadth(synthetic.corpus, synthetic.mcp_snapshot) is None
+    assert score_mcp_breadth(synthetic.corpus, synthetic.mcp_observations) is None
     assert _claims(synthetic)["claims"] == []
 
 
@@ -150,27 +163,90 @@ def test_mcp_breadth_ignores_one_off_category_spam():
         for row in synthetic.mcp_snapshot["category_session_counts"]
     }
     assert counts["other"] == 1
-    assert score_mcp_breadth(synthetic.corpus, synthetic.mcp_snapshot) == {
+    assert score_mcp_breadth(synthetic.corpus, synthetic.mcp_observations) == {
         "category_breadth_band": "3-5"
     }
 
 
-def test_mcp_snapshot_is_content_free_bound_and_fail_closed():
+def test_mcp_snapshot_is_content_free_aggregate_and_provenance_bound():
     synthetic = wave1_synthetic_input()
     encoded = canonical_bytes(synthetic.mcp_snapshot)
+    provenance = canonical_bytes(synthetic.mcp_observations)
     assert b"session_id" not in encoded
     assert b"record_index" not in encoded
     assert b"tool" not in encoded
     assert all(canary not in encoded for canary in WAVE1_CANARIES)
+    assert b"session_id" not in provenance
+    assert b"record_index" not in provenance
+    assert b"tool" not in provenance
+    assert all(canary not in provenance for canary in WAVE1_CANARIES)
+    assert (
+        synthetic.mcp_snapshot["source_observations_digest"]
+        == (synthetic.mcp_observations["digest"])
+    )
 
-    wrong_root = build_mcp_recurrence_snapshot("ab" * 32, {"vcs": 20})
-    with pytest.raises(Wave1ScorerError, match="different normalized corpus"):
-        score_mcp_breadth(synthetic.corpus, wrong_root)
 
-    tampered = copy.deepcopy(synthetic.mcp_snapshot)
-    tampered["category_session_counts"][0]["sessions"] -= 1
+def test_fabricated_absent_category_event_fails_closed():
+    synthetic = wave1_synthetic_input()
+    rows = [
+        *synthetic.mcp_observations["observations"],
+        {"event_commitment": "ab" * 32, "category": "deploy"},
+    ]
+    fabricated = build_mcp_category_observations(synthetic.corpus["corpus_commitment"], rows)
+    assert fabricated["digest"] != synthetic.mcp_observations["digest"]
+    with pytest.raises(Wave1ScorerError, match="absent from the exact corpus"):
+        score_mcp_breadth(synthetic.corpus, fabricated)
+
+
+def test_mcp_provenance_stale_missing_duplicate_and_non_mcp_fail_closed():
+    synthetic = wave1_synthetic_input()
+    rows = synthetic.mcp_observations["observations"]
+
+    stale = build_mcp_category_observations("ab" * 32, rows)
+    with pytest.raises(Wave1ScorerError, match="stale for this corpus"):
+        score_mcp_breadth(synthetic.corpus, stale)
+
+    missing = build_mcp_category_observations(synthetic.corpus["corpus_commitment"], rows[:-1])
+    with pytest.raises(Wave1ScorerError, match="cover every MCP event"):
+        score_mcp_breadth(synthetic.corpus, missing)
+
+    duplicate_rows = [*rows, {**rows[0], "category": "deploy"}]
+    duplicate = build_mcp_category_observations(
+        synthetic.corpus["corpus_commitment"], duplicate_rows
+    )
+    assert duplicate["digest"] != synthetic.mcp_observations["digest"]
+    with pytest.raises(Wave1ScorerError, match="duplicate an event commitment"):
+        score_mcp_breadth(synthetic.corpus, duplicate)
+
+    non_mcp_event = next(
+        event
+        for event in synthetic.corpus["events"]
+        if event["event_kind"] == "tool-call" and event["tool_family"] == "read"
+    )
+    non_mcp_rows = [
+        {**rows[0], "event_commitment": event_leaf_hash(non_mcp_event).hex()},
+        *rows[1:],
+    ]
+    non_mcp = build_mcp_category_observations(synthetic.corpus["corpus_commitment"], non_mcp_rows)
+    with pytest.raises(Wave1ScorerError, match="references a non-MCP event"):
+        score_mcp_breadth(synthetic.corpus, non_mcp)
+
+    tampered = copy.deepcopy(synthetic.mcp_observations)
+    tampered["observations"][0]["category"] = "deploy"
     with pytest.raises(Wave1ScorerError, match="digest"):
         score_mcp_breadth(synthetic.corpus, tampered)
+
+
+def test_mcp_recurrence_counts_distinct_sessions_not_event_rows():
+    synthetic = wave1_synthetic_input()
+    rows = copy.deepcopy(synthetic.mcp_observations["observations"])
+    other = next(row for row in rows if row["category"] == "other")
+    other["category"] = "vcs"
+    observations = build_mcp_category_observations(synthetic.corpus["corpus_commitment"], rows)
+    snapshot = build_mcp_recurrence_snapshot(synthetic.corpus, observations)
+    counts = {row["category"]: row["sessions"] for row in snapshot["category_session_counts"]}
+    assert counts["vcs"] == 20
+    assert "other" not in counts
 
 
 @pytest.mark.parametrize(

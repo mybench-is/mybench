@@ -12,8 +12,10 @@ from mybench.normalizer.claude import (
     VerifiedSession,
     normalize_claude,
 )
+from mybench.normalizer.contract import event_leaf_hash
 from mybench.scorer.wave1 import (
     build_harness_currency_snapshot,
+    build_mcp_category_observations,
     build_mcp_recurrence_snapshot,
 )
 
@@ -38,6 +40,7 @@ WAVE1_CANARIES = tuple(
 class Wave1SyntheticInput:
     corpus: dict
     currency_snapshot: dict
+    mcp_observations: dict
     mcp_snapshot: dict
     canaries: tuple[bytes, ...]
 
@@ -159,17 +162,26 @@ def wave1_synthetic_input(*, session_count: int = 20) -> Wave1SyntheticInput:
     currency = build_harness_currency_snapshot(
         {"claude-code": "5.1.0"}, snapshot_version="2026.7.0"
     )
-    recurring = min(session_count, 20)
-    mcp = build_mcp_recurrence_snapshot(
+    observation_rows = []
+    by_session = {}
+    for event in corpus["events"]:
+        if event["event_kind"] == "tool-call" and event["tool_family"] == "mcp":
+            by_session.setdefault((event["source"], event["session_id"]), []).append(event)
+    for session_key, events in sorted(by_session.items()):
+        categories = ["vcs", "database", "browser"]
+        if session_key[1] == "synthetic-wave1-session-00":
+            categories.append("other")
+        assert len(events) == len(categories)
+        observation_rows.extend(
+            {"event_commitment": event_leaf_hash(event).hex(), "category": category}
+            for event, category in zip(events, categories)
+        )
+    mcp_observations = build_mcp_category_observations(
         corpus["corpus_commitment"],
-        {
-            "browser": recurring,
-            "database": recurring,
-            "other": min(session_count, 1),
-            "vcs": recurring,
-        },
+        observation_rows,
     )
-    return Wave1SyntheticInput(corpus, currency, mcp, WAVE1_CANARIES)
+    mcp_snapshot = build_mcp_recurrence_snapshot(corpus, mcp_observations)
+    return Wave1SyntheticInput(corpus, currency, mcp_observations, mcp_snapshot, WAVE1_CANARIES)
 
 
 __all__ = ["WAVE1_CANARIES", "Wave1SyntheticInput", "wave1_synthetic_input"]

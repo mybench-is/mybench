@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mybench.is/schemas/v1/mcp_recurrence_snapshot.schema.json",
+  "$id": "https://mybench.is/schemas/v2/mcp_recurrence_snapshot.schema.json",
   "title": "Mybench MCP Category Recurrence Snapshot",
   "description": "A content-free aggregate over an already-normalized corpus. It admits fixed category labels and per-category distinct-session counts only: no tool/server names, transcript content, session identifiers, or ordered event stream.",
   "$defs": {
@@ -18,14 +18,16 @@
     "kind",
     "taxonomy_version",
     "source_corpus_commitment",
+    "source_observations_digest",
     "category_session_counts",
     "digest"
   ],
   "properties": {
-    "schema_version": {"const": "1"},
+    "schema_version": {"const": "2"},
     "kind": {"const": "mcp-category-recurrence-snapshot"},
     "taxonomy_version": {"const": "1.0.0"},
     "source_corpus_commitment": {"$ref": "#/$defs/hex64"},
+    "source_observations_digest": {"$ref": "#/$defs/hex64"},
     "category_session_counts": {
       "type": "array",
       "maxItems": 8,

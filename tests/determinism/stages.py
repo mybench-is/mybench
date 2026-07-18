@@ -192,7 +192,7 @@ def _wave1_transcript_claim_set() -> Invocation:
         args=(
             synthetic.corpus,
             synthetic.currency_snapshot,
-            synthetic.mcp_snapshot,
+            synthetic.mcp_observations,
         ),
         kwargs={
             "window_start": "2026-01-01T00:00:00Z",

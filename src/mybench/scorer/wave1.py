@@ -5,11 +5,13 @@ registry-governed bands, booleans, and the R1 harness inventory admitted by
 the registry. They never emit transcript content, event/session identifiers,
 tool/server names, paths, timestamps, or ordered streams.
 
-Harness currency and MCP categorization are explicit content-addressed input
-snapshots. The former prevents a score-time network lookup; the latter carries
-only fixed category labels and distinct-session counts because normalized v5
-deliberately strips tool names. Both inputs are bound into the relevant claim.
-All time, signing, and evidence inputs are caller-supplied.
+Harness currency and per-event MCP category observations are explicit,
+content-addressed inputs. The former prevents a score-time network lookup. The
+latter binds each upstream local category assertion to one normalized event
+leaf; the scorer proves exact one-to-one MCP-event coverage and derives
+distinct-session recurrence itself. The emitted recurrence snapshot is
+aggregate and identifier-free. All time, signing, and evidence inputs are
+caller-supplied.
 """
 
 from __future__ import annotations
@@ -23,11 +25,11 @@ from fractions import Fraction
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from mybench.claims import build_claim, canonical_bytes, sign_claim
-from mybench.normalizer.contract import validate_corpus_artifact
+from mybench.normalizer.contract import event_leaf_hash, validate_corpus_artifact
 from mybench.registry import Registry
 from mybench.schemas import load_validator
 
-SCORER_VERSION = "1.0.0"
+SCORER_VERSION = "1.1.0"
 MCP_TAXONOMY_VERSION = "1.0.0"
 
 _WAVE1_IDS = (
@@ -38,16 +40,6 @@ _WAVE1_IDS = (
     "transcript.orchestrators",
     "transcript.mcp_breadth",
 )
-_MCP_CATEGORIES = (
-    "browser",
-    "communications",
-    "database",
-    "deploy",
-    "observability",
-    "other",
-    "planning",
-    "vcs",
-)
 _PERCENT_BAND_RE = re.compile(r"([0-9]+)-([0-9]+)%")
 _RANGE_BAND_RE = re.compile(r"([0-9]+)-([0-9]+)")
 _PLUS_BAND_RE = re.compile(r"([0-9]+)\+")
@@ -55,7 +47,8 @@ _EXACT_BAND_RE = re.compile(r"[0-9]+")
 _SEMVER_RE = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)")
 
 _HARNESS_SNAPSHOT_DOMAIN = b"mybench:wave1:harness-currency:v1\0"
-_MCP_SNAPSHOT_DOMAIN = b"mybench:wave1:mcp-recurrence:v1\0"
+_MCP_OBSERVATIONS_DOMAIN = b"mybench:wave1:mcp-observations:v1\0"
+_MCP_SNAPSHOT_DOMAIN = b"mybench:wave1:mcp-recurrence:v2\0"
 
 
 class Wave1ScorerError(ValueError):
@@ -85,38 +78,54 @@ def build_harness_currency_snapshot(versions: Mapping[str, str], *, snapshot_ver
     return snapshot
 
 
-def build_mcp_recurrence_snapshot(
+def build_mcp_category_observations(
     source_corpus_commitment: str,
-    category_session_counts: Mapping[str, int],
+    observations: Sequence[Mapping[str, str]],
 ) -> dict:
-    """Build a content-free, identifier-free MCP recurrence input.
+    """Build the closed event-commitment/category provenance carrier.
 
-    Values are distinct-session counts, never raw installation or invocation
-    counts. The scorer applies the registry's session support floor to every
-    category before measuring breadth.
+    This builder canonicalizes and commits caller-supplied rows. Membership,
+    event kind, duplicate, and completeness checks require the normalized
+    corpus and are therefore enforced by the scorer, not asserted here.
     """
 
-    if not isinstance(category_session_counts, Mapping):
-        raise Wave1ScorerError("MCP category counts must be a mapping")
-    rows = [
-        {"category": category, "sessions": sessions}
-        for category, sessions in sorted(category_session_counts.items())
-        if sessions != 0
-    ]
-    if any(category not in _MCP_CATEGORIES for category in category_session_counts):
-        raise Wave1ScorerError("MCP category is outside the fixed taxonomy")
-    if any(type(value) is not int or value < 0 for value in category_session_counts.values()):
-        raise Wave1ScorerError("MCP category counts must be non-negative integers")
-    snapshot = {
+    if isinstance(observations, (str, bytes)) or not isinstance(observations, Sequence):
+        raise Wave1ScorerError("MCP category observations must be a sequence")
+    rows = []
+    for observation in observations:
+        if not isinstance(observation, Mapping) or set(observation) != {
+            "event_commitment",
+            "category",
+        }:
+            raise Wave1ScorerError("MCP category observation has invalid fields")
+        if not all(
+            isinstance(observation[field], str) for field in ("event_commitment", "category")
+        ):
+            raise Wave1ScorerError("MCP category observation values must be strings")
+        rows.append(
+            {
+                "event_commitment": observation["event_commitment"],
+                "category": observation["category"],
+            }
+        )
+    rows.sort(key=lambda row: (row["event_commitment"], row["category"]))
+    artifact = {
         "schema_version": "1",
-        "kind": "mcp-category-recurrence-snapshot",
+        "kind": "mcp-category-event-observations",
         "taxonomy_version": MCP_TAXONOMY_VERSION,
         "source_corpus_commitment": source_corpus_commitment,
-        "category_session_counts": rows,
+        "observations": rows,
     }
-    snapshot["digest"] = _digest_snapshot(snapshot, _MCP_SNAPSHOT_DOMAIN)
-    _validate_mcp_snapshot(snapshot)
-    return snapshot
+    artifact["digest"] = _digest_snapshot(artifact, _MCP_OBSERVATIONS_DOMAIN)
+    _validate_mcp_observations(artifact)
+    return artifact
+
+
+def build_mcp_recurrence_snapshot(corpus: dict, observations: dict) -> dict:
+    """Derive an aggregate, identifier-free snapshot from proven event rows."""
+
+    root, sessions, _ = _checked_corpus(corpus)
+    return _derive_mcp_snapshot(corpus, root, sessions, observations)
 
 
 def _schema_check(value: dict, schema_name: str, label: str) -> None:
@@ -136,6 +145,20 @@ def _validate_harness_snapshot(snapshot: dict) -> None:
         raise Wave1ScorerError("harness snapshot rows must be sorted and unique")
     if snapshot["digest"] != _digest_snapshot(snapshot, _HARNESS_SNAPSHOT_DOMAIN):
         raise Wave1ScorerError("harness snapshot digest does not match its content")
+
+
+def _validate_mcp_observations(observations: dict) -> None:
+    _schema_check(
+        observations,
+        "mcp_category_observations.schema.json",
+        "MCP category observations",
+    )
+    rows = observations["observations"]
+    expected = sorted(rows, key=lambda row: (row["event_commitment"], row["category"]))
+    if rows != expected:
+        raise Wave1ScorerError("MCP category observation rows must be sorted")
+    if observations["digest"] != _digest_snapshot(observations, _MCP_OBSERVATIONS_DOMAIN):
+        raise Wave1ScorerError("MCP category observations digest does not match content")
 
 
 def _validate_mcp_snapshot(snapshot: dict) -> None:
@@ -162,6 +185,67 @@ def _checked_corpus(corpus: dict) -> tuple[str, tuple[tuple[str, str], ...], dic
     for event in corpus["events"]:
         grouped[(event["source"], event["session_id"])].append(event)
     return root, session_keys, grouped
+
+
+def _derive_mcp_snapshot(
+    corpus: dict,
+    corpus_root: str,
+    session_keys: Sequence[tuple[str, str]],
+    observations: dict,
+) -> dict:
+    """Prove exact MCP-event provenance and derive distinct-session counts."""
+
+    _validate_mcp_observations(observations)
+    if observations["source_corpus_commitment"] != corpus_root:
+        raise Wave1ScorerError("MCP category observations are stale for this corpus")
+
+    event_index: dict[str, tuple[dict, tuple[str, str]]] = {}
+    mcp_commitments = set()
+    for event in corpus["events"]:
+        commitment = event_leaf_hash(event).hex()
+        if commitment in event_index:
+            raise Wave1ScorerError("normalized corpus has duplicate event commitments")
+        session_key = (event["source"], event["session_id"])
+        event_index[commitment] = (event, session_key)
+        if event["event_kind"] == "tool-call" and event["tool_family"] == "mcp":
+            mcp_commitments.add(commitment)
+
+    seen = set()
+    category_sessions: dict[str, set[tuple[str, str]]] = {}
+    for observation in observations["observations"]:
+        commitment = observation["event_commitment"]
+        if commitment in seen:
+            raise Wave1ScorerError("MCP category observations duplicate an event commitment")
+        seen.add(commitment)
+        indexed = event_index.get(commitment)
+        if indexed is None:
+            raise Wave1ScorerError("MCP category observation is absent from the exact corpus")
+        event, session_key = indexed
+        if event["event_kind"] != "tool-call" or event["tool_family"] != "mcp":
+            raise Wave1ScorerError("MCP category observation references a non-MCP event")
+        category_sessions.setdefault(observation["category"], set()).add(session_key)
+
+    if seen != mcp_commitments:
+        raise Wave1ScorerError("MCP category observations do not cover every MCP event")
+    admitted_sessions = set(session_keys)
+    if any(not sessions <= admitted_sessions for sessions in category_sessions.values()):
+        raise Wave1ScorerError("MCP category observation has no admitted session")
+
+    rows = [
+        {"category": category, "sessions": len(sessions)}
+        for category, sessions in sorted(category_sessions.items())
+    ]
+    snapshot = {
+        "schema_version": "2",
+        "kind": "mcp-category-recurrence-snapshot",
+        "taxonomy_version": MCP_TAXONOMY_VERSION,
+        "source_corpus_commitment": corpus_root,
+        "source_observations_digest": observations["digest"],
+        "category_session_counts": rows,
+    }
+    snapshot["digest"] = _digest_snapshot(snapshot, _MCP_SNAPSHOT_DOMAIN)
+    _validate_mcp_snapshot(snapshot)
+    return snapshot
 
 
 def _entry(registry: Registry, registry_id: str) -> dict:
@@ -428,25 +512,13 @@ def _score_orchestrators(
 
 def _score_mcp(
     entry: dict,
-    corpus_root: str,
-    corpus: dict,
     session_keys: Sequence,
     mcp_snapshot: dict,
 ) -> dict | None:
+    _validate_mcp_snapshot(mcp_snapshot)
     if not _has_support(entry, len(session_keys)):
         return None
-    _validate_mcp_snapshot(mcp_snapshot)
-    if mcp_snapshot["source_corpus_commitment"] != corpus_root:
-        raise Wave1ScorerError("MCP snapshot is bound to a different normalized corpus")
     counts = {row["category"]: row["sessions"] for row in mcp_snapshot["category_session_counts"]}
-    if any(value > len(session_keys) for value in counts.values()):
-        raise Wave1ScorerError("MCP category recurrence exceeds the corpus session count")
-    mcp_calls = sum(
-        event["event_kind"] == "tool-call" and event["tool_family"] == "mcp"
-        for event in corpus["events"]
-    )
-    if sum(counts.values()) > mcp_calls:
-        raise Wave1ScorerError("MCP recurrence counts exceed normalized MCP observations")
     recurrence_floor = entry["min_support"]["sessions"]
     breadth = sum(value >= recurrence_floor for value in counts.values())
     return {
@@ -503,7 +575,7 @@ def score_orchestrators(
 
 def score_mcp_breadth(
     corpus: dict,
-    mcp_snapshot: dict,
+    mcp_observations: dict,
     *,
     registry: Registry | None = None,
 ) -> dict | None:
@@ -511,10 +583,9 @@ def score_mcp_breadth(
 
     registry = registry or Registry.load()
     root, sessions, _ = _checked_corpus(corpus)
+    mcp_snapshot = _derive_mcp_snapshot(corpus, root, sessions, mcp_observations)
     return _score_mcp(
         _entry(registry, "transcript.mcp_breadth"),
-        root,
-        corpus,
         sessions,
         mcp_snapshot,
     )
@@ -523,7 +594,7 @@ def score_mcp_breadth(
 def score_wave1_claims(
     corpus: dict,
     currency_snapshot: dict,
-    mcp_snapshot: dict,
+    mcp_observations: dict,
     *,
     window_start: str,
     window_end: str,
@@ -541,6 +612,7 @@ def score_wave1_claims(
 
     registry = registry or Registry.load()
     root, sessions, grouped = _checked_corpus(corpus)
+    mcp_snapshot = _derive_mcp_snapshot(corpus, root, sessions, mcp_observations)
     entries = {registry_id: _entry(registry, registry_id) for registry_id in _WAVE1_IDS}
     outputs = {
         "transcript.wellformed": _score_wellformed(
@@ -557,12 +629,15 @@ def score_wave1_claims(
             entries["transcript.orchestrators"], corpus, sessions, currency_snapshot
         ),
         "transcript.mcp_breadth": _score_mcp(
-            entries["transcript.mcp_breadth"], root, corpus, sessions, mcp_snapshot
+            entries["transcript.mcp_breadth"], sessions, mcp_snapshot
         ),
     }
     snapshot_refs = {
         "transcript.orchestrators": [f"harness-currency:sha256:{currency_snapshot['digest']}"],
-        "transcript.mcp_breadth": [f"mcp-recurrence:sha256:{mcp_snapshot['digest']}"],
+        "transcript.mcp_breadth": [
+            f"mcp-observations:sha256:{mcp_observations['digest']}",
+            f"mcp-recurrence:sha256:{mcp_snapshot['digest']}",
+        ],
     }
     claims = []
     for registry_id in sorted(outputs):
@@ -579,7 +654,9 @@ def score_wave1_claims(
             scorer_name=f"mybench.wave1.{registry_id.removeprefix('transcript.')}",
             scorer_version=SCORER_VERSION,
             corpus_commitment=(
-                [root, mcp_snapshot["digest"]] if registry_id == "transcript.mcp_breadth" else root
+                [root, mcp_observations["digest"], mcp_snapshot["digest"]]
+                if registry_id == "transcript.mcp_breadth"
+                else root
             ),
             window_start=window_start,
             window_end=window_end,
@@ -607,6 +684,7 @@ __all__ = [
     "SCORER_VERSION",
     "Wave1ScorerError",
     "build_harness_currency_snapshot",
+    "build_mcp_category_observations",
     "build_mcp_recurrence_snapshot",
     "score_autonomy_band",
     "score_mcp_breadth",
