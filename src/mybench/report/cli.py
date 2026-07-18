@@ -433,12 +433,27 @@ def assemble_bundle(
 
 def _validated_bundle(directory: Path) -> Path:
     try:
+        reports_path = paths.reports_dir()
+        reports_info = reports_path.lstat()
+        directory_info = directory.lstat()
+        if not stat.S_ISDIR(reports_info.st_mode) or stat.S_ISLNK(reports_info.st_mode):
+            raise BundleError("refusing to view an invalid private reports directory")
+        if not stat.S_ISDIR(directory_info.st_mode) or stat.S_ISLNK(directory_info.st_mode):
+            raise BundleError("refusing to view a symlinked private report bundle")
+        paths.report_dir(directory.name)  # validates the exact 64-hex child name
+        reports_root = reports_path.resolve(strict=True)
         candidate = directory.resolve(strict=True)
-        expected = paths.report_dir(candidate.name).resolve(strict=True)
     except (OSError, paths.PathsError) as exc:
         raise BundleError("refusing to view an invalid private report bundle") from exc
-    if candidate != expected or not (candidate / "index.html").is_file():
+    page = candidate / "index.html"
+    if candidate != reports_root / directory.name:
         raise BundleError("refusing to view a path outside the private reports directory")
+    try:
+        page_info = page.lstat()
+    except OSError as exc:
+        raise BundleError("refusing to view an invalid private report bundle") from exc
+    if not stat.S_ISREG(page_info.st_mode) or stat.S_ISLNK(page_info.st_mode):
+        raise BundleError("refusing to view an invalid private report page")
     return candidate
 
 
@@ -446,8 +461,9 @@ def open_report(location: Path) -> bool:
     """Best-effort browser opening; headless failures never fail bundle creation."""
     try:
         bundle = _validated_bundle(location.parent)
-        if location.resolve(strict=True) != bundle / "index.html":
+        page = location.resolve(strict=True)
+        if page != bundle / "index.html":
             raise BundleError("refusing to open anything except the private report page")
-        return bool(webbrowser.open(location.resolve(strict=True).as_uri(), new=2))
+        return bool(webbrowser.open(page.as_uri(), new=2))
     except Exception:  # noqa: BLE001 - browser discovery is intentionally best-effort
         return False

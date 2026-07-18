@@ -10,6 +10,7 @@ import stat
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from mybench import paths
 from mybench.report.cli import (
     BUNDLE_FILES,
     BundleError,
@@ -156,6 +157,19 @@ def test_open_uses_a_file_url_and_is_headless_safe(monkeypatch):
 
     monkeypatch.setattr("webbrowser.open", no_browser)
     assert open_report(directory / "index.html") is False
+
+
+def test_open_rejects_report_id_symlink_to_outside(tmp_path, monkeypatch):
+    outside = tmp_path / "outside" / ("e" * 64)
+    outside.mkdir(parents=True)
+    (outside / "index.html").write_text("synthetic outside page")
+    symlinked_bundle = paths.ensure_reports_dir() / ("e" * 64)
+    symlinked_bundle.symlink_to(outside, target_is_directory=True)
+    opened = []
+    monkeypatch.setattr("webbrowser.open", lambda url, **_kwargs: opened.append(url) or True)
+
+    assert open_report(symlinked_bundle / "index.html") is False
+    assert opened == []
 
 
 def test_scored_report_and_manifest_share_one_immutable_input_snapshot(tmp_path, monkeypatch):
