@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.2.0",
+  "registry_version": "0.3.0",
   "format_status": "provisional-json-pending-OQ-31",
   "entries": [
     {
@@ -1631,6 +1631,267 @@
       ],
       "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
       "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.4; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.topology.file_structure",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "File-structure orchestration topology",
+      "inputs": [
+        "orchestration-file-structure",
+        "transcript-delegation-coverage"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "file_structure_coverage_basis_points",
+          "transcript_delegation_coverage_basis_points",
+          "state_basis",
+          "observed_on",
+          "k_suppression_floor",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "1"
+          },
+          "kind": {
+            "const": "orchestration-topology-aggregate"
+          },
+          "custom_agents_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "custom_agents_present": {
+            "const": true
+          },
+          "hooks_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "hooks_present": {
+            "const": true
+          },
+          "instruction_files_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "instruction_files_present": {
+            "const": true
+          },
+          "instruction_depth_band": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1-4",
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "lanes_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "lanes_present": {
+            "const": true
+          },
+          "plan_task_directories_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "plan_task_directories_present": {
+            "const": true
+          },
+          "skills_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "skills_present": {
+            "const": true
+          },
+          "validation_scripts_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "validation_scripts_present": {
+            "const": true
+          },
+          "worktrees_count_band": {
+            "type": "string",
+            "enum": [
+              "5-19",
+              "20-99",
+              "100-999",
+              "1000+"
+            ]
+          },
+          "worktrees_present": {
+            "const": true
+          },
+          "file_structure_coverage_basis_points": {
+            "const": 10000
+          },
+          "transcript_delegation_coverage_basis_points": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              {
+                "const": "UNKNOWN"
+              }
+            ]
+          },
+          "state_basis": {
+            "const": "scan-time-state-not-evidence-period"
+          },
+          "observed_on": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "k_suppression_floor": {
+            "const": 5
+          },
+          "trust_tier": {
+            "const": "ANCHORED"
+          },
+          "caveats": {
+            "const": [
+              "scan-time-state-not-evidence-period"
+            ]
+          }
+        },
+        "dependentRequired": {
+          "custom_agents_count_band": ["custom_agents_present"],
+          "custom_agents_present": ["custom_agents_count_band"],
+          "hooks_count_band": ["hooks_present"],
+          "hooks_present": ["hooks_count_band"],
+          "instruction_files_count_band": [
+            "instruction_files_present",
+            "instruction_depth_band"
+          ],
+          "instruction_files_present": [
+            "instruction_files_count_band",
+            "instruction_depth_band"
+          ],
+          "instruction_depth_band": [
+            "instruction_files_count_band",
+            "instruction_files_present"
+          ],
+          "lanes_count_band": ["lanes_present"],
+          "lanes_present": ["lanes_count_band"],
+          "plan_task_directories_count_band": ["plan_task_directories_present"],
+          "plan_task_directories_present": ["plan_task_directories_count_band"],
+          "skills_count_band": ["skills_present"],
+          "skills_present": ["skills_count_band"],
+          "validation_scripts_count_band": ["validation_scripts_present"],
+          "validation_scripts_present": ["validation_scripts_count_band"],
+          "worktrees_count_band": ["worktrees_present"],
+          "worktrees_present": ["worktrees_count_band"]
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "custom_agents_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact custom-agent names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        },
+        {
+          "field": "hooks_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact hook names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        },
+        {
+          "field": "instruction_files_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact instruction-file names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        },
+        {
+          "field": "instruction_depth_band",
+          "bands": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact instruction depth stays local; 1000+ is top-coded and the field is absent below k=5 observed instruction files"
+        },
+        {
+          "field": "lanes_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact lane names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        },
+        {
+          "field": "plan_task_directories_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact plan/task directory names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        },
+        {
+          "field": "skills_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact skill names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        },
+        {
+          "field": "validation_scripts_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact validation-script names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        },
+        {
+          "field": "worktrees_count_band",
+          "bands": ["5-19", "20-99", "100-999", "1000+"],
+          "note": "Exact worktree names and counts stay local; 1000+ is top-coded and the field is absent below k=5"
+        }
+      ],
+      "min_support": {
+        "roots": 1
+      },
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": [
+        "full"
+      ],
+      "neutrality_note": "Structure inventory only; it does not measure orchestration quality, effectiveness, or subject capability",
+      "risk_note": "Even coarse orchestration structure can contribute to rare-topology identification in combination; names, paths, exact counts, exact depths, and below-k fields stay local",
+      "notes": "Report location: fingerprint.orchestration_topology fields. ACTIVE only for the MYB-13.7 file-structure aggregate; the broader fingerprint.orchestration_topology section placeholder and transcript-derived delegation distributions remain reserved. Required caveat and k-suppression floor are output-schema constants."
     },
     {
       "id": "fingerprint.orchestration_topology",

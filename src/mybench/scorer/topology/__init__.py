@@ -1,10 +1,10 @@
 """Read-only orchestration-file structure inventory (MYB-13.7).
 
-The scanner deliberately uses only directory enumeration and ``stat``.  It
-never opens an orchestration file, follows a symlink, reads ambient time, or
-logs a path.  Names remain in the private local view; the separately validated
-public view is a closed aggregate of fixed category ids, coarse bands, and
-presence booleans after k-suppression.
+The scanner deliberately uses only no-follow directory descriptors, directory
+enumeration, and ``stat``. It never opens an orchestration file, follows a
+symlink, reads ambient time, or logs a path. Names remain in the private local
+view; the registry-validated public view is a closed aggregate of fixed
+category ids, coarse bands, and presence booleans after k-suppression.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from mybench import paths
-from mybench.schemas import load_validator
+from mybench.registry import Registry, RegistryError
 
 TOPOLOGY_SCHEMA_VERSION = "1"
-TOPOLOGY_K = 5
+TOPOLOGY_REGISTRY_ID = "fingerprint.topology.file_structure"
 TOPOLOGY_CATEGORIES = (
     "custom_agents",
     "hooks",
@@ -32,15 +32,9 @@ TOPOLOGY_CATEGORIES = (
     "validation_scripts",
     "worktrees",
 )
-
-_COUNT_BANDS = (
-    ("0", 0, 0),
-    ("1-4", 1, 4),
-    ("5-19", 5, 19),
-    ("20-99", 20, 99),
-    ("100-999", 100, 999),
-    ("1000+", 1000, None),
-)
+_COUNT_EXACT = re.compile(r"([0-9]+)\Z")
+_COUNT_RANGE = re.compile(r"([0-9]+)-([0-9]+)\Z")
+_COUNT_PLUS = re.compile(r"([0-9]+)\+\Z")
 _INSTRUCTION_FILES = {"agents.md", "claude.md", "copilot.md", "gemini.md"}
 _ORCHESTRATION_ROOTS = {".claude", ".codex"}
 _NAMED_CONTAINERS = {
@@ -82,11 +76,93 @@ def _coverage(value: int | str) -> int | str:
     return value
 
 
-def _count_band(value: int) -> str:
-    for label, lower, upper in _COUNT_BANDS:
-        if value >= lower and (upper is None or value <= upper):
+def _directory_flags() -> int:
+    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+        raise TopologyScanError("safe descriptor-relative directory walking is unavailable")
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+
+
+def _open_root(root: str | Path) -> int:
+    """Open every caller-spelled root component without following symlinks.
+
+    Relative roots are anchored at the current working-directory descriptor;
+    absolute roots are anchored at ``/``. ``.`` is a no-op and ``..`` is
+    rejected rather than giving consent an ambiguous traversal meaning.
+    """
+
+    try:
+        raw = os.fspath(root)
+    except TypeError:
+        raise TopologyScanError("consented orchestration root is invalid") from None
+    if not isinstance(raw, str) or not raw:
+        raise TopologyScanError("consented orchestration root is invalid")
+    parsed = Path(raw)
+    parts = parsed.parts
+    if ".." in parts:
+        raise TopologyScanError("consented orchestration root may not contain dot-dot")
+    flags = _directory_flags()
+    if parsed.is_absolute():
+        if parsed.anchor != os.sep:
+            raise TopologyScanError("consented orchestration root has an unsupported anchor")
+        components = parts[1:]
+        anchor = os.sep
+    else:
+        components = tuple(part for part in parts if part != ".")
+        anchor = "."
+
+    current = -1
+    try:
+        current = os.open(anchor, flags)
+        for component in components:
+            following = os.open(component, flags, dir_fd=current)
+            os.close(current)
+            current = following
+        return current
+    except OSError:
+        if current >= 0:
+            os.close(current)
+        raise TopologyScanError("consented orchestration root could not be opened safely") from None
+
+
+def _open_relative_directory(root_fd: int, relative: tuple[str, ...]) -> int:
+    current = os.dup(root_fd)
+    try:
+        for component in relative:
+            following = os.open(component, _directory_flags(), dir_fd=current)
+            os.close(current)
+            current = following
+        return current
+    except OSError:
+        os.close(current)
+        raise
+
+
+def _bands(entry: dict, field: str) -> list[str]:
+    for definition in entry["band_definitions"]:
+        if definition["field"] == field:
+            return list(definition["bands"])
+    raise TopologyScanError("topology registry contract is incomplete")
+
+
+def _const(entry: dict, field: str):
+    try:
+        return entry["output_schema"]["properties"][field]["const"]
+    except (KeyError, TypeError):
+        raise TopologyScanError("topology registry contract is incomplete") from None
+
+
+def _count_band(value: int, bands: list[str]) -> str:
+    for label in bands:
+        exact = _COUNT_EXACT.fullmatch(label)
+        if exact and value == int(exact.group(1)):
             return label
-    raise TopologyScanError("topology count is invalid")
+        interval = _COUNT_RANGE.fullmatch(label)
+        if interval and int(interval.group(1)) <= value <= int(interval.group(2)):
+            return label
+        top = _COUNT_PLUS.fullmatch(label)
+        if top and value >= int(top.group(1)):
+            return label
+    raise TopologyScanError("topology registry bands do not cover the value")
 
 
 def _classifications(relative: tuple[str, ...], node_type: str) -> tuple[str, ...]:
@@ -119,44 +195,47 @@ def _is_relevant(relative: tuple[str, ...], categories: tuple[str, ...]) -> bool
     return bool(categories or lowered & (_ORCHESTRATION_ROOTS | _NAMED_CONTAINERS))
 
 
-def _walk(root: Path) -> tuple[dict[tuple[str, ...], dict], dict[str, int], list[int]]:
+def _walk(root_fd: int) -> tuple[dict[tuple[str, ...], dict], dict[str, int], list[int]]:
     metadata: dict[tuple[str, ...], dict] = {}
     counts = {category: 0 for category in TOPOLOGY_CATEGORIES}
     instruction_depths: list[int] = []
-    pending = [(root, ())]
+    pending = [()]
 
     try:
         while pending:
-            directory, prefix = pending.pop()
-            with os.scandir(directory) as iterator:
-                entries = sorted(iterator, key=lambda entry: entry.name)
-            child_directories = []
-            for entry in entries:
-                info = entry.stat(follow_symlinks=False)
-                if stat.S_ISDIR(info.st_mode):
-                    node_type = "directory"
-                elif stat.S_ISREG(info.st_mode):
-                    node_type = "file"
-                elif stat.S_ISLNK(info.st_mode):
-                    node_type = "symlink"
-                else:
-                    node_type = "other"
-                relative = (*prefix, entry.name)
-                categories = _classifications(relative, node_type)
-                metadata[relative] = {
-                    "entry_type": node_type,
-                    "categories": list(categories),
-                    "relevant": _is_relevant(relative, categories),
-                }
-                for category in categories:
-                    counts[category] += 1
-                if "instruction_files" in categories:
-                    instruction_depths.append(len(relative))
-                if node_type == "directory":
-                    child_directories.append((Path(entry.path), relative))
-            # Reverse the push order so the lexicographically first directory
-            # is visited first.  Output is sorted again when the trie freezes.
-            pending.extend(reversed(child_directories))
+            prefix = pending.pop()
+            directory_fd = _open_relative_directory(root_fd, prefix)
+            try:
+                child_directories = []
+                with os.scandir(directory_fd) as iterator:
+                    for entry in sorted(iterator, key=lambda item: item.name):
+                        info = entry.stat(follow_symlinks=False)
+                        if stat.S_ISDIR(info.st_mode):
+                            node_type = "directory"
+                        elif stat.S_ISREG(info.st_mode):
+                            node_type = "file"
+                        elif stat.S_ISLNK(info.st_mode):
+                            node_type = "symlink"
+                        else:
+                            node_type = "other"
+                        relative = (*prefix, entry.name)
+                        categories = _classifications(relative, node_type)
+                        metadata[relative] = {
+                            "entry_type": node_type,
+                            "categories": list(categories),
+                            "relevant": _is_relevant(relative, categories),
+                        }
+                        for category in categories:
+                            counts[category] += 1
+                        if "instruction_files" in categories:
+                            instruction_depths.append(len(relative))
+                        if node_type == "directory":
+                            child_directories.append(relative)
+                # Reverse the push order so the lexicographically first
+                # directory is visited first. Output is sorted when frozen.
+                pending.extend(reversed(child_directories))
+            finally:
+                os.close(directory_fd)
     except OSError:
         # A path-bearing exception or log would leak the very local names this
         # scanner protects.  Fail closed with a path-free error instead.
@@ -200,35 +279,53 @@ def _public_aggregate(
     *,
     observed_on: str,
     transcript_coverage: int | str,
+    registry: Registry,
 ) -> dict:
-    supported = {
-        category: _count_band(count)
-        for category, count in sorted(counts.items())
-        if count >= TOPOLOGY_K
-    }
+    entry = registry.entry(TOPOLOGY_REGISTRY_ID)
+    if entry["status"] != "active":
+        raise TopologyScanError("topology descriptor is not active")
+    support = registry.min_support(TOPOLOGY_REGISTRY_ID)
+    if support != {"roots": 1}:
+        raise TopologyScanError("topology root-support contract is invalid")
+    floor = _const(entry, "k_suppression_floor")
+    if type(floor) is not int or floor < 5:
+        raise TopologyScanError("topology k-suppression contract is invalid")
     aggregate = {
-        "schema_version": TOPOLOGY_SCHEMA_VERSION,
-        "kind": "orchestration-topology-aggregate",
-        "trust_tier": "ANCHORED",
-        "state_basis": "scan-time-state-not-evidence-period",
+        "schema_version": _const(entry, "schema_version"),
+        "kind": _const(entry, "kind"),
+        "file_structure_coverage_basis_points": _const(
+            entry, "file_structure_coverage_basis_points"
+        ),
+        "transcript_delegation_coverage_basis_points": transcript_coverage,
+        "state_basis": _const(entry, "state_basis"),
         "observed_on": observed_on,
-        "evidence_sources": [
-            {"source": "file-structure", "coverage_basis_points": 10000},
-            {
-                "source": "transcript-delegation",
-                "coverage_basis_points": transcript_coverage,
-            },
-        ],
-        "structure_count_bands": supported,
-        "presence_flags": {category: True for category in supported},
+        "k_suppression_floor": floor,
+        "trust_tier": _const(entry, "trust_tier"),
+        "caveats": _const(entry, "caveats"),
     }
-    if len(instruction_depths) >= TOPOLOGY_K:
-        aggregate["instruction_depth_band"] = _count_band(max(instruction_depths))
-    errors = sorted(
-        load_validator("orchestration_topology.schema.json").iter_errors(aggregate), key=str
-    )
-    if errors:
-        raise TopologyScanError("publishable topology shape is invalid")
+    if aggregate["trust_tier"] != "ANCHORED":
+        raise TopologyScanError("topology trust ceiling must remain ANCHORED")
+    for category, count in sorted(counts.items()):
+        if count < floor:
+            continue
+        field = f"{category}_count_band"
+        aggregate[field] = _count_band(count, _bands(entry, field))
+        aggregate[f"{category}_present"] = True
+    if len(instruction_depths) >= floor:
+        aggregate["instruction_depth_band"] = _count_band(
+            max(instruction_depths), _bands(entry, "instruction_depth_band")
+        )
+    try:
+        registry.check_claim(
+            {
+                "registry_id": TOPOLOGY_REGISTRY_ID,
+                "registry_version": entry["version"],
+                "derivation_class": entry["class"],
+                "output": aggregate,
+            }
+        )
+    except RegistryError as exc:
+        raise TopologyScanError("publishable topology failed registry conformance") from exc
     return aggregate
 
 
@@ -237,6 +334,7 @@ def scan_orchestration_topology(
     *,
     observed_at: str,
     transcript_delegation_coverage_basis_points: int | str = "UNKNOWN",
+    registry: Registry | None = None,
 ) -> dict:
     """Inventory one explicitly consented root without reading file bytes.
 
@@ -247,15 +345,13 @@ def scan_orchestration_topology(
 
     scanned_at, observed_on = _observed_at(observed_at)
     transcript_coverage = _coverage(transcript_delegation_coverage_basis_points)
-    root = Path(root).absolute()
+    registry = registry or Registry.load()
+    root_fd = _open_root(root)
     try:
-        root_info = root.lstat()
-    except OSError:
-        raise TopologyScanError("consented orchestration root is unavailable") from None
-    if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
-        raise TopologyScanError("consented orchestration root must be a non-symlink directory")
+        metadata, counts, instruction_depths = _walk(root_fd)
+    finally:
+        os.close(root_fd)
 
-    metadata, counts, instruction_depths = _walk(root)
     local = {
         "schema_version": TOPOLOGY_SCHEMA_VERSION,
         "kind": "orchestration-topology-local",
@@ -284,6 +380,7 @@ def scan_orchestration_topology(
             instruction_depths,
             observed_on=observed_on,
             transcript_coverage=transcript_coverage,
+            registry=registry,
         ),
     }
 
@@ -340,7 +437,7 @@ def store_local_topology(local_inventory: dict) -> Path:
 
 __all__ = [
     "TOPOLOGY_CATEGORIES",
-    "TOPOLOGY_K",
+    "TOPOLOGY_REGISTRY_ID",
     "TOPOLOGY_SCHEMA_VERSION",
     "TopologyScanError",
     "scan_orchestration_topology",

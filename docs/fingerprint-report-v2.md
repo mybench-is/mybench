@@ -248,16 +248,27 @@ scanner or authorize it to read orchestration-file contents.
 | `fingerprint.topology.peak_parallel_lanes.band` | Cells `(count_band(peak lanes), share_band(sessions in band / eligible sessions))`; a cell is absent below k=5. This is a within-session distribution, never a global peak or cross-session concurrency claim. | ANCHORED | k≥5 sessions per cell | PUBLISHABLE (R1) |
 | `fingerprint.topology.lane_event_share_distribution` | LOCAL_ONLY cells `(share_band, exact lane-episode count)`: within each eligible episode, compute each known lane's tagged-event share, then histogram the shares without lane names or ids. This is a deterministic utilization proxy, not an interleaving-quality judgment. | ANCHORED | 5 episodes with lane coverage | LOCAL_ONLY; v0.2.1 permits a separate, banded and k-suppressed public descriptor, but does not activate this exact-count entry |
 
-The MYB-13.7 file-structure scanner walks one explicitly consented root using
-directory enumeration and `stat` only; it never opens a file or follows a
-symlink. Its private A10 artifact contains the sorted relative named hierarchy,
-exact fixed-taxonomy counts, and exact instruction depth. Its closed public
-projection contains only fixed category ids, `count_band` values, and `true`
-presence flags after k≥5 support; below-support categories and depth are absent,
-never zero. The projection labels the file-structure and transcript-delegation
-sources with separate coverage values. The file-structure observation is dated
-at UTC-day grain and explicitly says it reflects scan-time state, not the
-report's evidence period.
+The MYB-13.7 file-structure scanner walks one explicitly consented root through
+directory descriptors opened with `O_DIRECTORY|O_NOFOLLOW`, directory
+enumeration, and `stat` only; it never opens an orchestration file or follows a
+symlink. Every caller-spelled root component uses the same no-follow rule;
+relative roots are anchored at the working-directory descriptor, absolute
+roots at `/`, `.` is a no-op, and `..` is rejected. Its private A10 artifact
+contains the sorted relative named hierarchy, exact fixed-taxonomy counts, and
+exact instruction depth.
+
+The public projection is bound to ACTIVE registry entry
+`fingerprint.topology.file_structure` v1.0.0 at R1/full-only with an ANCHORED
+ceiling and report location `fingerprint.orchestration_topology`. Its closed
+registry output schema contains only fixed category count-band fields, their
+paired `true` presence flags, the supported instruction-depth band, and the
+required evidence/control labels. Category count schemas do not admit the
+below-k `0` or `1-4` bands; below-support categories and depth are absent, never
+zero. The projection labels file-structure and transcript-delegation coverage
+separately, pins k=5 and the controlled scan-time caveat, and dates the
+file-structure observation at UTC-day grain. The broader
+`fingerprint.orchestration_topology` section placeholder remains reserved for
+the separate transcript-derived fields.
 
 ### 3.6 Token and cost profile
 

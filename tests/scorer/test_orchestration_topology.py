@@ -12,9 +12,10 @@ from pathlib import Path
 import pytest
 
 from mybench import paths
-from mybench.schemas import load_validator
+from mybench.registry import Registry, RegistryError
 from mybench.scorer.topology import (
     TOPOLOGY_CATEGORIES,
+    TOPOLOGY_REGISTRY_ID,
     TopologyScanError,
     scan_orchestration_topology,
     store_local_topology,
@@ -62,27 +63,36 @@ def _bytes_surface(tmp_path: Path, value: object, logs: str = "") -> list[Path]:
 
 def test_dirwalk_stat_only_is_deterministic_and_never_reads_content(tmp_path, monkeypatch):
     root = _fixture_tree(tmp_path / "consented")
-    # Warm the packaged schema before making every ordinary content-read API fire.
-    load_validator("orchestration_topology.schema.json")
+    # Warm the packaged registry before making ordinary content-read APIs fire.
+    registry = Registry.load()
+    real_os_open = os.open
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("scanner attempted to read file content")
+
+    def directory_open(path, flags, mode=0o777, *, dir_fd=None):
+        assert flags & os.O_DIRECTORY
+        assert flags & os.O_NOFOLLOW
+        assert not flags & (os.O_WRONLY | os.O_RDWR)
+        return real_os_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(builtins, "open", forbidden)
     monkeypatch.setattr(Path, "open", forbidden)
     monkeypatch.setattr(Path, "read_bytes", forbidden)
     monkeypatch.setattr(Path, "read_text", forbidden)
-    monkeypatch.setattr(os, "open", forbidden)
+    monkeypatch.setattr(os, "open", directory_open)
 
     first = scan_orchestration_topology(
         root,
         observed_at=OBSERVED_AT,
         transcript_delegation_coverage_basis_points=6250,
+        registry=registry,
     )
     second = scan_orchestration_topology(
         root,
         observed_at=OBSERVED_AT,
         transcript_delegation_coverage_basis_points=6250,
+        registry=registry,
     )
     assert first == second
     assert CANARY_SKILL in json.dumps(first["local"])
@@ -97,9 +107,7 @@ def test_public_shape_is_fixed_banded_and_k_suppressed(tmp_path):
         transcript_delegation_coverage_basis_points=6250,
     )
     public = inventory["publishable"]
-    load_validator("orchestration_topology.schema.json").validate(public)
-
-    assert set(public["structure_count_bands"]) == {
+    supported = {
         "custom_agents",
         "hooks",
         "instruction_files",
@@ -107,13 +115,22 @@ def test_public_shape_is_fixed_banded_and_k_suppressed(tmp_path):
         "validation_scripts",
         "worktrees",
     }
-    assert all(value == "5-19" for value in public["structure_count_bands"].values())
-    assert public["presence_flags"] == {
-        category: True for category in public["structure_count_bands"]
-    }
+    for category in supported:
+        assert public[f"{category}_count_band"] == "5-19"
+        assert public[f"{category}_present"] is True
     assert public["instruction_depth_band"] == "1-4"
-    assert not (set(TOPOLOGY_CATEGORIES) - set(public["structure_count_bands"])) & set(
-        public["presence_flags"]
+    for category in set(TOPOLOGY_CATEGORIES) - supported:
+        assert f"{category}_count_band" not in public
+        assert f"{category}_present" not in public
+    registry = Registry.load()
+    entry = registry.entry(TOPOLOGY_REGISTRY_ID)
+    registry.check_claim(
+        {
+            "registry_id": TOPOLOGY_REGISTRY_ID,
+            "registry_version": entry["version"],
+            "derivation_class": entry["class"],
+            "output": public,
+        }
     )
     encoded = json.dumps(public, sort_keys=True)
     assert CANARY_SKILL not in encoded
@@ -127,8 +144,8 @@ def test_rare_distinctive_structure_is_absent_not_zero(tmp_path):
         _fixture_tree(tmp_path / "rare", large=False), observed_at=OBSERVED_AT
     )
     public = inventory["publishable"]
-    assert public["structure_count_bands"] == {}
-    assert public["presence_flags"] == {}
+    assert not any(key.endswith("_count_band") for key in public)
+    assert not any(key.endswith("_present") for key in public)
     assert "instruction_depth_band" not in public
     assert inventory["local"]["structure_counts"]["skills"] == 1
 
@@ -151,10 +168,10 @@ def test_evidence_sources_and_scan_time_semantics_are_distinct(tmp_path):
     assert local["transcript_delegation"]["state_basis"] == "evidence-period-aggregate"
     assert public["observed_on"] == "2026-07-18"
     assert public["state_basis"] == "scan-time-state-not-evidence-period"
-    assert public["evidence_sources"] == [
-        {"source": "file-structure", "coverage_basis_points": 10000},
-        {"source": "transcript-delegation", "coverage_basis_points": "UNKNOWN"},
-    ]
+    assert public["file_structure_coverage_basis_points"] == 10000
+    assert public["transcript_delegation_coverage_basis_points"] == "UNKNOWN"
+    assert public["k_suppression_floor"] == 5
+    assert public["caveats"] == ["scan-time-state-not-evidence-period"]
 
 
 def test_canary_names_and_paths_never_reach_public_or_logs(tmp_path, caplog):
@@ -180,6 +197,17 @@ def test_canary_leakscan_firing_test_detects_planted_public_name(tmp_path):
     surfaces = _bytes_surface(tmp_path / "surface", planted)
     with pytest.raises(CanaryLeakError):
         assert_no_canaries(surfaces, [CANARY_SKILL.encode()])
+    registry = Registry.load()
+    entry = registry.entry(TOPOLOGY_REGISTRY_ID)
+    with pytest.raises(RegistryError):
+        registry.check_claim(
+            {
+                "registry_id": TOPOLOGY_REGISTRY_ID,
+                "registry_version": entry["version"],
+                "derivation_class": entry["class"],
+                "output": planted,
+            }
+        )
 
 
 def test_private_artifact_is_content_addressed_under_mode_0700_data_dir(tmp_path, monkeypatch):
@@ -222,5 +250,44 @@ def test_symlink_root_and_symlinked_subtree_are_never_followed(tmp_path):
     }
     root_link = tmp_path / "root-link"
     root_link.symlink_to(outside, target_is_directory=True)
-    with pytest.raises(TopologyScanError, match="non-symlink"):
+    with pytest.raises(TopologyScanError, match="opened safely"):
         scan_orchestration_topology(root_link, observed_at=OBSERVED_AT)
+
+
+def test_intermediate_directory_symlink_swap_fails_without_escaping(tmp_path, monkeypatch):
+    root = _fixture_tree(tmp_path / "consented")
+    outside = _fixture_tree(tmp_path / "outside")
+    outside_canary = outside / ".claude" / "skills" / "OUTSIDE-CANARY" / "SKILL.md"
+    _write(outside_canary)
+    real_open = os.open
+    swapped = False
+
+    def racing_open(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal swapped
+        if path == ".claude" and dir_fd is not None and not swapped:
+            (root / ".claude").rename(root / ".claude-before-race")
+            (root / ".claude").symlink_to(outside / ".claude", target_is_directory=True)
+            swapped = True
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", racing_open)
+    with pytest.raises(TopologyScanError, match="could not be scanned"):
+        scan_orchestration_topology(root, observed_at=OBSERVED_AT)
+    assert swapped
+
+
+def test_root_components_are_no_follow_and_dot_root_is_supported(tmp_path, monkeypatch):
+    root = _fixture_tree(tmp_path / "real-parent" / "consented")
+    alias = tmp_path / "alias-parent"
+    alias.symlink_to(root.parent, target_is_directory=True)
+    with pytest.raises(TopologyScanError, match="opened safely"):
+        scan_orchestration_topology(alias / root.name, observed_at=OBSERVED_AT)
+
+    with pytest.raises(TopologyScanError, match="dot-dot"):
+        scan_orchestration_topology(
+            Path(os.fspath(root)) / ".." / root.name, observed_at=OBSERVED_AT
+        )
+
+    expected = scan_orchestration_topology(root, observed_at=OBSERVED_AT)
+    monkeypatch.chdir(root)
+    assert scan_orchestration_topology(Path("."), observed_at=OBSERVED_AT) == expected

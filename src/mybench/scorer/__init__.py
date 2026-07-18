@@ -8,7 +8,7 @@ from mybench.scorer.agent_hours import (
 )
 from mybench.scorer.topology import (
     TOPOLOGY_CATEGORIES,
-    TOPOLOGY_K,
+    TOPOLOGY_REGISTRY_ID,
     TOPOLOGY_SCHEMA_VERSION,
     TopologyScanError,
     scan_orchestration_topology,
@@ -27,7 +27,7 @@ __all__ = [
     "AgentHoursScoringError",
     "score_agent_hours",
     "TOPOLOGY_CATEGORIES",
-    "TOPOLOGY_K",
+    "TOPOLOGY_REGISTRY_ID",
     "TOPOLOGY_SCHEMA_VERSION",
     "TopologyScanError",
     "scan_orchestration_topology",
