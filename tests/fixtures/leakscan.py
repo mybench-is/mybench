@@ -8,5 +8,6 @@ from mybench.leakscan import (  # noqa: F401
     GZIP_MAGIC,
     CanaryLeakError,
     assert_no_canaries,
+    assert_no_canaries_in_directory,
     scan_file,
 )
