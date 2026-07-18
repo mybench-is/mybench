@@ -322,7 +322,8 @@ disposition is part of the v2 freeze:
 | Within-session peak-parallel-lane distribution | topology section; PUBLISHABLE at k≥5; v0.2.1 also admits a future cross-session distribution and top-coded peak-lanes band, never an exact global peak |
 | Blame survival, throughput, override survival | future ACTIVE entries in `catalog_metrics`; survival requires `persistence-not-quality`; attribution remains ANCHORED |
 | Deterministic lane-switch/utilization histograms | Current exact-count row remains LOCAL_ONLY; v0.2.1 admits future banded/top-coded, k≥5 public descriptors with no ordered stream or quality framing |
-| Agent-hours/durations, longest-run forms, episode latency, externalization | v0.2.1 admits only the coarse controlled forms; no field becomes active until its registry entry pins bands, support, caveats, risk, and location |
+| Agent-hours/durations | `transcript.agent_hours` v1.0.0 is ACTIVE in `catalog_metrics`: summed active-time and wall-clock bands are top-coded at 160h+, k≥5, carry boundary/`observed_at` coverage and backfill bands, require capture-dependent/inflatable caveats, are R1/full-preset, and remain ANCHORED |
+| Longest-run forms, episode latency, externalization | v0.2.1 admits only the coarse controlled forms; no field becomes active until its registry entry pins bands, support, caveats, risk, and location |
 | One-shot, steering, acceptance | Arrival conditioning may use the pinned v1 structural vocabulary in support-qualified aggregates; the substantive metric families remain behind the closure classifier and OQ #33 practice-signal gate |
 | Interleaving-quality and all other JUDGED families | deferred wholesale to the MYB-7 track; deterministic histograms do not imply quality |
 | Forge actions | normalized-store derivation through MYB-19.11 only; no v2 report field |
@@ -352,7 +353,8 @@ Every current PUBLISHABLE field maps to an admitted v0.2.1 class:
 | Token/cost bands, ratios, and bucketed episode distributions | Token/cost profile; task-episode distributions where applicable |
 | Existing schema-v1 activity metrics | Counts, durations, cadence histograms, coverage percentages, streak lengths (the v0 set) |
 | Future `catalog_metrics` blame-survival fields | Blame-survival cohorts |
-| Future lifecycle-duration/agent-hours, autonomous-run, cross-session-concurrency, episode-latency, externalization, and deterministic-interleaving fields | Their named v0.2.1 classes; each remains absent until an ACTIVE registry entry implements the class-specific controls |
+| `catalog_metrics.transcript.agent_hours` | Lifecycle-derived duration and agent-hours profile; ACTIVE v1.0.0 with top-coding, k≥5, observed-boundary/`observed_at` coverage, backfill annotation, and required caveats |
+| Future autonomous-run, cross-session-concurrency, episode-latency, externalization, and deterministic-interleaving fields | Their named v0.2.1 classes; each remains absent until an ACTIVE registry entry implements the class-specific controls |
 
 The complete publication-eligible set is exactly the catalog rows marked
 PUBLISHABLE above plus future `catalog_metrics` entries whose ACTIVE registry

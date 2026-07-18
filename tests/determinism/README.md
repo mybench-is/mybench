@@ -5,10 +5,10 @@ in fresh processes, perturbing hash seed, time zone, locale, HOME/XDG paths,
 and a sentinel environment value. It compares exact output bytes and logs
 only byte counts and SHA-256 digests. Every input and fixture is synthetic.
 
-The current landed stages are the activity `report.json`, signed-claim
-serialization, registry disclosure manifest, and static report HTML. Parsers,
-normalizers, fingerprint scorers, and the publication-preview bundle do not
-exist on this branch yet. Each owning story must add both a synthetic
+The current landed stages include the activity `report.json`, normalized
+corpora and private session-timing output, the coarse agent-hours profile,
+signed-claim serialization, registry disclosure manifest, and static report
+HTML. Each owning story must add both a synthetic
 invocation factory to `RUNNERS` and a same-name `Stage`; exact key equality and
 callability are checked before anything runs. Compute/render modules discovered
 under scorer, parser/normalizer, report, and publication package roots must also
@@ -16,11 +16,11 @@ be owned by a stage marked `discovery_entry`. Every stage carries a production
 `EntryPoint(module, qualname)`; registration imports it, proves it is callable
 and owned by that module. Fixture code returns only an `Invocation` containing
 synthetic arguments; it never receives the entry point and cannot return the
-artifact. The gate calls the production entry point itself. Three current
-stages use the exact bytes returned by production, while the registry stage has
-one explicit built-in canonical-JSON-line encoding for its returned dictionary.
-A fixture that calls production itself and then returns unrelated constant
-bytes is rejected before it can define the compared artifact.
+artifact. The gate calls the production entry point itself. A fixture that
+calls production itself and then returns unrelated constant bytes is rejected
+before it can define the compared artifact. Byte-returning stages use the
+production bytes exactly; dictionary-returning stages use the single built-in
+canonical-JSON-line encoding.
 `__main__.py`/`cli.py` I/O shells are excluded by convention; other helpers
 require an explicit reviewed non-stage entry.
 

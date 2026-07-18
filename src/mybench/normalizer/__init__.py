@@ -46,6 +46,12 @@ from mybench.normalizer.reference_join import (
     normalize_reference_target_joins,
     validate_reference_target_corpus_artifact,
 )
+from mybench.normalizer.session_timing import (
+    SESSION_TIMING_NORMALIZER_VERSION,
+    SessionTiming,
+    normalize_session_timing_bytes,
+    normalize_session_timings,
+)
 
 __all__ = [
     "ARRIVAL_PATTERN_CLASSIFIER_VERSION",
@@ -69,8 +75,10 @@ __all__ = [
     "GIT_ADAPTER_VERSION",
     "REPO_NORMALIZER_VERSION",
     "REFERENCE_JOIN_NORMALIZER_VERSION",
+    "SESSION_TIMING_NORMALIZER_VERSION",
     "RefEvidence",
     "ReferenceTargetJoin",
+    "SessionTiming",
     "RepoTarget",
     "VerifiedRecord",
     "VerifiedRepoSnapshot",
@@ -80,6 +88,8 @@ __all__ = [
     "normalize_codex",
     "normalize_repo_evidence",
     "normalize_reference_target_joins",
+    "normalize_session_timing_bytes",
+    "normalize_session_timings",
     "resolve_content_pointer",
     "resolution_coverage",
     "token_accounting_includes",
