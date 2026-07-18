@@ -166,12 +166,21 @@ def test_evidence_sources_and_scan_time_semantics_are_distinct(tmp_path):
         "state_basis": "scan-time-state-not-evidence-period",
     }
     assert local["transcript_delegation"]["state_basis"] == "evidence-period-aggregate"
-    assert public["observed_on"] == "2026-07-18"
+    assert public["observed_week"] == "2026-W29"
     assert public["state_basis"] == "scan-time-state-not-evidence-period"
     assert public["file_structure_coverage_basis_points"] == 10000
     assert public["transcript_delegation_coverage_basis_points"] == "UNKNOWN"
     assert public["k_suppression_floor"] == 5
     assert public["caveats"] == ["scan-time-state-not-evidence-period"]
+
+
+def test_public_scan_week_uses_iso_week_year_at_calendar_boundary(tmp_path):
+    inventory = scan_orchestration_topology(
+        _fixture_tree(tmp_path / "consented"), observed_at="2021-01-01T00:00:00Z"
+    )
+    assert inventory["local"]["scan"]["scanned_at"] == "2021-01-01T00:00:00Z"
+    assert inventory["publishable"]["observed_week"] == "2020-W53"
+    assert "observed_on" not in inventory["publishable"]
 
 
 def test_canary_names_and_paths_never_reach_public_or_logs(tmp_path, caplog):

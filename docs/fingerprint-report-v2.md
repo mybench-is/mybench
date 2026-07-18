@@ -265,8 +265,9 @@ paired `true` presence flags, the supported instruction-depth band, and the
 required evidence/control labels. Category count schemas do not admit the
 below-k `0` or `1-4` bands; below-support categories and depth are absent, never
 zero. The projection labels file-structure and transcript-delegation coverage
-separately, pins k=5 and the controlled scan-time caveat, and dates the
-file-structure observation at UTC-day grain. The broader
+separately, pins k=5 and the controlled scan-time caveat, and publishes the
+file-structure observation only as an ISO calendar week. The exact scan
+timestamp remains local. The broader
 `fingerprint.orchestration_topology` section placeholder remains reserved for
 the separate transcript-derived fields.
 

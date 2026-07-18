@@ -56,7 +56,7 @@ class TopologyScanError(ValueError):
     """The consented scan root or explicit metadata input is invalid."""
 
 
-def _observed_at(value: str) -> tuple[str, str]:
+def _scan_times(value: str) -> tuple[str, str]:
     if not isinstance(value, str) or _TIMESTAMP.fullmatch(value) is None:
         raise TopologyScanError("scan time must be canonical UTC")
     try:
@@ -65,7 +65,8 @@ def _observed_at(value: str) -> tuple[str, str]:
         raise TopologyScanError("scan time must be canonical UTC") from None
     if parsed.tzinfo != timezone.utc:
         raise TopologyScanError("scan time must be canonical UTC")
-    return value, value[:10]
+    iso_year, iso_week, _iso_weekday = parsed.isocalendar()
+    return value, f"{iso_year:04d}-W{iso_week:02d}"
 
 
 def _coverage(value: int | str) -> int | str:
@@ -277,7 +278,7 @@ def _public_aggregate(
     counts: dict[str, int],
     instruction_depths: list[int],
     *,
-    observed_on: str,
+    observed_week: str,
     transcript_coverage: int | str,
     registry: Registry,
 ) -> dict:
@@ -298,7 +299,7 @@ def _public_aggregate(
         ),
         "transcript_delegation_coverage_basis_points": transcript_coverage,
         "state_basis": _const(entry, "state_basis"),
-        "observed_on": observed_on,
+        "observed_week": observed_week,
         "k_suppression_floor": floor,
         "trust_tier": _const(entry, "trust_tier"),
         "caveats": _const(entry, "caveats"),
@@ -343,7 +344,7 @@ def scan_orchestration_topology(
     100% coverage of that consented root, not a claim about the whole machine.
     """
 
-    scanned_at, observed_on = _observed_at(observed_at)
+    scanned_at, observed_week = _scan_times(observed_at)
     transcript_coverage = _coverage(transcript_delegation_coverage_basis_points)
     registry = registry or Registry.load()
     root_fd = _open_root(root)
@@ -378,7 +379,7 @@ def scan_orchestration_topology(
         "publishable": _public_aggregate(
             counts,
             instruction_depths,
-            observed_on=observed_on,
+            observed_week=observed_week,
             transcript_coverage=transcript_coverage,
             registry=registry,
         ),

@@ -170,7 +170,7 @@ def test_file_structure_topology_descriptor_pins_publication_controls(registry):
         "file_structure_coverage_basis_points": 10000,
         "transcript_delegation_coverage_basis_points": "UNKNOWN",
         "state_basis": "scan-time-state-not-evidence-period",
-        "observed_on": "2026-07-18",
+        "observed_week": "2026-W29",
         "k_suppression_floor": 5,
         "trust_tier": "ANCHORED",
         "caveats": ["scan-time-state-not-evidence-period"],
@@ -191,6 +191,10 @@ def test_file_structure_topology_descriptor_pins_publication_controls(registry):
         check({**base_output, "skills_count_band": "1-4", "skills_present": True})
     with pytest.raises(RegistryError, match="does not conform"):
         check({**base_output, "skills_count_band": "5-19"})
+    with pytest.raises(RegistryError, match="does not conform"):
+        check({**base_output, "observed_week": "2026-07-18"})
+    with pytest.raises(RegistryError, match="does not conform"):
+        check({**base_output, "observed_on": "2026-07-18"})
 
 
 def test_conditioning_declarations_and_per_cell_support_are_registry_inputs():
