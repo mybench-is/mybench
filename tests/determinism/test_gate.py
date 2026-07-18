@@ -149,6 +149,7 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
         "mybench.normalizer.repo",
         "mybench.normalizer.reference_join",
         "mybench.normalizer.session_timing",
+        "mybench.normalizer.workflow_phase",
         "mybench.report.page",
         "mybench.scorer.agent_hours",
         "mybench.scorer.score",

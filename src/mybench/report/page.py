@@ -200,7 +200,6 @@ def render_page(report: dict, *, anchors_url: str = f"{ROOT_URL}/anchors",
 <meta property="og:image" content="{ROOT_URL}/og.png">
 <meta property="og:url" content="{_esc(og_url)}">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="favicon.svg">
 <style>{_CSS}</style></head><body>
 <h1>{STAMP_SVG}mybench activity report</h1>
 <p class="sub">{who}report {_esc(report["report_version"])} · schema {_esc(report["schema_version"])}
