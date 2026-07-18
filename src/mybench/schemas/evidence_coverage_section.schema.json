@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/evidence_coverage_section.schema.json",
+  "title": "Workflow Fingerprint evidence-coverage aggregate",
+  "description": "Private A10 aggregate produced before registry-governed atomic claims are assembled into report v2. Only fixed evidence classes, rates, confidence states, provenance classes, and ambiguity-category counts are admitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "coverage_contract_version",
+    "coverage",
+    "provenance_split",
+    "missing_ambiguous"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "evidence-coverage-aggregate"},
+    "coverage_contract_version": {"const": "1.0.0"},
+    "coverage": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/coverage"}
+    },
+    "provenance_split": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/provenance"}
+    },
+    "missing_ambiguous": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/ambiguity"}
+    }
+  },
+  "$defs": {
+    "rate": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 10000},
+        {"const": "UNKNOWN"}
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_class",
+        "basis",
+        "coverage_basis_points",
+        "confidence",
+        "evidence_state",
+        "trust_tier"
+      ],
+      "properties": {
+        "input_class": {
+          "enum": [
+            "git-session-linkage",
+            "model",
+            "effort",
+            "context-lifecycle",
+            "token-data"
+          ]
+        },
+        "basis": {
+          "enum": [
+            "binding-coverage-based-stand-in",
+            "recognized-model-or-other-per-eligible-event",
+            "recognized-effort-per-eligible-event",
+            "reliable-lifecycle-marker-per-eligible-session",
+            "structurally-valid-token-metadata-per-eligible-session"
+          ]
+        },
+        "coverage_basis_points": {"$ref": "#/$defs/rate"},
+        "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+        "evidence_state": {"enum": ["available", "partial", "unknown"]},
+        "trust_tier": {"enum": ["PROVEN", "ANCHORED"]}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance", "share_basis_points", "trust_tier", "basis"],
+      "properties": {
+        "provenance": {"enum": ["IMPORTED", "LIVE"]},
+        "share_basis_points": {"$ref": "#/$defs/rate"},
+        "trust_tier": {"const": "PROVEN"},
+        "basis": {"const": "anchor-coverage-derived-provenance-split"}
+      }
+    },
+    "ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "count"],
+      "properties": {
+        "category": {
+          "enum": [
+            "missing-marker",
+            "missing-pointer-target",
+            "conflicting-evidence",
+            "unsupported-harness-version",
+            "unlinked-session",
+            "unknown-phase",
+            "missing-model",
+            "missing-effort",
+            "missing-token-data"
+          ]
+        },
+        "count": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

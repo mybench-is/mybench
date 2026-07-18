@@ -298,6 +298,12 @@ Mybench compute or work quality.
 
 ### 3.7 Evidence coverage
 
+The shared producer/aggregation semantics are implemented and versioned in
+[`evidence-coverage.md`](evidence-coverage.md). The aggregate is a private A10
+intermediate, not an atomic claim or report-v2 section. Until the sibling
+section scorers and atomic claim assembler land, the assembled
+`fingerprint.evidence_coverage` section remains visibly `not-supported`.
+
 Coverage values use exact basis points locally and `share_band` publicly,
 except the existing PROVEN v1 values retained verbatim. Missing/ambiguous
 categories are a pinned enum:
