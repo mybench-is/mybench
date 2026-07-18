@@ -12,6 +12,7 @@ import re
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
+from mybench.normalizer.claude import _canonical_timestamp
 from mybench.normalizer.session_timing import SessionTiming
 from mybench.registry import Registry, RegistryError
 
@@ -34,6 +35,8 @@ class AgentHoursScoringError(ValueError):
 
 
 def _timestamp(value: str) -> datetime:
+    if _canonical_timestamp(value) != value:
+        raise AgentHoursScoringError("session timing timestamp is not canonical UTC")
     parsed = datetime.fromisoformat(value[:-1] + "+00:00")
     if parsed.tzinfo != timezone.utc:
         raise AgentHoursScoringError("session timing is not UTC")

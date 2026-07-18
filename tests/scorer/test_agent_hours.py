@@ -10,6 +10,7 @@ from mybench.claims.canonical import canonical_bytes
 from mybench.normalizer import SessionTiming
 from mybench.registry import Registry, _packaged_registry_bytes
 from mybench.scorer import AgentHoursScoringError, score_agent_hours
+from mybench.scorer.agent_hours import _timestamp
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 
 
@@ -68,6 +69,15 @@ def test_active_and_wall_definitions_use_registry_bands_and_exclude_long_idle_ga
 def test_min_support_suppresses_and_fires_at_five_sessions():
     assert score_agent_hours([_timing() for _ in range(4)], anchored_span_days=20) is None
     assert score_agent_hours([_timing() for _ in range(5)], anchored_span_days=20) is not None
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["2026-01-01T00:00:00.000000+00:00", "not-a-timestamp"],
+)
+def test_timestamp_parser_defensively_rejects_noncanonical_values(value):
+    with pytest.raises(AgentHoursScoringError, match="not canonical UTC"):
+        _timestamp(value)
 
 
 def test_unknowns_coverage_backfill_and_top_coding_are_honest():

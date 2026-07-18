@@ -132,6 +132,9 @@ def _is_codex_task_complete(value: Mapping) -> bool:
 
 
 def _normalize_one(session: VerifiedSession) -> SessionTiming:
+    # The shared consent filter retains ``unknown`` records for shape-only
+    # normalizers. Exact timing observations are stricter: only records
+    # explicitly attributed to the subject may contribute a timestamp.
     subject_records = [record for record in session.records if record.attribution == "subject"]
     decoded = []
     for record in subject_records:
@@ -187,6 +190,9 @@ def _normalize_one(session: VerifiedSession) -> SessionTiming:
             close_index = raw_close[0] if raw_close is not None else None
 
     # A reversed raw boundary is ambiguous rather than a negative duration.
+    # Keep the structural marker indexes even when rejecting their timestamps:
+    # they still bound the eligible record interval, so arbitrary records after
+    # a malformed/reversed terminal marker cannot become timing observations.
     if opened_at is not None and closed_at is not None and opened_at > closed_at:
         closed_at, close_status = None, "unknown"
 

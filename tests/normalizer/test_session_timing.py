@@ -96,6 +96,64 @@ def test_absent_or_malformed_codex_terminal_timestamp_is_unknown_not_last_record
     assert timing.closed_at is None
 
 
+def test_reversed_terminal_timestamp_keeps_structural_close_bound():
+    reversed_close = _session(
+        {
+            "timestamp": "2026-01-01T10:00:00Z",
+            "type": "session_meta",
+            "payload": {},
+        },
+        {
+            "timestamp": "2026-01-01T09:00:00Z",
+            "type": "event_msg",
+            "payload": {"type": "task_complete"},
+        },
+        {
+            "timestamp": "2026-01-01T12:00:00Z",
+            "type": "response_item",
+            "payload": {"type": "reasoning"},
+        },
+    )
+
+    timing = normalize_session_timings((reversed_close,))[0]
+
+    assert timing.close_status == "unknown"
+    assert timing.closed_at is None
+    assert timing.event_observed_at == ("2026-01-01T10:00:00.000000Z",)
+    assert "2026-01-01T12:00:00.000000Z" not in timing.event_observed_at
+
+
+def test_unknown_attribution_does_not_contribute_timing_observations():
+    session = _session(
+        {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "type": "session_meta",
+            "payload": {},
+        },
+        {
+            "timestamp": "2026-01-01T00:30:00Z",
+            "type": "response_item",
+            "payload": {"type": "reasoning"},
+        },
+        {
+            "timestamp": "2026-01-01T01:00:00Z",
+            "type": "event_msg",
+            "payload": {"type": "task_complete"},
+        },
+    )
+    records = list(session.records)
+    records[1] = replace(records[1], attribution="unknown")
+    session = replace(session, records=tuple(records))
+
+    timing = normalize_session_timings((session,))[0]
+
+    assert timing.observed_at_status == "complete"
+    assert timing.event_observed_at == (
+        "2026-01-01T00:00:00.000000Z",
+        "2026-01-01T01:00:00.000000Z",
+    )
+
+
 def test_timing_normalization_is_input_order_independent_and_identifier_free():
     fixture = synthetic_codex_normalizer_input()
     first = fixture.sessions[0]

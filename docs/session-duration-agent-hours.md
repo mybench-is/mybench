@@ -22,6 +22,12 @@ that record are private scorer inputs only.
   timestamp on the last structural `event_msg.task_complete` record. An
   arbitrary last rollout timestamp is never substituted. If that marker or
   its timestamp is absent or malformed, close is `unknown`.
+- Structural open/close marker positions still bound the eligible record
+  interval when a marker timestamp is malformed or reversed; this prevents a
+  later arbitrary record from becoming a timing observation.
+- Only records explicitly attributed to the subject contribute exact timing
+  observations. Records with `unknown` attribution remain eligible for other
+  shape-only normalizers but do not enter this timing intermediate.
 - `observed_at_status=complete` requires a valid in-boundary timestamp on
   every eligible subject record. Missing/malformed records produce `partial`,
   not a guessed timestamp.
