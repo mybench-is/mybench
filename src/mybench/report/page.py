@@ -25,10 +25,14 @@ route. Public projection remains owned by MYB-14.1 and is refused here.
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import html
 import re
+from collections.abc import Collection, Sequence
 from datetime import date
 
+from mybench.claims import ClaimError, canonical_bytes, verify_claim
 from mybench.registry import Registry, RegistryError
 from mybench.report.descriptions import GLOSSARY, INTRO, METRIC_DESCRIPTIONS
 from mybench.schemas import load_validator
@@ -129,6 +133,61 @@ class PageError(ValueError):
     pass
 
 
+class ClaimBindingError(ValueError):
+    """A report-v2 field is not exactly backed by trusted signed evidence."""
+
+
+def _verify_report_claims(
+    fields: Sequence[tuple[str, dict]],
+    signed_claims: Sequence[dict] | None,
+    *,
+    registry: Registry,
+    trusted_device_pubs: Collection[str] | None,
+) -> dict[str, dict]:
+    """Verify and exactly bind all and only the signed claims a report renders."""
+    if signed_claims is None:
+        raise ClaimBindingError("report-v2 fields require signed claim envelopes")
+    if not isinstance(signed_claims, Sequence) or isinstance(
+        signed_claims, str | bytes | bytearray
+    ):
+        raise ClaimBindingError("signed claim envelopes must be a sequence")
+
+    claims_by_digest: dict[str, dict] = {}
+    try:
+        for claim in signed_claims:
+            claim_snapshot = copy.deepcopy(claim)
+            signer = verify_claim(claim_snapshot, trusted_device_pubs=trusted_device_pubs)
+            if signer["kind"] == "device" and trusted_device_pubs is None:
+                raise ClaimBindingError(
+                    "device-signed report claims require an explicit trusted-device binding"
+                )
+            if signer["kind"] == "dev" and claim_snapshot["execution_env"] != "local-unattested":
+                raise ClaimBindingError("development claims are limited to the local lane")
+            digest = hashlib.sha256(canonical_bytes(claim_snapshot)).hexdigest()
+            if digest in claims_by_digest:
+                raise ClaimBindingError("duplicate signed claim envelope")
+            claims_by_digest[digest] = claim_snapshot
+    except (ClaimError, KeyError, TypeError) as exc:
+        # Claim inputs can carry local-only references. Never reflect a
+        # validator message (which may quote an offending value) into logs.
+        raise ClaimBindingError("signed claim verification failed") from exc
+
+    expected_digests = [field["claim_digest"] for _location, field in fields]
+    if len(set(expected_digests)) != len(expected_digests):
+        raise ClaimBindingError("report-v2 fields must reference unique signed claims")
+    if set(expected_digests) != set(claims_by_digest):
+        raise ClaimBindingError("report-v2 claim envelopes do not exactly match field digests")
+
+    entries: dict[str, dict] = {}
+    try:
+        for location, field in fields:
+            claim = claims_by_digest[field["claim_digest"]]
+            entries[field["registry_id"]] = registry.check_report_claim(field, location, claim)
+    except (KeyError, RegistryError) as exc:
+        raise ClaimBindingError(f"signed claim does not match report field: {exc}") from exc
+    return entries
+
+
 def _esc(value) -> str:
     return html.escape(str(value), quote=True)
 
@@ -177,7 +236,12 @@ def _field_locations(report: dict):
             yield f"fingerprint.{section_name}", field
 
 
-def _validate_v2_registry(report: dict, registry: Registry) -> dict[str, dict]:
+def _validate_v2_registry(
+    report: dict,
+    registry: Registry,
+    signed_claims: Sequence[dict] | None,
+    trusted_device_pubs: Collection[str] | None,
+) -> dict[str, dict]:
     identity = report["registry"]
     if identity != {"version": registry.version, "digest": registry.digest()}:
         raise PageError("refusing to render report with an unpinned registry identity")
@@ -196,16 +260,23 @@ def _validate_v2_registry(report: dict, registry: Registry) -> dict[str, dict]:
     if len({field["registry_id"] for _, field in fields}) != len(fields):
         raise PageError("report-v2 fields must be sorted and unique by registry id")
 
-    entries = {}
     try:
-        for location, field in fields:
-            entries[field["registry_id"]] = registry.check_report_field(field, location)
-    except (KeyError, RegistryError) as exc:
+        return _verify_report_claims(
+            fields,
+            signed_claims,
+            registry=registry,
+            trusted_device_pubs=trusted_device_pubs,
+        )
+    except (ClaimBindingError, KeyError, RegistryError) as exc:
         raise PageError(f"refusing a registry-nonconforming report: {exc}") from exc
-    return entries
 
 
-def _validate_report(report: dict, registry: Registry | None) -> tuple[str, dict[str, dict]]:
+def _validate_report(
+    report: dict,
+    registry: Registry | None,
+    signed_claims: Sequence[dict] | None,
+    trusted_device_pubs: Collection[str] | None,
+) -> tuple[str, dict[str, dict]]:
     schema_version = report.get("schema_version") if isinstance(report, dict) else None
     schema_name = {"1": "report.schema.json", "2": "report-v2.schema.json"}.get(schema_version)
     if schema_name is None:
@@ -214,7 +285,12 @@ def _validate_report(report: dict, registry: Registry | None) -> tuple[str, dict
     if errors:
         raise PageError(f"refusing to render a non-conforming report: {errors[0].message}")
     if schema_version == "2":
-        return schema_version, _validate_v2_registry(report, registry or Registry.load())
+        return schema_version, _validate_v2_registry(
+            report,
+            registry or Registry.load(),
+            signed_claims,
+            trusted_device_pubs,
+        )
     return schema_version, {}
 
 
@@ -322,11 +398,13 @@ def render_page(
     handle: str | None = None,
     report_json_href: str = "report.json",
     registry: Registry | None = None,
+    signed_claims: Sequence[dict] | None = None,
+    trusted_device_pubs: Collection[str] | None = None,
     public: bool = False,
     theme: str = "auto",
 ) -> bytes:
     """Validate strictly, then render the one local/static report surface."""
-    schema_version, entries = _validate_report(report, registry)
+    schema_version, entries = _validate_report(report, registry, signed_claims, trusted_device_pubs)
     if public and schema_version == "2":
         raise PageError(
             "public fingerprint rendering is unavailable; use the separately gated preview"

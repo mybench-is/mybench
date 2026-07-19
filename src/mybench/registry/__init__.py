@@ -523,13 +523,8 @@ class Registry:
         """Return the explicitly admitted v2 location, if one exists."""
         return self._entry(registry_id).get("report_location")
 
-    def check_report_field(self, field: dict, location: str) -> dict:
-        """Validate registry-owned presentation metadata for one v2 field.
-
-        The report envelope schema validates the closed field/value shape.
-        This supplies ADR-0019's separate semantic gate and returns a
-        defensive entry copy for rendering controlled registry text.
-        """
+    def _check_report_field(self, field: dict, location: str) -> tuple[dict, dict]:
+        """Return the registry entry and exact output represented by a v2 field."""
         entry = self._entry(field["registry_id"])
         eid = entry["id"]
         if entry["status"] != "active":
@@ -639,7 +634,41 @@ class Registry:
                 raise RegistryError(f"{eid}: report conditioning cell is not active")
         elif axis is not None:
             raise RegistryError(f"{eid}: conditioned report field omits its condition")
-        return copy.deepcopy(entry)
+        return copy.deepcopy(entry), output
+
+    def check_report_field(self, field: dict, location: str) -> dict:
+        """Validate registry-owned presentation metadata for one v2 field.
+
+        The report envelope schema validates the closed field/value shape.
+        This supplies ADR-0019's separate semantic gate and returns a
+        defensive entry copy for rendering controlled registry text.
+        """
+        entry, _output = self._check_report_field(field, location)
+        return entry
+
+    def check_report_claim(self, field: dict, location: str, claim: dict) -> dict:
+        """Require one registry-valid signed-claim payload to back a v2 field.
+
+        Envelope and signature verification belong to the caller.  This
+        registry-owned bridge validates both semantic surfaces, derives the
+        report wrapper's exact registry output without renderer-side
+        reconstruction, and compares structures directly (never stringifies
+        or coerces values).
+        """
+        eid = field["registry_id"]
+        entry, report_output = self._check_report_field(field, location)
+        try:
+            self.check_claim(claim)
+        except RegistryError as exc:
+            # A claim output may be registry-invalid local input.  Do not let
+            # jsonschema echo its offending value through a report error/log.
+            raise RegistryError(f"{eid}: signed claim is not registry-conforming") from exc
+        for key in ("registry_id", "registry_version", "derivation_class", "execution_env"):
+            if field[key] != claim[key]:
+                raise RegistryError(f"{eid}: report {key} does not match signed claim")
+        if report_output != claim["output"]:
+            raise RegistryError(f"{eid}: report output does not match signed claim")
+        return entry
 
     # -- the claims bridge ----------------------------------------------------------
 
