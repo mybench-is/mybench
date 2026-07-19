@@ -21,13 +21,18 @@ either output form.
   recurring-sequence mining.
 - Exact local transition counts are corpus aggregates. Public transition cells
   are outgoing shares, banded after a five-transition cell floor.
-- Recurring sequences are length 2–5 contiguous n-grams. Support is the count
-  of distinct episodes containing the n-gram. Only support at least five is
-  retained, then the top five sort by descending support and lexicographic
-  sequence.
+- An evidence-eligible episode contains at least one known classified phase;
+  declared identities with only UNKNOWN/no phase evidence never enter a rate
+  denominator. Recurring sequences are length 2–5 contiguous n-grams. Support
+  is the count of distinct episodes containing the n-gram, and shares divide
+  by evidence-eligible episodes. Only support at least five is retained, then
+  the top five sort by descending support and lexicographic sequence.
 - A structural rework loop is an episode containing a version-1 backward edge
   from `BUILD|TEST|DEBUG` to `PLAN|BUILD`. Its report wording is descriptive,
-  never a quality or deficit judgment.
+  never a quality or deficit judgment. The denominator is evidence-eligible
+  episodes: zero eligible evidence yields UNKNOWN, one through four eligible
+  episodes suppress the public field, and five or more satisfy the registry
+  floor.
 - Authorship and model overlays are per-phase aggregate shares. Raw model
   strings reduce to the versioned public vocabulary; unrecognized values become
   `other` and missing values become `UNKNOWN`.

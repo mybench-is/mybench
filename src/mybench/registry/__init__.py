@@ -11,12 +11,10 @@ file is the hand-maintained source of truth (the initial seeding script was
 one-time scaffolding); schema + loader validation is what makes hand edits
 safe.
 
-Format note (OQ #31, owner-gated at the MYB-10.17 sitting): the JSON
-serialization is provisional (``format_status`` says so in-band); this
-loader works on parsed dicts, so ratifying YAML instead is a data-file swap,
-not a loader change. :meth:`Registry.digest` hashes the *canonical parsed
-content* (via :mod:`mybench.claims.canonical`), so the registry identity is
-independent of serialization formatting either way.
+Format note (ADR-0016, accepted at the MYB-10.17 sitting): JSON is ratified.
+The loader still works on parsed dictionaries and :meth:`Registry.digest`
+hashes the *canonical parsed content* (via :mod:`mybench.claims.canonical`),
+so registry identity remains independent of whitespace formatting.
 
 Enforcement this module adds beyond the schema whitelist
 (``descriptor_registry.schema.json``):
@@ -57,6 +55,9 @@ Enforcement this module adds beyond the schema whitelist
 - conditional denominators name both their condition class and their source;
   severity vocabularies declare only closed class ids. Numeric severity
   weights remain judge-rubric behavior (MYB-7.1), not registry data.
+- :meth:`Registry.check_report_field` is the report-v2 seam: active registry
+  membership, closed report location, derivation class, disclosure, risk,
+  controlled caveats, and reserved-block activation all fail closed.
 
 Publication of the CLAIMS the registry governs stays gated on the
 THREAT_MODEL §3 revision (invariant #4, MYB-16.2); the registry file itself
@@ -82,6 +83,7 @@ EMPLOYER_SAFE = "employer-safe"
 
 _ID_RE = re.compile(r"[a-z0-9_]+(\.[a-z0-9_]+)+")
 _VOCABULARY_ID_RE = re.compile(r"[a-z0-9_]+([.-][a-z0-9_]+)*")
+_CAVEAT_RE = re.compile(r"[a-z][a-z0-9]*(-[a-z0-9]+)*")
 _SEMVER_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 
@@ -248,6 +250,7 @@ class Registry:
             ("neutrality_note", entry["neutrality_note"]),
             ("notes", entry.get("notes", "")),
             ("risk_note", entry.get("risk_note", "")),
+            ("caveat copy", " ".join(entry.get("caveat_copy", {}).values())),
             ("band labels", " ".join(band_labels)),
             ("registry vocabulary", " ".join(registry_vocabulary)),
         ]
@@ -272,7 +275,62 @@ class Registry:
         if (entry["wave"] == 0) != eid.startswith("fingerprint."):
             raise RegistryError(f"{eid}: wave 0 is exactly the fingerprint.* placeholder namespace")
 
+        if entry["disclosure"] == "local-report-only" and entry["presets"]:
+            raise RegistryError(
+                f"{eid}: local-report-only entries may not appear in publication presets"
+            )
+        report_location = entry.get("report_location")
+        report_controls = entry.get("report_controls")
+        caveat_copy = entry.get("caveat_copy")
         schema = entry["output_schema"]
+        if report_location is not None and entry["disclosure"] == "internal-feature-only":
+            raise RegistryError(
+                f"{eid}: internal-feature-only entries may not have a report location"
+            )
+        if report_location is not None:
+            if report_controls is None or caveat_copy is None:
+                raise RegistryError(
+                    f"{eid}: report-located entries require report_controls and caveat_copy"
+                )
+            output_properties = schema.get("properties", {})
+            required_output = set(schema.get("required", []))
+            tier_schema = output_properties.get("trust_tier", {})
+            caveat_schema = output_properties.get("caveats", {})
+            if not isinstance(tier_schema, dict) or tier_schema.get("const") not in {
+                "PROVEN",
+                "ANCHORED",
+                "TEE-VERIFIED",
+                "JUDGED",
+            }:
+                raise RegistryError(f"{eid}: report output requires a controlled trust-tier const")
+            required_caveats = (
+                caveat_schema.get("const") if isinstance(caveat_schema, dict) else None
+            )
+            if (
+                not isinstance(required_caveats, list)
+                or not all(
+                    isinstance(code, str) and _CAVEAT_RE.fullmatch(code)
+                    for code in required_caveats
+                )
+                or required_caveats != sorted(set(required_caveats))
+                or not {"trust_tier", "caveats"}.issubset(required_output)
+            ):
+                raise RegistryError(
+                    f"{eid}: report output must require a sorted controlled caveat const"
+                )
+            if set(caveat_copy) != set(required_caveats):
+                raise RegistryError(
+                    f"{eid}: caveat_copy keys must exactly match output_schema caveats"
+                )
+            if report_controls["conditioning"] != ("conditioning_axis" in entry):
+                raise RegistryError(
+                    f"{eid}: report conditioning activation must match conditioning_axis"
+                )
+        elif report_controls is not None or caveat_copy is not None:
+            raise RegistryError(f"{eid}: report metadata requires an explicit report location")
+        if (entry["wave"] == 0) != eid.startswith("fingerprint."):
+            raise RegistryError(f"{eid}: wave 0 is exactly the fingerprint.* placeholder namespace")
+
         if _contains_ref(schema):
             raise RegistryError(
                 f"{eid}: output_schema may not use $ref/$dynamicRef — resolution is a "
@@ -461,6 +519,159 @@ class Registry:
             "internal_feature_only_count": hidden,
             "rejected": copy.deepcopy(self._doc["rejected"]),
         }
+
+    # -- report-v2 rendering bridge ------------------------------------------------
+
+    def report_location(self, registry_id: str) -> str | None:
+        """Return the explicitly admitted v2 location, if one exists."""
+        return self._entry(registry_id).get("report_location")
+
+    def _check_report_field(self, field: dict, location: str) -> tuple[dict, dict]:
+        """Return the registry entry and exact output represented by a v2 field."""
+        entry = self._entry(field["registry_id"])
+        eid = entry["id"]
+        if entry["status"] != "active":
+            raise RegistryError(f"{eid} is reserved — it cannot render")
+        expected_location = entry.get("report_location")
+        if expected_location is None:
+            raise RegistryError(f"{eid}: no report-v2 location is active")
+        if location != expected_location:
+            raise RegistryError(
+                f"{eid}: report location {location!r} does not match {expected_location!r}"
+            )
+        if field["registry_version"] != entry["version"]:
+            raise RegistryError(
+                f"{eid}: report cites version {field['registry_version']}, "
+                f"registry entry is {entry['version']}"
+            )
+        if field["derivation_class"] != entry["class"]:
+            raise RegistryError(f"{eid}: report derivation class does not match registry")
+        if field["inference_risk"] != entry["inference_risk"]:
+            raise RegistryError(f"{eid}: report inference risk does not match registry")
+        disclosure = {
+            "public": "PUBLISHABLE",
+            "local-report-only": "LOCAL_ONLY",
+        }.get(entry["disclosure"])
+        if disclosure is None or field["disclosure"] != disclosure:
+            raise RegistryError(f"{eid}: report disclosure does not match registry")
+        controls = entry["report_controls"]
+
+        expected_caveats = (
+            entry["output_schema"].get("properties", {}).get("caveats", {}).get("const", [])
+        )
+        if field.get("caveats", []) != expected_caveats:
+            raise RegistryError(f"{eid}: report caveats do not match registry")
+
+        output = {}
+        value = field["value"]
+        if isinstance(value, list):
+            dimension_order = [tuple(cell["dimensions"]) for cell in value]
+            if dimension_order != sorted(dimension_order):
+                raise RegistryError(f"{eid}: report value cells must be sorted by dimensions")
+            for cell in value:
+                dimensions = cell["dimensions"]
+                if len(dimensions) != 1 or dimensions[0] in output:
+                    raise RegistryError(
+                        f"{eid}: report value cells must name unique output properties"
+                    )
+                output[dimensions[0]] = cell["value"]
+        else:
+            required = [
+                name
+                for name in entry["output_schema"]["required"]
+                if name not in {"trust_tier", "caveats"}
+            ]
+            if len(required) != 1:
+                raise RegistryError(f"{eid}: scalar report value is ambiguous")
+            output[required[0]] = value
+        output_properties = entry["output_schema"]["properties"]
+        if "trust_tier" in output_properties:
+            output["trust_tier"] = field["trust_tier"]
+        if "caveats" in output_properties:
+            output["caveats"] = field.get("caveats", [])
+        errors = sorted(self._output_validators[eid].iter_errors(output), key=str)
+        if errors:
+            raise RegistryError(
+                f"{eid}: report value does not conform to the registry entry: {errors[0].message}"
+            )
+
+        expected_tier = (
+            entry["output_schema"].get("properties", {}).get("trust_tier", {}).get("const")
+        )
+        if expected_tier is not None and field["trust_tier"] != expected_tier:
+            raise RegistryError(f"{eid}: report trust tier does not match registry")
+        if field["execution_env"] == "local-unattested" and (
+            field["trust_tier"] == "TEE-VERIFIED"
+            or (
+                field["trust_tier"] == "JUDGED"
+                and not (controls["tier_qualifier"] and field.get("tier_qualifier") == "unattested")
+            )
+        ):
+            raise RegistryError(f"{eid}: local-unattested presentation exceeds its tier cap")
+        if field["execution_env"] == "tee-attested" and not (
+            field["trust_tier"] == "TEE-VERIFIED"
+            or (
+                field["trust_tier"] == "JUDGED"
+                and controls["tier_qualifier"]
+                and field.get("tier_qualifier") == "attested"
+            )
+        ):
+            raise RegistryError(f"{eid}: attested presentation requires an attested tier label")
+        if field["derivation_class"] == "characterization" and field["trust_tier"] != "ANCHORED":
+            raise RegistryError(f"{eid}: rule-based characterizations render ANCHORED")
+
+        for key, label in (
+            ("reference_frame", "reference frames"),
+            ("tier_qualifier", "judged tier qualifiers"),
+        ):
+            if key in field and not controls[key]:
+                raise RegistryError(f"{eid}: {label} are not active")
+        conditioning = field.get("conditioning")
+        axis = entry.get("conditioning_axis")
+        if conditioning is not None:
+            if not controls["conditioning"] or axis is None:
+                raise RegistryError(f"{eid}: report conditioning is not active")
+            if conditioning["axis"] != axis["taxonomy_id"]:
+                raise RegistryError(f"{eid}: report conditioning axis is not active")
+            if conditioning["cell"] not in entry["min_support"]["per_conditioning_cell"]:
+                raise RegistryError(f"{eid}: report conditioning cell is not active")
+        elif axis is not None:
+            raise RegistryError(f"{eid}: conditioned report field omits its condition")
+        return copy.deepcopy(entry), output
+
+    def check_report_field(self, field: dict, location: str) -> dict:
+        """Validate registry-owned presentation metadata for one v2 field.
+
+        The report envelope schema validates the closed field/value shape.
+        This supplies ADR-0019's separate semantic gate and returns a
+        defensive entry copy for rendering controlled registry text.
+        """
+        entry, _output = self._check_report_field(field, location)
+        return entry
+
+    def check_report_claim(self, field: dict, location: str, claim: dict) -> dict:
+        """Require one registry-valid signed-claim payload to back a v2 field.
+
+        Envelope and signature verification belong to the caller.  This
+        registry-owned bridge validates both semantic surfaces, derives the
+        report wrapper's exact registry output without renderer-side
+        reconstruction, and compares structures directly (never stringifies
+        or coerces values).
+        """
+        eid = field["registry_id"]
+        entry, report_output = self._check_report_field(field, location)
+        try:
+            self.check_claim(claim)
+        except RegistryError as exc:
+            # A claim output may be registry-invalid local input.  Do not let
+            # jsonschema echo its offending value through a report error/log.
+            raise RegistryError(f"{eid}: signed claim is not registry-conforming") from exc
+        for key in ("registry_id", "registry_version", "derivation_class", "execution_env"):
+            if field[key] != claim[key]:
+                raise RegistryError(f"{eid}: report {key} does not match signed claim")
+        if report_output != claim["output"]:
+            raise RegistryError(f"{eid}: report output does not match signed claim")
+        return entry
 
     # -- the claims bridge ----------------------------------------------------------
 

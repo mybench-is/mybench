@@ -235,7 +235,7 @@
   "properties": {
     "schema_version": {"const": "1"},
     "kind": {"const": "workflow-map-section"},
-    "scorer_version": {"const": "1.0.0"},
+    "scorer_version": {"const": "1.0.1"},
     "classifier_version": {"const": "1.0.0"},
     "local": {
       "type": "object",
@@ -287,10 +287,7 @@
     "publishable": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "fingerprint.summary.task_episode_total",
-        "fingerprint.workflow_map.rework_loop_rate.band"
-      ],
+      "required": ["fingerprint.summary.task_episode_total"],
       "properties": {
         "fingerprint.summary.recurring_sequences": {"$ref": "#/$defs/recurringPublic"},
         "fingerprint.summary.task_episode_total": {"$ref": "#/$defs/taskEpisodeTotal"},

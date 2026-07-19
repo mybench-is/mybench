@@ -23,7 +23,7 @@ from mybench.registry import Registry, RegistryError
 from mybench.schemas import load_validator
 
 WORKFLOW_MAP_SCHEMA_VERSION = "1"
-WORKFLOW_MAP_SCORER_VERSION = "1.0.0"
+WORKFLOW_MAP_SCORER_VERSION = "1.0.1"
 EPISODE_STITCHER_VERSION = "2.0.0"
 MODEL_VOCABULARY_VERSION = "1.0.0"
 
@@ -331,6 +331,7 @@ def score_workflow_map(
     phase_total = 0
     unknown_total = 0
     episodes_with_events = 0
+    eligible_episodes = 0
     rework_episodes = 0
     context_crossings = 0
     context_transitions = 0
@@ -359,6 +360,8 @@ def score_workflow_map(
             model_totals[phase.phase] += 1
 
         segments = _strict_segments(phases)
+        if segments:
+            eligible_episodes += 1
         episode_edges: set[tuple[str, str]] = set()
         episode_ngrams: set[tuple[str, ...]] = set()
         for segment in segments:
@@ -386,6 +389,7 @@ def score_workflow_map(
         graph_coverage: int | str = "UNKNOWN"
     else:
         graph_coverage = min(phase_coverage, episode_event_coverage)
+    rework_loop_rate = _basis_points(rework_episodes, eligible_episodes)
 
     supported_sequences = sorted(
         (
@@ -419,7 +423,7 @@ def score_workflow_map(
             }
             for (phase, model), count in sorted(model_counts.items())
         ],
-        "rework_loop_rate_basis_points": _basis_points(rework_episodes, len(identities)),
+        "rework_loop_rate_basis_points": rework_loop_rate,
         "context_boundary_rate_basis_points": _basis_points(context_crossings, context_transitions),
         "unknown_phase_share_basis_points": _basis_points(unknown_total, phase_total),
         "graph_coverage_basis_points": graph_coverage,
@@ -427,7 +431,7 @@ def score_workflow_map(
             {
                 "sequence": list(sequence),
                 "supporting_episodes": support,
-                "eligible_episodes": len(identities),
+                "eligible_episodes": eligible_episodes,
             }
             for sequence, support in supported_sequences
         ],
@@ -443,15 +447,17 @@ def score_workflow_map(
             "trust_tier": "ANCHORED",
         },
     )
-    publishable[REWORK_LOOP_RATE_ID] = _claim_output(
-        registry,
-        entries[REWORK_LOOP_RATE_ID],
-        {
-            "rate_band": _share_band(_basis_points(rework_episodes, len(identities)), share_bands),
-            "definition_version": "1.0.0",
-            "trust_tier": "ANCHORED",
-        },
-    )
+    rework_support = registry.min_support(REWORK_LOOP_RATE_ID)["episodes"]
+    if eligible_episodes == 0 or eligible_episodes >= rework_support:
+        publishable[REWORK_LOOP_RATE_ID] = _claim_output(
+            registry,
+            entries[REWORK_LOOP_RATE_ID],
+            {
+                "rate_band": _share_band(rework_loop_rate, share_bands),
+                "definition_version": "1.0.0",
+                "trust_tier": "ANCHORED",
+            },
+        )
     if phase_total >= registry.min_support(UNKNOWN_PHASE_SHARE_ID)["events"]:
         publishable[UNKNOWN_PHASE_SHARE_ID] = _claim_output(
             registry,
@@ -475,7 +481,7 @@ def score_workflow_map(
                     {
                         "sequence": list(sequence),
                         "share_band": _share_band(
-                            _basis_points(support, len(identities)), share_bands
+                            _basis_points(support, eligible_episodes), share_bands
                         ),
                     }
                     for sequence, support in supported_sequences

@@ -52,7 +52,7 @@
       "$ref": "#/$defs/semver"
     },
     "format_status": {
-      "description": "OQ #31 (YAML vs JSON) is owner-gated at the MYB-10.17 sitting; until ratified the JSON serialization is provisional and this field says so — the loader works on parsed dicts either way.",
+      "description": "Serialization status. JSON was ratified by ADR-0016 at the MYB-10.17 sitting; the other values remain readable only for historical registry artifacts.",
       "enum": ["provisional-json-pending-OQ-31", "ratified-json", "ratified-yaml"]
     },
     "entries": {
@@ -198,8 +198,46 @@
             "enum": ["R0", "R1", "R2"]
           },
           "disclosure": {
-            "description": "internal-feature-only descriptors are computed and committed like any other claim but are STRUCTURALLY NON-RENDERABLE: never in a report, preset, or disclosure surface (handoff §7.1).",
-            "enum": ["public", "internal-feature-only"]
+            "description": "public entries may enter a publication preview after its separate gates; local-report-only entries may render only in the private A10 report; internal-feature-only descriptors are STRUCTURALLY NON-RENDERABLE everywhere (handoff §7.1, ADR-0019).",
+            "enum": ["public", "local-report-only", "internal-feature-only"]
+          },
+          "report_location": {
+            "description": "Closed report-v2 destination for an atomic claim. Absence means the entry is not admitted to report v2; renderers never infer a location from an id or note.",
+            "enum": [
+              "catalog_metrics",
+              "fingerprint.workflow_summary",
+              "fingerprint.workflow_map",
+              "fingerprint.model_role_profile",
+              "fingerprint.context_management_profile",
+              "fingerprint.orchestration_topology",
+              "fingerprint.token_cost_profile",
+              "fingerprint.evidence_coverage"
+            ]
+          },
+          "report_controls": {
+            "description": "Registry-owned activation state for report-v2 optional metadata. Every report-located entry declares all three switches; false keeps the schema-reserved shape semantically unreachable.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reference_frame", "conditioning", "tier_qualifier"],
+            "properties": {
+              "reference_frame": {"type": "boolean"},
+              "conditioning": {"type": "boolean"},
+              "tier_qualifier": {"type": "boolean"}
+            }
+          },
+          "caveat_copy": {
+            "description": "Plain-language renderer copy keyed by every controlled caveat code required by output_schema. Report-located entries declare an exact key match; wrappers carry codes only.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+              "maxLength": 96
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
           },
           "presets": {
             "description": "Opt-in bundles that include this entry. employer-safe = R0 only (loader-enforced). internal-feature-only entries must have no presets.",

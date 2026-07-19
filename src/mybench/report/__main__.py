@@ -40,6 +40,7 @@ def _legacy_render(args: argparse.Namespace) -> int:
             json.loads(Path(args.report).read_bytes()),
             anchors_url=args.anchors_url,
             handle=args.handle,
+            public=True,
         )
         Path(args.out).write_bytes(page)
     except (OSError, ValueError, PageError) as exc:

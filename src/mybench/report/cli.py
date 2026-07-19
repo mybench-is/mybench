@@ -12,7 +12,7 @@ import os
 import stat
 import tempfile
 import webbrowser
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 from mybench import paths
 from mybench.claims.canonical import canonical_bytes
-from mybench.report.page import render_page
+from mybench.report.page import PageError, render_page
 from mybench.schemas import load_validator
 
 REPORT_ID_DOMAIN = b"mybench:v1:local-report-id\x00"
@@ -162,9 +162,7 @@ def canonical_report_bytes(report: dict) -> bytes:
     if not isinstance(report, dict):
         raise BundleError("report must be a JSON object")
     schema_version = report.get("schema_version")
-    schema_name = {"1": "report.schema.json", "2": "report-v2.schema.json"}.get(
-        schema_version
-    )
+    schema_name = {"1": "report.schema.json", "2": "report-v2.schema.json"}.get(schema_version)
     if schema_name is None:
         raise BundleError("unsupported report schema version")
     errors = sorted(load_validator(schema_name).iter_errors(report), key=str)
@@ -191,9 +189,7 @@ def content_address(report_bytes: bytes) -> str:
 
 def validate_evidence_manifest(manifest: dict) -> None:
     """Enforce the closed local-only evidence reference schema."""
-    errors = sorted(
-        load_validator("evidence-manifest.schema.json").iter_errors(manifest), key=str
-    )
+    errors = sorted(load_validator("evidence-manifest.schema.json").iter_errors(manifest), key=str)
     if errors:
         raise BundleError(f"evidence manifest failed schema validation: {errors[0].message}")
     for row_range in manifest["ledger"]["row_ranges"]:
@@ -264,9 +260,7 @@ def evidence_manifest(
         "ledger": ledger,
         "anchors": {"event_dates": sorted(set(anchor_dates))},
         "corpora": {
-            "commitments": sorted(
-                {row["session_root"] for row in rows if "session_root" in row}
-            )
+            "commitments": sorted({row["session_root"] for row in rows if "session_root" in row})
         },
         "claims": {
             "digests": sorted(
@@ -372,18 +366,28 @@ def assemble_bundle(
     bundle_dir: Path | None = None,
     anchors_url: str = "https://mybench.is/anchors",
     handle: str | None = None,
+    signed_claims: Sequence[dict] | None = None,
+    trusted_device_pubs: Collection[str] | None = None,
 ) -> Path:
     """Build or byte-verify one immutable bundle below the private data dir."""
     report_bytes = canonical_report_bytes(report)
-    if report.get("schema_version") != "1":
-        raise BundleError("the v0 bundle renderer currently accepts report schema 1")
     manifest_bytes = canonical_manifest_bytes(manifest)
-    page_bytes = render_page(
-        report,
-        anchors_url=anchors_url,
-        handle=handle,
-        report_json_href="report.json",
+    report_claim_digests = sorted(
+        {field["claim_digest"] for field in _report_fields(report) if "claim_digest" in field}
     )
+    if manifest["claims"]["digests"] != report_claim_digests:
+        raise BundleError("evidence manifest claim digests do not match report fields")
+    try:
+        page_bytes = render_page(
+            report,
+            anchors_url=anchors_url,
+            handle=handle,
+            report_json_href="report.json",
+            signed_claims=signed_claims,
+            trusted_device_pubs=trusted_device_pubs,
+        )
+    except PageError as exc:
+        raise BundleError(f"report page validation failed: {exc}") from exc
     report_id = content_address(report_bytes)
     expected = paths.report_dir(report_id).absolute()
     directory = (bundle_dir or expected).absolute()

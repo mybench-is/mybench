@@ -29,6 +29,7 @@ from mybench.scorer.score import score
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 from tests.fixtures.ledgers import build_canary_ledger
 from tests.scorer.test_score import fixed_report_bytes
+from tests.report.test_page import report_for_claim, signed_v2_claim, v2_claims, v2_report
 
 SYNTHETIC_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 
@@ -66,6 +67,66 @@ def test_report_id_is_a_stable_property_of_canonical_report_json():
         assert content_address(canonical_report_bytes(reordered)) == expected_id
     changed = dict(report, report_version="different")
     assert content_address(canonical_report_bytes(changed)) != expected_id
+
+
+def test_private_bundle_accepts_registry_validated_report_v2():
+    report = v2_report()
+    directory = assemble_bundle(
+        report,
+        evidence_manifest(report, [], []),
+        private_key=SYNTHETIC_KEY,
+        signed_claims=v2_claims(),
+    )
+    assert (directory / "report.json").read_bytes() == canonical_report_bytes(report)
+    page = (directory / "index.html").read_text()
+    assert "Workflow fingerprint" in page
+    assert "computed locally — unattested" in page
+
+
+def test_private_bundle_rejects_missing_or_invalid_v2_claim_before_writing():
+    report = v2_report()
+    manifest = evidence_manifest(report, [], [])
+    with pytest.raises(BundleError, match="require signed claim envelopes"):
+        assemble_bundle(report, manifest, private_key=SYNTHETIC_KEY)
+
+    claim = v2_claims()[0]
+    claim["signature"] = ("0" if claim["signature"][0] != "0" else "1") + claim["signature"][1:]
+    with pytest.raises(BundleError, match="signed claim verification failed"):
+        assemble_bundle(
+            report,
+            manifest,
+            private_key=SYNTHETIC_KEY,
+            signed_claims=[claim],
+        )
+
+
+def test_v2_bundle_claim_input_metadata_is_absent_from_artifacts_and_logs(tmp_path, caplog):
+    canary_text = [
+        "MYBENCH-CANARY-report-content-10-19",
+        "MYBENCH-CANARY-report-filename-10-19.py",
+        "MYBENCH-CANARY-report-session-10-19",
+        "MYBENCH-CANARY-report-event-10-19",
+        "MYBENCH-CANARY-report-key-10-19",
+        "MYBENCH-CANARY-report-nonce-10-19",
+    ]
+    canaries = [value.encode() for value in canary_text]
+    claim = signed_v2_claim(anchor_refs=canary_text)
+    report = report_for_claim(claim)
+    caplog.set_level(logging.INFO)
+    directory = assemble_bundle(
+        report,
+        evidence_manifest(report, [], []),
+        private_key=SYNTHETIC_KEY,
+        signed_claims=[claim],
+    )
+    log = tmp_path / "claim-bundle.log"
+    log.write_text(caplog.text)
+    assert assert_no_canaries([directory, log], canaries) == len(BUNDLE_FILES) + 1
+
+    planted = directory / "assets" / "claim-canary.txt"
+    planted.write_bytes(canaries[0])
+    with pytest.raises(CanaryLeakError):
+        assert_no_canaries([directory], canaries)
 
 
 def test_bundle_layout_modes_idempotence_and_outside_path_refusal(tmp_path):
@@ -213,9 +274,7 @@ def test_entire_canary_bundle_and_logs_are_leak_free_and_firing_test_detects(tmp
     fx = generate_fixtures(tmp_path / "synthetic-fixtures")
     ledger, canaries = build_canary_ledger(fx)
     rows = ledger.rows()
-    report = json.loads(
-        score(rows, [], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True)
-    )
+    report = json.loads(score(rows, [], generated_at="2026-07-09T00:00:00Z", allow_synthetic=True))
     caplog.set_level(logging.INFO)
     directory = assemble_bundle(
         report,

@@ -155,6 +155,7 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
         "mybench.scorer.evidence_coverage",
         "mybench.scorer.score",
         "mybench.scorer.workflow_map",
+        "mybench.scorer.wave1",
     }
     validate_manifest_and_audit()
 

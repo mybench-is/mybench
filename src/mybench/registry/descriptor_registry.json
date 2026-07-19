@@ -1,6 +1,6 @@
 {
-  "registry_version": "0.4.0",
-  "format_status": "provisional-json-pending-OQ-31",
+  "registry_version": "0.7.0",
+  "format_status": "ratified-json",
   "entries": [
     {
       "id": "transcript.wellformed",
@@ -347,13 +347,14 @@
     },
     {
       "id": "transcript.orchestrators",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "class": "measured",
       "status": "active",
       "wave": 1,
       "title": "Orchestrator inventory",
       "inputs": [
-        "normalized-session-events"
+        "normalized-session-events",
+        "harness-version-currency-snapshot"
       ],
       "output_schema": {
         "type": "object",
@@ -408,13 +409,14 @@
     },
     {
       "id": "transcript.mcp_breadth",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "class": "measured",
       "status": "active",
       "wave": 1,
       "title": "MCP category breadth",
       "inputs": [
-        "normalized-session-events"
+        "normalized-session-events",
+        "mcp-category-event-observations"
       ],
       "output_schema": {
         "type": "object",
@@ -1413,6 +1415,16 @@
       ],
       "neutrality_note": "Lifecycle volume only; it does not measure utility, quality, productivity, or raw compute and never publishes a session point or exact total",
       "notes": "Activated only after the MYB-19.7 owner ruling landed as THREAT_MODEL v0.2.1. Report location: fingerprint catalog_metrics. Required caveats are output-schema constants. Codex close normalizer v1 uses only a timestamped structural task_complete record; absent terminal evidence is UNKNOWN.",
+      "report_location": "catalog_metrics",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "capture-dependent-and-inflatable": "Capture-derived duration bands depend on observed lifecycle markers and may be inflated by incomplete close evidence.",
+        "observed-at-coverage-limits-backfill": "Coverage limits and backfilled history qualify these duration bands."
+      },
       "risk_note": "Even coarse duration volume can reveal work-pattern intensity in combination with other disclosures; exact totals, session points, identifiers, and timestamps stay local"
     },
     {
@@ -1777,7 +1789,7 @@
     },
     {
       "id": "fingerprint.workflow_map.rework_loop_rate.band",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "class": "measured",
       "status": "active",
       "wave": 0,
@@ -1799,7 +1811,7 @@
         {
           "field": "rate_band",
           "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
-          "note": "Episodes containing a pinned BUILD/TEST/DEBUG to PLAN/BUILD backward edge divided by eligible episodes"
+          "note": "Episodes containing a pinned BUILD/TEST/DEBUG to PLAN/BUILD backward edge divided by episodes with at least one known phase; zero eligible evidence is UNKNOWN and partial support below five is absent"
         }
       ],
       "min_support": {"episodes": 5},
@@ -1807,7 +1819,7 @@
       "disclosure": "public",
       "presets": ["employer-safe", "full"],
       "neutrality_note": "A structural loop frequency describes workflow shape and is not framed as an error, deficit, or quality judgment",
-      "notes": "MYB-13.3 pinned structural edge set version 1.0.0"
+      "notes": "MYB-13.3 pinned structural edge set version 1.0.0; descriptor 1.0.1 corrects denominator eligibility and UNKNOWN/support behavior"
     },
     {
       "id": "fingerprint.workflow_map.context_boundary_rate.band",
@@ -2238,7 +2250,16 @@
       ],
       "neutrality_note": "Structure inventory only; it does not measure orchestration quality, effectiveness, or subject capability",
       "risk_note": "Even coarse orchestration structure can contribute to rare-topology identification in combination; names, paths, exact counts, exact depths, and below-k fields stay local",
-      "notes": "Report location: fingerprint.orchestration_topology fields. ACTIVE only for the MYB-13.7 file-structure aggregate; the broader fingerprint.orchestration_topology section placeholder and transcript-derived delegation distributions remain reserved. Required caveat and k-suppression floor are output-schema constants."
+      "notes": "Report location: fingerprint.orchestration_topology fields. ACTIVE only for the MYB-13.7 file-structure aggregate; the broader fingerprint.orchestration_topology section placeholder and transcript-derived delegation distributions remain reserved. Required caveat and k-suppression floor are output-schema constants.",
+      "report_location": "fingerprint.orchestration_topology",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "scan-time-state-not-evidence-period": "This structure snapshot describes scan-time state, not the full evidence period."
+      }
     },
     {
       "id": "fingerprint.orchestration_topology",

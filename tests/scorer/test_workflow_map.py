@@ -258,6 +258,8 @@ def test_episode_total_uses_explicit_normalized_identity_and_unknown_dilutes_con
         _event(episode, "future-structural-event", authorship="agent-turn") for episode in episodes
     ]
     unknown_result = _score(all_unknown, episodes)
+    assert unknown_result["local"]["rework_loop_rate_basis_points"] == "UNKNOWN"
+    assert unknown_result["publishable"][REWORK_LOOP_RATE_ID]["rate_band"] == "UNKNOWN"
     assert unknown_result["publishable"][UNKNOWN_PHASE_SHARE_ID] == {
         "unknown_phase_share": "75-100%",
         "graph_confidence": "LOW",
@@ -266,6 +268,29 @@ def test_episode_total_uses_explicit_normalized_identity_and_unknown_dilutes_con
     }
     assert TRANSITION_SHARES_ID not in unknown_result["publishable"]
     assert RECURRING_SEQUENCES_ID not in unknown_result["publishable"]
+
+
+def test_rework_rate_uses_only_eligible_episodes_and_partial_support_is_absent():
+    episodes = [_episode(index) for index in range(5)]
+    events: list[dict] = []
+    for episode in episodes[:3]:
+        events.extend(
+            [
+                _event(episode, "reference", authorship="agent-turn", reference_kind="plan"),
+                _event(episode, "tool-call", authorship="agent-turn", tool_family="edit"),
+            ]
+        )
+    events.extend(
+        [
+            _event(episodes[3], "test", authorship="agent-turn"),
+            _event(episodes[3], "tool-call", authorship="agent-turn", tool_family="write"),
+            _event(episodes[4], "future-structural-event", authorship="agent-turn"),
+        ]
+    )
+
+    result = _score(events, episodes)
+    assert result["local"]["rework_loop_rate_basis_points"] == 2500
+    assert REWORK_LOOP_RATE_ID not in result["publishable"]
 
 
 def test_section_and_log_lines_are_canary_clean_and_scanner_fires(tmp_path, caplog):
