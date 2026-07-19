@@ -361,6 +361,7 @@ def score_context_management(
     compaction_triggers: dict[tuple[tuple[str, str], int], list[str]] = defaultdict(list)
     lifecycle_event_total = 0
     normalized_boundaries: dict[tuple[tuple[str, str], int], tuple[int, Mapping[str, object]]] = {}
+    unjoined_compaction_rows = 0
     model_change_generations: set[tuple[tuple[str, str], int]] = set()
     fresh_sessions: set[tuple[str, str]] = set()
 
@@ -373,25 +374,6 @@ def score_context_management(
         if normalized_lifecycle or live_rows:
             reliable_sessions += 1
         lifecycle_event_total += len(normalized_lifecycle) + len(live_rows)
-
-        starts = [row["trigger"] for row in live_rows if row["event_kind"] == "session_start"]
-        start_trigger, start_conflict = _known_or_conflicting(starts, _START_TRIGGERS - {"unknown"})
-        conflicts += start_conflict
-        if start_trigger is not None:
-            start_trigger_by_session[key] = start_trigger
-            if start_trigger == "startup":
-                fresh_sessions.add(key)
-
-        for row in live_rows:
-            generation = row["context_gen"]
-            generation_ids[key].add(generation)
-            if row["event_kind"] == "session_start" and row["trigger"] != "unknown":
-                generation_trigger_values[(key, generation)].append(row["trigger"])
-            elif row["event_kind"] == "compact_pre":
-                generation_trigger_values[(key, generation)].append("compact")
-                compaction_triggers[(key, generation)].append(row["trigger"])
-            elif row["event_kind"] == "model_change":
-                model_change_generations.add((key, generation))
 
         saw_normalized_start = False
         for position, event in enumerate(normalized_rows):
@@ -415,6 +397,33 @@ def score_context_management(
             compaction_triggers.setdefault(boundary_key, [])
         if saw_normalized_start:
             generation_ids[key].add(0)
+
+        starts = [row["trigger"] for row in live_rows if row["event_kind"] == "session_start"]
+        start_trigger, start_conflict = _known_or_conflicting(starts, _START_TRIGGERS - {"unknown"})
+        conflicts += start_conflict
+        if start_trigger is not None:
+            start_trigger_by_session[key] = start_trigger
+            if start_trigger == "startup":
+                fresh_sessions.add(key)
+
+        for row in live_rows:
+            generation = row["context_gen"]
+            event_kind = row["event_kind"]
+            generation_key = (key, generation)
+            if event_kind == "compact_pre":
+                if generation_key not in normalized_boundaries:
+                    unjoined_compaction_rows += 1
+                    continue
+                generation_ids[key].add(generation)
+                generation_trigger_values[generation_key].append("compact")
+                compaction_triggers[generation_key].append(row["trigger"])
+                continue
+
+            generation_ids[key].add(generation)
+            if event_kind == "session_start" and row["trigger"] != "unknown":
+                generation_trigger_values[generation_key].append(row["trigger"])
+            elif event_kind == "model_change":
+                model_change_generations.add(generation_key)
 
     known_start_count = len(start_trigger_by_session)
     session_count = len(session_order)
@@ -449,9 +458,15 @@ def score_context_management(
         conflicts += conflict
         if trigger is not None:
             known_compaction_triggers[key] = trigger
-    compaction_coverage = _basis_points(len(known_compaction_triggers), compaction_candidates)
+    compaction_coverage = (
+        "UNKNOWN"
+        if unjoined_compaction_rows
+        else _basis_points(len(known_compaction_triggers), compaction_candidates)
+    )
     compaction_counts_known = (
-        compaction_candidates > 0 and len(known_compaction_triggers) == compaction_candidates
+        not unjoined_compaction_rows
+        and compaction_candidates > 0
+        and len(known_compaction_triggers) == compaction_candidates
     )
     manual_count: int | str = (
         sum(trigger == "manual" for trigger in known_compaction_triggers.values())

@@ -127,6 +127,25 @@ def rich_fixture(count: int = 5) -> tuple[list[dict], list[dict], list[dict], li
     return events, sessions, episodes, lifecycle
 
 
+def mixed_marker_fixture() -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    events, sessions, episodes, lifecycle = rich_fixture()
+    marker_free_episodes = [_episode(index) for index in range(5, 10)]
+    marker_free_sessions = [
+        _session(index, episode)
+        for index, episode in enumerate(marker_free_episodes, start=5)
+    ]
+    events.extend(
+        _normalized(session, 0, "turn", authorship="human-turn")
+        for session in marker_free_sessions
+    )
+    return (
+        events,
+        [*sessions, *marker_free_sessions],
+        [*episodes, *marker_free_episodes],
+        lifecycle,
+    )
+
+
 def score_fixture(
     events: list[dict], sessions: list[dict], episodes: list[dict], lifecycle: list[dict]
 ) -> dict:
@@ -228,21 +247,13 @@ def test_marker_free_corpus_is_unknown_with_zero_coverage_never_zero_activity():
     }
 
 
-def test_mixed_marker_coverage_excludes_missing_observations_from_rates():
-    events, sessions, episodes, lifecycle = rich_fixture()
-    extra_episodes = [_episode(index) for index in range(5, 10)]
-    extra_sessions = [
-        _session(index, episode) for index, episode in enumerate(extra_episodes, start=5)
-    ]
-    events.extend(
-        _normalized(session, 0, "turn", authorship="human-turn") for session in extra_sessions
-    )
-    result = score_fixture(
-        events,
-        [*sessions, *extra_sessions],
-        [*episodes, *extra_episodes],
-        lifecycle,
-    )
+def test_mixed_marker_corpus_is_byte_deterministic_and_excludes_missing_observations():
+    events, sessions, episodes, lifecycle = mixed_marker_fixture()
+    first = score_fixture(events, sessions, episodes, lifecycle)
+    second = score_fixture(events, sessions, episodes, lifecycle)
+
+    assert canonical_bytes(first) == canonical_bytes(second)
+    result = first
 
     assert result["local"]["fresh_session_rate"] == {
         "value": 10000,
@@ -300,6 +311,32 @@ def test_partial_compaction_classification_is_unknown_not_a_lower_bound():
         "confidence": "HIGH",
     }
     assert result["local"]["automatic_compactions"]["value"] == "UNKNOWN"
+    assert MANUAL_COMPACTIONS_ID not in result["publishable"]
+    assert AUTOMATIC_COMPACTIONS_ID not in result["publishable"]
+
+
+def test_compaction_without_normalized_boundary_join_is_unknown_and_unpublished():
+    events, sessions, episodes, lifecycle = rich_fixture()
+    removed_session = sessions[0]
+    events = [
+        event
+        for event in events
+        if not (
+            event["source"] == removed_session["source"]
+            and event["session_id"] == removed_session["session_id"]
+            and event.get("lifecycle_marker") == "context-boundary"
+            and event.get("context_generation_id") == 1
+        )
+    ]
+
+    result = score_fixture(events, sessions, episodes, lifecycle)
+
+    for field in ("manual_compactions", "automatic_compactions"):
+        assert result["local"][field] == {
+            "value": "UNKNOWN",
+            "coverage_basis_points": "UNKNOWN",
+            "confidence": "UNKNOWN",
+        }
     assert MANUAL_COMPACTIONS_ID not in result["publishable"]
     assert AUTOMATIC_COMPACTIONS_ID not in result["publishable"]
 

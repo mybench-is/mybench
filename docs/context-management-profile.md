@@ -30,7 +30,10 @@ evidence is also excluded and reported through the MYB-13.8 pinned
 The two compaction counts are exact only when every observed compaction
 candidate has a known manual/automatic trigger. Partial trigger coverage makes
 both local counts `UNKNOWN`; an observed subtotal is never presented as the
-total. No observed compaction candidate also remains `UNKNOWN`, because the
+total. A live `compact_pre` row is eligible only after an exact opaque-session
+plus context-generation join to a normalized `context-boundary`; any unjoined
+row makes both counts and their coverage `UNKNOWN` and suppresses both public
+atoms. No observed compaction candidate also remains `UNKNOWN`, because the
 current inputs do not carry a whole-window capture-completeness proof that
 would justify a zero.
 

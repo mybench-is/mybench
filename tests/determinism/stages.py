@@ -207,11 +207,12 @@ def _workflow_map_output() -> Invocation:
 
 
 def _context_management_profile() -> Invocation:
-    # Reuse the fixed synthetic lifecycle corpus from the owning scorer test.
+    # Reuse the fixed mixed-marker corpus from the owning scorer test so the
+    # subprocess byte gate covers both present and absent lifecycle evidence.
     # Opaque grouping ids and canaries are consumed but never serialized.
-    from tests.scorer.test_context_management import rich_fixture
+    from tests.scorer.test_context_management import mixed_marker_fixture
 
-    events, sessions, episodes, lifecycle = rich_fixture()
+    events, sessions, episodes, lifecycle = mixed_marker_fixture()
     return Invocation(
         args=(events,),
         kwargs={
