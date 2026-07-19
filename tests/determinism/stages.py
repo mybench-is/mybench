@@ -206,6 +206,23 @@ def _workflow_map_output() -> Invocation:
     )
 
 
+def _context_management_profile() -> Invocation:
+    # Reuse the fixed synthetic lifecycle corpus from the owning scorer test.
+    # Opaque grouping ids and canaries are consumed but never serialized.
+    from tests.scorer.test_context_management import rich_fixture
+
+    events, sessions, episodes, lifecycle = rich_fixture()
+    return Invocation(
+        args=(events,),
+        kwargs={
+            "sessions": sessions,
+            "episodes": episodes,
+            "lifecycle_events": lifecycle,
+            "episode_stitcher_version": "2.0.0",
+        },
+    )
+
+
 def _evidence_coverage_aggregate() -> Invocation:
     # Fixed schema-v1 PROVEN metrics plus fixed, content-free contributions.
     # The production aggregate receives no raw evidence or ambient authority.
@@ -266,6 +283,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
+    "context-management-profile": _context_management_profile,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
     "reference-target-join-corpus": _reference_target_join_corpus,
@@ -295,6 +313,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.agent_hours",),
+    ),
+    Stage(
+        "context-management-profile",
+        EntryPoint("mybench.scorer.context_management", "score_context_management"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.context_management",),
     ),
     Stage(
         "evidence-coverage-aggregate",

@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/context_management_profile.schema.json",
+  "title": "Mybench context-management profile scorer section",
+  "description": "Closed aggregate-only context-lifecycle profile. Opaque identities, boundary positions, and ordered per-session or per-episode streams are structurally impossible.",
+  "$defs": {
+    "basisPointsOrUnknown": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 10000},
+        {"const": "UNKNOWN"}
+      ]
+    },
+    "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+    "shareBand": {
+      "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+    },
+    "countBand": {
+      "enum": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"]
+    },
+    "rateLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "coverage_basis_points", "confidence"],
+      "properties": {
+        "value": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "countLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "coverage_basis_points", "confidence"],
+      "properties": {
+        "value": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0},
+            {"const": "UNKNOWN"}
+          ]
+        },
+        "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "generationDistributionLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "coverage_basis_points", "confidence"],
+      "properties": {
+        "value": {
+          "oneOf": [
+            {"const": "UNKNOWN"},
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["generation_count_band", "episode_count"],
+                "properties": {
+                  "generation_count_band": {"$ref": "#/$defs/countBand"},
+                  "episode_count": {"type": "integer", "minimum": 1}
+                }
+              }
+            }
+          ]
+        },
+        "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "phaseSplitLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "coverage_basis_points", "confidence"],
+      "properties": {
+        "value": {
+          "oneOf": [
+            {"const": "UNKNOWN"},
+            {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["phase_group", "basis_points"],
+                "properties": {
+                  "phase_group": {"enum": ["IMPLEMENTATION", "PLAN", "UNKNOWN"]},
+                  "basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+                }
+              }
+            }
+          ]
+        },
+        "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "coverageObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_class", "basis", "coverage_basis_points", "confidence", "evidence_state"],
+      "properties": {
+        "input_class": {"const": "context-lifecycle"},
+        "basis": {"const": "reliable-lifecycle-marker-per-eligible-session"},
+        "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence_state": {"enum": ["available", "partial", "unknown"]}
+      }
+    },
+    "ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "count"],
+      "properties": {
+        "category": {"enum": ["conflicting-evidence", "missing-marker"]},
+        "count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "coverageContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "producer", "observations", "missing_ambiguous"],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "producer": {"const": "context-management-profile"},
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {"$ref": "#/$defs/coverageObservation"}
+        },
+        "missing_ambiguous": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/ambiguity"}
+        }
+      }
+    },
+    "ratePublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rate_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+      "properties": {
+        "rate_band": {"$ref": "#/$defs/shareBand"},
+        "coverage_band": {"$ref": "#/$defs/shareBand"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "definition_version": {"const": "1.0.0"},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "countPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+      "properties": {
+        "count_band": {"$ref": "#/$defs/countBand"},
+        "coverage_band": {"$ref": "#/$defs/shareBand"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "definition_version": {"const": "1.0.0"},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "generationPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells", "coverage_band", "confidence", "definition_version", "trust_tier"],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["generation_count_band", "episode_share_band"],
+            "properties": {
+              "generation_count_band": {"$ref": "#/$defs/countBand"},
+              "episode_share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "coverage_band": {"$ref": "#/$defs/shareBand"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "definition_version": {"const": "1.0.0"},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "phasePublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells", "classifier_version", "coverage_band", "confidence", "definition_version", "trust_tier"],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase_group", "share_band"],
+            "properties": {
+              "phase_group": {"enum": ["IMPLEMENTATION", "PLAN", "UNKNOWN"]},
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "classifier_version": {"const": "1.0.0"},
+        "coverage_band": {"$ref": "#/$defs/shareBand"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "definition_version": {"const": "1.0.0"},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "scorer_version", "context_identity_version", "coverage_contribution", "local", "publishable"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "context-management-profile"},
+    "scorer_version": {"const": "1.0.0"},
+    "context_identity_version": {"const": "1.0.0"},
+    "coverage_contribution": {"$ref": "#/$defs/coverageContribution"},
+    "local": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fresh_session_rate", "resume_rate", "clear_rate", "manual_compactions", "automatic_compactions", "generations_per_episode", "one_context_episode_rate", "fresh_phase_split", "model_change_boundary_rate"],
+      "properties": {
+        "fresh_session_rate": {"$ref": "#/$defs/rateLocal"},
+        "resume_rate": {"$ref": "#/$defs/rateLocal"},
+        "clear_rate": {"$ref": "#/$defs/rateLocal"},
+        "manual_compactions": {"$ref": "#/$defs/countLocal"},
+        "automatic_compactions": {"$ref": "#/$defs/countLocal"},
+        "generations_per_episode": {"$ref": "#/$defs/generationDistributionLocal"},
+        "one_context_episode_rate": {"$ref": "#/$defs/rateLocal"},
+        "fresh_phase_split": {"$ref": "#/$defs/phaseSplitLocal"},
+        "model_change_boundary_rate": {"$ref": "#/$defs/rateLocal"}
+      }
+    },
+    "publishable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint.context.fresh_session_rate.band": {"$ref": "#/$defs/ratePublic"},
+        "fingerprint.context.resume_rate.band": {"$ref": "#/$defs/ratePublic"},
+        "fingerprint.context.clear_rate.band": {"$ref": "#/$defs/ratePublic"},
+        "fingerprint.context.manual_compactions.band": {"$ref": "#/$defs/countPublic"},
+        "fingerprint.context.automatic_compactions.band": {"$ref": "#/$defs/countPublic"},
+        "fingerprint.context.generations_per_episode.band": {"$ref": "#/$defs/generationPublic"},
+        "fingerprint.context.one_context_episode_rate.band": {"$ref": "#/$defs/ratePublic"},
+        "fingerprint.context.fresh_phase_split.band": {"$ref": "#/$defs/phasePublic"},
+        "fingerprint.context.model_change_boundary_rate.band": {"$ref": "#/$defs/ratePublic"}
+      }
+    }
+  }
+}
