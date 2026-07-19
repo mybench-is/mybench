@@ -206,6 +206,40 @@ def _workflow_map_output() -> Invocation:
     )
 
 
+def _model_role_profile_output() -> Invocation:
+    # Fixed normalized metadata carriers plus structural phase events. Private
+    # session identities are synthetic routing keys and cannot enter output.
+    events = []
+    for index in range(5):
+        common = {"session_id": f"synthetic-model-role-session-{index}"}
+        events.extend(
+            [
+                {
+                    **common,
+                    "event_kind": "model",
+                    "authorship": "agent-turn",
+                    "model": "gpt-5-codex",
+                    "provider": "openai",
+                    "reasoning_effort": "high",
+                },
+                {
+                    **common,
+                    "event_kind": "reference",
+                    "authorship": "agent-turn",
+                    "reference_kind": "plan",
+                },
+                {
+                    **common,
+                    "event_kind": "tool-call",
+                    "authorship": "agent-turn",
+                    "tool_family": "edit",
+                },
+                {**common, "event_kind": "test", "authorship": "agent-turn"},
+            ]
+        )
+    return Invocation(args=(events,), kwargs={})
+
+
 def _evidence_coverage_aggregate() -> Invocation:
     # Fixed schema-v1 PROVEN metrics plus fixed, content-free contributions.
     # The production aggregate receives no raw evidence or ambient authority.
@@ -268,6 +302,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "codex-normalized-corpus": _codex_normalized_corpus,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
+    "model-role-profile-output": _model_role_profile_output,
     "reference-target-join-corpus": _reference_target_join_corpus,
     "session-timing-output": _session_timing_output,
     "signed-claim": _signed_claim,
@@ -309,6 +344,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.workflow_map",),
+    ),
+    Stage(
+        "model-role-profile-output",
+        EntryPoint("mybench.scorer.model_role", "score_model_role_profile"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.model_role",),
     ),
     Stage(
         "wave1-transcript-claim-set",
