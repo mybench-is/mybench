@@ -169,6 +169,25 @@ def _agent_hours_profile() -> Invocation:
     )
 
 
+def _pricing_snapshot_artifact() -> Invocation:
+    return Invocation(args=("1.0.0",), kwargs={})
+
+
+def _token_cost_profile() -> Invocation:
+    from mybench.scorer.pricing import load_pricing_snapshot
+    from tests.scorer.test_token_cost import _corpus
+
+    events, episodes, sessions = _corpus()
+    return Invocation(
+        args=(events,),
+        kwargs={
+            "episodes": episodes,
+            "sessions": sessions,
+            "pricing_snapshot": load_pricing_snapshot("1.0.0"),
+        },
+    )
+
+
 def _workflow_map_output() -> Invocation:
     # Fixed, synthetic episode identities and structural markers only. Private
     # grouping ids are consumed in memory and do not enter the stage artifact.
@@ -268,11 +287,13 @@ RUNNERS: dict[str, InvocationFactory] = {
     "codex-normalized-corpus": _codex_normalized_corpus,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
+    "pricing-snapshot-artifact": _pricing_snapshot_artifact,
     "reference-target-join-corpus": _reference_target_join_corpus,
     "session-timing-output": _session_timing_output,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
+    "token-cost-profile": _token_cost_profile,
     "wave1-transcript-claim-set": _wave1_transcript_claim_set,
     "workflow-phase-output": _workflow_phase_output,
     "workflow-map-output": _workflow_map_output,
@@ -302,6 +323,20 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.evidence_coverage",),
+    ),
+    Stage(
+        "pricing-snapshot-artifact",
+        EntryPoint("mybench.scorer.pricing", "pricing_snapshot_artifact"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.pricing",),
+    ),
+    Stage(
+        "token-cost-profile",
+        EntryPoint("mybench.scorer.token_cost", "score_token_cost_profile"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.token_cost",),
     ),
     Stage(
         "workflow-map-output",

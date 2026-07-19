@@ -6,6 +6,7 @@ import json
 import logging
 import random
 import stat
+from copy import deepcopy
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -26,6 +27,7 @@ from mybench.report.cli import (
     verify_signature,
 )
 from mybench.scorer.score import score
+from mybench.scorer.pricing import load_pricing_snapshot
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 from tests.fixtures.ledgers import build_canary_ledger
 from tests.scorer.test_score import fixed_report_bytes
@@ -81,6 +83,36 @@ def test_private_bundle_accepts_registry_validated_report_v2():
     page = (directory / "index.html").read_text()
     assert "Workflow fingerprint" in page
     assert "computed locally — unattested" in page
+
+
+def test_cost_field_requires_pricing_binding_and_manifest_copies_it():
+    report = v2_report()
+    field = deepcopy(report["catalog_metrics"][0])
+    field.update(
+        registry_id="fingerprint.token_cost.cost_by_model.exact",
+        registry_version="1.0.0",
+        disclosure="LOCAL_ONLY",
+        inference_risk="R1",
+        caveats=["provider-reported-inflatable"],
+        value=123,
+    )
+    report["fingerprint"]["token_cost_profile"] = {
+        "status": "available",
+        "fields": [field],
+    }
+    with pytest.raises(BundleError, match="require a pricing snapshot"):
+        canonical_report_bytes(report)
+    with pytest.raises(BundleError, match="require a pricing snapshot"):
+        evidence_manifest(report, [], [])
+
+    snapshot = load_pricing_snapshot("1.0.0")
+    report["pricing_snapshot"] = snapshot.reference()
+    canonical_report_bytes(report)
+    manifest = evidence_manifest(report, [], [])
+    assert manifest["versions"]["pricing"] == {
+        "version": snapshot.version,
+        "digest": snapshot.digest,
+    }
 
 
 def test_private_bundle_rejects_missing_or_invalid_v2_claim_before_writing():

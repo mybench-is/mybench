@@ -284,8 +284,8 @@ the separate transcript-derived fields.
 Token counts are provider-reported and potentially inflatable. Every token and
 cost field carries the controlled caveat code
 `provider-reported-inflatable`; every cost field additionally names `PRICING`
-version/digest and states that it estimates the user's historical spend, not
-Mybench compute or work quality.
+version/digest and is labelled as an estimated public list-price equivalent,
+not an invoice, actual historical spend, Mybench compute, or work quality.
 
 | Field id | Value and formula | Tier | Support | Disclosure |
 |---|---|---|---|---|
@@ -294,9 +294,9 @@ Mybench compute or work quality.
 | `fingerprint.token_cost.tokens_by_phase.exact` | Integer token sum by `PHASES`; unattributable tokens map to UNKNOWN. | ANCHORED | 5 phase-attributed sessions | LOCAL_ONLY |
 | `fingerprint.token_cost.tokens_by_phase.band` | `token_band` of the same sums. | ANCHORED | 5 sessions per cell | PUBLISHABLE (R0) |
 | `fingerprint.token_cost.cost_by_model.exact` | Integer micro-USD: input/output/cache token integers × matching `PRICING` integer rates, divided with the snapshot's pinned rounding rule. | ANCHORED | 5 sessions per cell | LOCAL_ONLY |
-| `fingerprint.token_cost.cost_by_model.band` | `cost_band` of the same sums. | ANCHORED | 5 sessions per cell | PUBLISHABLE (R1) |
+| `fingerprint.token_cost.cost_by_model.band` | Reserved future `cost_band` of the same sums. | ANCHORED | 5 sessions per cell | LOCAL_ONLY for v0; no ACTIVE descriptor |
 | `fingerprint.token_cost.cost_per_episode.exact` | Distribution of integer micro-USD episode totals into fixed local log buckets; no episode id/value appears. | ANCHORED | 5 episodes | LOCAL_ONLY |
-| `fingerprint.token_cost.cost_per_episode.band` | Banded share of episodes in the pinned cost buckets; no point value. | ANCHORED | 5 episodes | PUBLISHABLE (R0) |
+| `fingerprint.token_cost.cost_per_episode.band` | Reserved future banded share of episodes in the pinned cost buckets; no point value. | ANCHORED | 5 episodes | LOCAL_ONLY for v0; no ACTIVE descriptor |
 | `fingerprint.token_cost.planning_to_implementation_ratio.exact` | Integer pair `(planning_tokens, implementation_tokens)`; UNKNOWN when either phase coverage is insufficient. | ANCHORED | 5 phase-attributed episodes | LOCAL_ONLY |
 | `fingerprint.token_cost.planning_to_implementation_ratio.band` | `ratio_band(planning_tokens, implementation_tokens)`. | ANCHORED | 5 episodes | PUBLISHABLE (R0) |
 | `fingerprint.token_cost.rework_token_share` | Exact bp locally / `share_band` publicly: tokens in classifier-versioned rework-loop segments ÷ phase-attributed tokens. | ANCHORED | 5 rework-eligible episodes | PUBLISHABLE (R0); exact form LOCAL_ONLY |

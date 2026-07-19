@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.7.0",
+  "registry_version": "0.8.0",
   "format_status": "ratified-json",
   "entries": [
     {
@@ -2284,6 +2284,424 @@
       ],
       "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
       "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.7/MYB-6.8; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.token_cost.tokens_by_model.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Token volume by public model class",
+      "inputs": [
+        "normalized-token-usage",
+        "normalized-model-routing"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "model_vocabulary_version",
+          "token_accounting_policy_version",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["model", "token_band"],
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "pattern": "^(gpt-5|gpt-5-codex|o-series|claude-sonnet|claude-opus|claude-haiku|synthetic|other|UNKNOWN)$"
+                },
+                "token_band": {
+                  "enum": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"]
+                }
+              }
+            }
+          },
+          "model_vocabulary_version": {"const": "1.0.0"},
+          "token_accounting_policy_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "token_band",
+          "bands": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"],
+          "note": "Order-of-magnitude token total; 10m+ is top-coded and each model cell requires five supporting sessions"
+        }
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": ["full"],
+      "neutrality_note": "Provider-reported token volume by operational model class; it does not measure utility, quality, difficulty, or subject capability",
+      "risk_note": "Even coarse model-volume combinations can narrow workflow identity; raw model strings, exact totals, and thin cells stay local",
+      "notes": "MYB-13.6; normalized orchestrated token-accounting view, pinned public model vocabulary, UNKNOWN preserved",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.tokens_by_phase.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Token volume by workflow phase",
+      "inputs": [
+        "normalized-token-usage",
+        "workflow-phase-stream"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "classifier_version",
+          "token_accounting_policy_version",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "token_band"],
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "pattern": "^(TASK|PLAN|BUILD|TEST|DEBUG|REVIEW|COMMIT|UNKNOWN)$"
+                },
+                "token_band": {
+                  "enum": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"]
+                }
+              }
+            }
+          },
+          "classifier_version": {"const": "1.0.0"},
+          "token_accounting_policy_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "token_band",
+          "bands": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"],
+          "note": "Order-of-magnitude phase-attributed token total; 10m+ is top-coded and each phase cell requires five supporting sessions"
+        }
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Phase-attributed volume describes workflow shape without exposing an ordered episode stream or making a quality claim",
+      "notes": "MYB-13.6; tokens inherit the last known structural phase in their normalized session and remain UNKNOWN before any known phase",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.cost_by_model.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Local estimated public list-price equivalent by model",
+      "inputs": [
+        "normalized-token-usage",
+        "normalized-model-routing",
+        "pinned-pricing-snapshot"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "estimate_label",
+          "pricing_snapshot_version",
+          "pricing_snapshot_digest",
+          "currency",
+          "rounding_rule",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["model", "cost_micro_usd"],
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "pattern": "^(gpt|claude|o[1-9])[a-z0-9._-]*$|^UNKNOWN$",
+                  "maxLength": 96
+                },
+                "cost_micro_usd": {
+                  "oneOf": [
+                    {"type": "integer", "minimum": 0},
+                    {"const": "UNKNOWN"}
+                  ]
+                }
+              }
+            }
+          },
+          "estimate_label": {"const": "estimated-public-list-price-equivalent-not-invoice"},
+          "pricing_snapshot_version": {"const": "1.0.0"},
+          "pricing_snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "currency": {"const": "USD"},
+          "rounding_rule": {"const": "half-up-after-summing-one-usage-observation"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "A standardized token-rate estimate only; it is not an invoice, actual spend, Mybench price, compute quantity, quality signal, or effort-adjusted score",
+      "risk_note": "Exact local currency estimates can reveal usage intensity; v0 keeps all dollar estimates outside publication presets",
+      "notes": "MYB-13.6; integer micro-USD only, effort is never a multiplier, missing or ambiguous pricing dimensions are UNKNOWN",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "This public-list-price-equivalent uses provider-reported token counts that may be inflated and is not an invoice or actual spend."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.cost_per_episode.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Local estimated public list-price equivalent per episode",
+      "inputs": [
+        "normalized-token-usage",
+        "task-episode-identities",
+        "pinned-pricing-snapshot"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "unknown_episode_count",
+          "estimate_label",
+          "pricing_snapshot_version",
+          "pricing_snapshot_digest",
+          "currency",
+          "rounding_rule",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["cost_band", "episode_count"],
+              "properties": {
+                "cost_band": {
+                  "enum": ["$0", "<$1", "$1-9", "$10-99", "$100-999", "$1000+"]
+                },
+                "episode_count": {"type": "integer", "minimum": 1}
+              }
+            }
+          },
+          "unknown_episode_count": {"type": "integer", "minimum": 0},
+          "estimate_label": {"const": "estimated-public-list-price-equivalent-not-invoice"},
+          "pricing_snapshot_version": {"const": "1.0.0"},
+          "pricing_snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "currency": {"const": "USD"},
+          "rounding_rule": {"const": "half-up-after-summing-one-usage-observation"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "cost_band",
+          "bands": ["$0", "<$1", "$1-9", "$10-99", "$100-999", "$1000+"],
+          "note": "Local distribution of episode estimates in fixed log buckets; $1000+ is top-coded and no episode id or point is retained"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "A local bucketed standardized token-rate estimate only; it is not an invoice, actual spend, Mybench price, compute quantity, or quality signal",
+      "notes": "MYB-13.6; unknown or ambiguous episode mappings remain an explicit unknown count and no per-episode value or identity is emitted",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "This public-list-price-equivalent uses provider-reported token counts that may be inflated and is not an invoice or actual spend."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.planning_to_implementation_ratio.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Planning-to-implementation token ratio",
+      "inputs": ["normalized-token-usage", "workflow-phase-stream"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ratio_band", "classifier_version", "trust_tier", "caveats"],
+        "properties": {
+          "ratio_band": {"enum": ["UNKNOWN", "<0.5", "0.5-0.99", "1.0-1.99", "2.0+"]},
+          "classifier_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "ratio_band",
+          "bands": ["UNKNOWN", "<0.5", "0.5-0.99", "1.0-1.99", "2.0+"],
+          "note": "Aggregate PLAN tokens divided by BUILD/TEST/DEBUG/REVIEW/COMMIT tokens using integer cross-multiplication; denominator zero is UNKNOWN"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "A coarse structural allocation ratio only; no band is preferred and it does not measure quality or efficiency",
+      "notes": "MYB-13.6; requires five episodes carrying both planning and implementation-attributed tokens",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.rework_token_share",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Structural rework token share",
+      "inputs": ["normalized-token-usage", "workflow-phase-stream"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["share_band", "definition_version", "trust_tier", "caveats"],
+        "properties": {
+          "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Tokens in the phase entered by a pinned backward structural edge divided by all phase-attributed tokens"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "A structural loop allocation only; re-entry is not framed as an error, deficit, inefficiency, or quality judgment",
+      "notes": "MYB-13.6; backward edges are BUILD/TEST/DEBUG to PLAN/BUILD and UNKNOWN never bridges evidence",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.abandoned_session_token_share",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Structurally abandoned-session token share",
+      "inputs": ["normalized-token-usage", "normalized-episode-outcome"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["share_band", "definition_version", "trust_tier", "caveats"],
+        "properties": {
+          "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Tokens in sessions belonging to structurally abandoned episodes divided by tokens in sessions with a deterministic closed or abandoned outcome"
+        }
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "A content-opaque structural outcome share only; abandoned is not a semantic guess and does not imply failure or quality",
+      "notes": "MYB-13.6 consumes normalized episode outcome classifier v1; unknown outcomes are excluded from numerator and denominator",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
     },
     {
       "id": "fingerprint.token_cost_profile",

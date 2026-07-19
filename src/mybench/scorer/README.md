@@ -21,3 +21,12 @@ contain only registry bands/booleans and the registry-admitted R1 harness
 inventory; content, paths, session/event identifiers, tool/server names, and
 ordered streams are absent. See
 `docs/wave1-transcript-scorers.md`.
+
+`token_cost.py` implements the MYB-13.6 Workflow Fingerprint profile over
+normalized token/model/phase/outcome structure. `pricing.py` loads one
+immutable, effective-dated, checksummed in-package price-card snapshot; the
+scorer performs integer micro-USD arithmetic and has no clock, environment, or
+network dependency. Missing or ambiguous price dimensions remain `UNKNOWN`.
+Dollar estimates are local-report-only and explicitly labelled public
+list-price equivalents, never invoices or actual spend. See
+`docs/token-cost-profile.md`.

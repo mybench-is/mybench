@@ -29,6 +29,12 @@ from mybench.schemas import load_validator
 
 REPORT_ID_DOMAIN = b"mybench:v1:local-report-id\x00"
 BUNDLE_FILES = ("index.html", "report.json", "report.sig", "evidence-manifest.json")
+_COST_REGISTRY_IDS = frozenset(
+    {
+        "fingerprint.token_cost.cost_by_model.exact",
+        "fingerprint.token_cost.cost_per_episode.exact",
+    }
+)
 
 
 class BundleError(RuntimeError):
@@ -168,6 +174,7 @@ def canonical_report_bytes(report: dict) -> bytes:
     errors = sorted(load_validator(schema_name).iter_errors(report), key=str)
     if errors:
         raise BundleError(f"report failed schema validation: {errors[0].message}")
+    _require_pricing_snapshot(report)
     try:
         return json.dumps(
             report,
@@ -209,12 +216,22 @@ def _report_fields(report: dict) -> Iterable[dict]:
         yield from section.get("fields", ())
 
 
+def _require_pricing_snapshot(report: dict) -> None:
+    """Cost claims fail closed unless the report records their pinned input."""
+
+    if any(field.get("registry_id") in _COST_REGISTRY_IDS for field in _report_fields(report)):
+        pricing = report.get("pricing_snapshot")
+        if not isinstance(pricing, dict):
+            raise BundleError("cost fields require a pricing snapshot binding")
+
+
 def evidence_manifest(
     report: dict,
     rows: Sequence[dict],
     anchor_dates: Sequence[str],
 ) -> dict:
     """Derive only whitelisted commitments and references from scorer inputs."""
+    _require_pricing_snapshot(report)
     row_ranges = []
     ledger: dict[str, object] = {"row_ranges": row_ranges}
     if rows:

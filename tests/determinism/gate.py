@@ -186,6 +186,10 @@ REVIEWED_CALLS: Mapping[tuple[str, str], ReviewedCall] = {
         "importlib.resources.files().joinpath().read_bytes",
     ): ReviewedCall("committed packaged descriptor registry", 1),
     (
+        "mybench.scorer.pricing",
+        "importlib.resources.files().joinpath().read_bytes",
+    ): ReviewedCall("committed immutable pricing snapshot", 1),
+    (
         "mybench.registry",
         "pathlib.Path().read_bytes",
     ): ReviewedCall(

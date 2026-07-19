@@ -51,8 +51,8 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.7.0"
-    assert len(registry.ids()) == 51
+    assert registry.version == "0.8.0"
+    assert len(registry.ids()) == 58
     # ADR-0016 resolved OQ #31 by ratifying JSON at the owner sitting.
     assert packaged_doc()["format_status"] == "ratified-json"
 
@@ -202,6 +202,36 @@ def test_file_structure_topology_descriptor_pins_publication_controls(registry):
         check({**base_output, "observed_week": "2026-07-18"})
     with pytest.raises(RegistryError, match="does not conform"):
         check({**base_output, "observed_on": "2026-07-18"})
+
+
+def test_token_cost_descriptors_pin_local_dollars_and_public_bands(registry):
+    public_ids = {
+        "fingerprint.token_cost.tokens_by_model.band",
+        "fingerprint.token_cost.tokens_by_phase.band",
+        "fingerprint.token_cost.planning_to_implementation_ratio.band",
+        "fingerprint.token_cost.rework_token_share",
+        "fingerprint.token_cost.abandoned_session_token_share",
+    }
+    local_cost_ids = {
+        "fingerprint.token_cost.cost_by_model.exact",
+        "fingerprint.token_cost.cost_per_episode.exact",
+    }
+    assert public_ids <= set(registry.renderable_ids())
+    assert local_cost_ids.isdisjoint(registry.renderable_ids())
+    for preset in registry.presets():
+        assert local_cost_ids.isdisjoint(registry.preset_ids(preset))
+    for registry_id in public_ids | local_cost_ids:
+        entry = registry.entry(registry_id)
+        assert entry["status"] == "active"
+        assert entry["report_location"] == "fingerprint.token_cost_profile"
+        assert entry["output_schema"]["properties"]["trust_tier"] == {
+            "const": "ANCHORED"
+        }
+        assert entry["output_schema"]["properties"]["caveats"] == {
+            "const": ["provider-reported-inflatable"]
+        }
+    assert all(registry.entry(item)["disclosure"] == "local-report-only" for item in local_cost_ids)
+    assert all(registry.entry(item)["disclosure"] == "public" for item in public_ids)
 
 
 def test_conditioning_declarations_and_per_cell_support_are_registry_inputs():
@@ -656,8 +686,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.7.0"',
-            b'"registry_version": "0.7.0", "registry_version": "0.7.0"',
+            b'"registry_version": "0.8.0"',
+            b'"registry_version": "0.8.0", "registry_version": "0.8.0"',
             1,
         )
     )
