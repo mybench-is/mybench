@@ -9,9 +9,10 @@ capture, import a bill, contact a provider, or price Mybench compute.
 Pricing snapshots are effective-dated JSON files packaged under
 `mybench.registry`. A scoring run receives an owned `PricingSnapshot` value;
 the scorer does not read the clock, environment, or network. The snapshot's
-semantic version and SHA-256 digest travel with every cost claim, the report's
-`pricing_snapshot` reference, and the evidence manifest's `versions.pricing`
-reference.
+semantic version, SHA-256 digest, and currency travel with every cost claim,
+the report's `pricing_snapshot` reference, and the evidence manifest's
+`versions.pricing` reference. Bundle assembly equality-binds all three values
+to the verified signed cost claims and fails closed on any mismatch.
 
 A provider price-card refresh adds a new `pricing_snapshot_<semver>.json` in an
 ordinary reviewed change. Existing files are never rewritten. Reproducing an

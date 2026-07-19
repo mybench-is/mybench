@@ -225,6 +225,15 @@ def _require_pricing_snapshot(report: dict) -> None:
             raise BundleError("cost fields require a pricing snapshot binding")
 
 
+def _require_manifest_pricing_binding(report: dict, manifest: dict) -> None:
+    """Require the local evidence manifest to cite the report's exact snapshot."""
+
+    report_pricing = report.get("pricing_snapshot")
+    manifest_pricing = manifest.get("versions", {}).get("pricing")
+    if report_pricing != manifest_pricing:
+        raise BundleError("evidence manifest pricing snapshot does not match report")
+
+
 def evidence_manifest(
     report: dict,
     rows: Sequence[dict],
@@ -271,6 +280,7 @@ def evidence_manifest(
         versions["pricing"] = {
             "version": report["pricing_snapshot"]["version"],
             "digest": report["pricing_snapshot"]["digest"],
+            "currency": report["pricing_snapshot"]["currency"],
         }
     manifest = {
         "schema_version": "1",
@@ -389,6 +399,7 @@ def assemble_bundle(
     """Build or byte-verify one immutable bundle below the private data dir."""
     report_bytes = canonical_report_bytes(report)
     manifest_bytes = canonical_manifest_bytes(manifest)
+    _require_manifest_pricing_binding(report, manifest)
     report_claim_digests = sorted(
         {field["claim_digest"] for field in _report_fields(report) if "claim_digest" in field}
     )

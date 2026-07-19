@@ -469,6 +469,46 @@ def test_report_field_gate_is_location_and_metadata_closed(registry):
         )
 
 
+def test_report_value_round_trips_nested_registry_output_without_json_escape_hatch(registry):
+    registry_id = "fingerprint.token_cost.tokens_by_model.band"
+    entry = registry.entry(registry_id)
+    output = {
+        "cells": [{"model": "gpt-5", "token_band": "1m-9.9m"}],
+        "model_vocabulary_version": "1.0.0",
+        "token_accounting_policy_version": "1.0.0",
+        "trust_tier": "ANCHORED",
+        "caveats": ["provider-reported-inflatable"],
+    }
+    value = registry.report_value(registry_id, output)
+    assert value[:3] == [
+        {"dimensions": ["cells"], "container": "array"},
+        {"dimensions": ["cells", "00000000"], "container": "object"},
+        {"dimensions": ["cells", "00000000", "model"], "value": "gpt-5"},
+    ]
+    field = {
+        "registry_id": registry_id,
+        "registry_version": entry["version"],
+        "derivation_class": entry["class"],
+        "execution_env": "local-unattested",
+        "trust_tier": "ANCHORED",
+        "disclosure": "PUBLISHABLE",
+        "inference_risk": entry["inference_risk"],
+        "caveats": ["provider-reported-inflatable"],
+        "value": value,
+    }
+    assert registry.check_report_field(field, "fingerprint.token_cost_profile")["id"] == registry_id
+
+    missing_container = copy.deepcopy(field)
+    missing_container["value"] = missing_container["value"][1:]
+    with pytest.raises(RegistryError, match="parent container is missing"):
+        registry.check_report_field(missing_container, "fingerprint.token_cost_profile")
+
+    invalid_output = copy.deepcopy(output)
+    invalid_output["cells"][0]["private"] = "not registry-admitted"
+    with pytest.raises(RegistryError, match="cannot enter report-v2"):
+        registry.report_value(registry_id, invalid_output)
+
+
 def test_report_metadata_requires_location_controls_and_exact_caveat_copy():
     doc = packaged_doc()
     entry = next(e for e in doc["entries"] if e["id"] == "transcript.agent_hours")

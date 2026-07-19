@@ -13,10 +13,14 @@ Fingerprint reports through the same validate-then-render path. V2 fields
 must cite an active registry entry with an explicit report location and exact
 version, disclosure, inference-risk, caveat, and derivation metadata; unknown
 wrapper fields and inactive reserved blocks fail the build.
-For multi-property claims, each report-v2 value cell names exactly one registry
-output property and cells remain dimension-sorted; the renderer reconstructs the output object, adds the
-wrapper's tier/caveats, and validates it against the entry's closed output
-schema before emitting HTML. Registry-owned controls activate optional report
+For multi-property claims, report-v2 uses dimension-sorted path cells. Primitive
+leaves carry `value`; nested arrays and objects have explicit closed `container`
+nodes, including empty containers. The registry validates the complete claim
+output before encoding and reconstructs that exact structure before comparing
+it to the verified signed claim, so nested values are not an arbitrary JSON
+escape hatch. The renderer then adds the wrapper's tier/caveats and validates
+the result against the entry's closed output schema before emitting HTML.
+Registry-owned controls activate optional report
 metadata and registry-owned caveat copy turns wrapper codes into display text.
 Evidence tiers use labelled border geometry,
 derivation class is a text pill, and rule-based
