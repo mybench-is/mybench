@@ -149,6 +149,8 @@ def _decode_report_value(cells: list[dict]) -> dict:
         raise RegistryError("report value cells must be sorted by dimensions")
     if len(paths) != len(set(paths)):
         raise RegistryError("report value cells must name unique output paths")
+    if any(path[0] in _REPORT_WRAPPER_OUTPUT_FIELDS for path in paths):
+        raise RegistryError("report value cells cannot redefine wrapper-owned fields")
 
     output: dict = {}
     for cell, path in zip(cells, paths, strict=True):

@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from mybench import paths
 from mybench.claims import build_claim, canonical_bytes, dev_signing_key, sign_claim
-from mybench.registry import Registry
+from mybench.registry import Registry, RegistryError
 from mybench.report.cli import (
     BUNDLE_FILES,
     BundleError,
@@ -28,6 +28,7 @@ from mybench.report.cli import (
     validate_evidence_manifest,
     verify_signature,
 )
+from mybench.report.page import PageError, render_page
 from mybench.scorer.score import score
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 from tests.fixtures.ledgers import build_canary_ledger
@@ -171,6 +172,75 @@ def test_every_token_cost_claim_assembles_through_signed_v2_bundle_and_manifest(
             "currency": "USD",
         }
     )
+
+
+@pytest.mark.parametrize("reserved_root", ("trust_tier", "caveats"))
+@pytest.mark.parametrize("descendant", (False, True), ids=("root", "root-descendant"))
+def test_wrapper_owned_value_paths_fail_before_claim_render_or_bundle_write(
+    reserved_root, descendant, monkeypatch
+):
+    report, claims = _token_cost_report_claims()
+    fields = report["fingerprint"]["token_cost_profile"]["fields"]
+    assert len(fields) == len(claims) == 7
+    field = fields[0]
+    marker = (
+        f"MYBENCH-CANARY-wrapper-owned-{reserved_root}-"
+        f"{'descendant' if descendant else 'root'}-13-6"
+    )
+    planted = (
+        [
+            {"dimensions": [reserved_root], "container": "object"},
+            {"dimensions": [reserved_root, "synthetic_marker"], "value": marker},
+        ]
+        if descendant
+        else [{"dimensions": [reserved_root], "value": marker}]
+    )
+    field["value"].extend(planted)
+    field["value"].sort(key=lambda cell: cell["dimensions"])
+
+    # The envelope remains schema-valid and sorted: the semantic registry gate
+    # owns this rejection before wrapper reconstruction or signed comparison.
+    assert marker.encode() in canonical_report_bytes(report)
+    claim = next(
+        claim
+        for claim in claims
+        if hashlib.sha256(canonical_bytes(claim)).hexdigest() == field["claim_digest"]
+    )
+    with pytest.raises(RegistryError, match="wrapper-owned") as registry_failure:
+        Registry.load().check_report_claim(
+            field,
+            "fingerprint.token_cost_profile",
+            claim,
+        )
+    assert marker not in str(registry_failure.value)
+
+    render_attempts = []
+
+    def forbidden_render(*_args, **_kwargs):
+        render_attempts.append(True)
+        raise AssertionError("reserved wrapper path reached HTML rendering")
+
+    monkeypatch.setattr("mybench.report.page._claim_html", forbidden_render)
+    with pytest.raises(PageError, match="wrapper-owned") as page_failure:
+        render_page(report, signed_claims=claims)
+    assert marker not in str(page_failure.value)
+    assert render_attempts == []
+
+    def forbidden_write(*_args, **_kwargs):
+        raise AssertionError("reserved wrapper path reached bundle storage")
+
+    monkeypatch.setattr("mybench.report.cli._write_private", forbidden_write)
+    manifest = evidence_manifest(report, [], [])
+    assert not paths.reports_dir().exists()
+    with pytest.raises(BundleError, match="wrapper-owned") as bundle_failure:
+        assemble_bundle(
+            report,
+            manifest,
+            private_key=SYNTHETIC_KEY,
+            signed_claims=claims,
+        )
+    assert marker not in str(bundle_failure.value)
+    assert not paths.reports_dir().exists()
 
 
 def test_cost_field_requires_pricing_binding():
