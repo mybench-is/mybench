@@ -31,6 +31,14 @@ fields**:
    fields never enter any preset. `internal-feature-only` claims never enter a
    report at all.
 
+The local renderer and bundle assembler receive the signed claim envelopes as
+separate local-only evidence inputs. Before emitting any v2 artifact they
+verify each envelope and signature, require an explicit trusted-device key set
+for a claim labeled `signer.kind=device`, run the registry claim gate, recompute
+SHA-256 over canonical signed-claim bytes, and require an exact one-to-one
+wrapper binding. Development-signed claims are admitted only on the
+`local-unattested` lane. Claim envelopes are not copied into the report bundle.
+
 Every registry entry is one disclosure atom. If a semantic measurement has an
 exact local form and a banded public form, those are two entries and two
 claims; publication never edits fields out of a signed claim payload.

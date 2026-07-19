@@ -12,7 +12,7 @@ import os
 import stat
 import tempfile
 import webbrowser
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 from mybench import paths
 from mybench.claims.canonical import canonical_bytes
-from mybench.report.page import render_page
+from mybench.report.page import PageError, render_page
 from mybench.schemas import load_validator
 
 REPORT_ID_DOMAIN = b"mybench:v1:local-report-id\x00"
@@ -366,16 +366,28 @@ def assemble_bundle(
     bundle_dir: Path | None = None,
     anchors_url: str = "https://mybench.is/anchors",
     handle: str | None = None,
+    signed_claims: Sequence[dict] | None = None,
+    trusted_device_pubs: Collection[str] | None = None,
 ) -> Path:
     """Build or byte-verify one immutable bundle below the private data dir."""
     report_bytes = canonical_report_bytes(report)
     manifest_bytes = canonical_manifest_bytes(manifest)
-    page_bytes = render_page(
-        report,
-        anchors_url=anchors_url,
-        handle=handle,
-        report_json_href="report.json",
+    report_claim_digests = sorted(
+        {field["claim_digest"] for field in _report_fields(report) if "claim_digest" in field}
     )
+    if manifest["claims"]["digests"] != report_claim_digests:
+        raise BundleError("evidence manifest claim digests do not match report fields")
+    try:
+        page_bytes = render_page(
+            report,
+            anchors_url=anchors_url,
+            handle=handle,
+            report_json_href="report.json",
+            signed_claims=signed_claims,
+            trusted_device_pubs=trusted_device_pubs,
+        )
+    except PageError as exc:
+        raise BundleError(f"report page validation failed: {exc}") from exc
     report_id = content_address(report_bytes)
     expected = paths.report_dir(report_id).absolute()
     directory = (bundle_dir or expected).absolute()
