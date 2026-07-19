@@ -206,6 +206,24 @@ def _workflow_map_output() -> Invocation:
     )
 
 
+def _context_management_profile() -> Invocation:
+    # Reuse the fixed mixed-marker corpus from the owning scorer test so the
+    # subprocess byte gate covers both present and absent lifecycle evidence.
+    # Opaque grouping ids and canaries are consumed but never serialized.
+    from tests.scorer.test_context_management import mixed_marker_fixture
+
+    events, sessions, episodes, lifecycle = mixed_marker_fixture()
+    return Invocation(
+        args=(events,),
+        kwargs={
+            "sessions": sessions,
+            "episodes": episodes,
+            "lifecycle_events": lifecycle,
+            "episode_stitcher_version": "2.0.0",
+        },
+    )
+
+
 def _model_role_profile_output() -> Invocation:
     # Fixed normalized metadata carriers plus structural phase events. Private
     # session identities are synthetic routing keys and cannot enter output.
@@ -300,6 +318,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
+    "context-management-profile": _context_management_profile,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
     "model-role-profile-output": _model_role_profile_output,
@@ -330,6 +349,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.agent_hours",),
+    ),
+    Stage(
+        "context-management-profile",
+        EntryPoint("mybench.scorer.context_management", "score_context_management"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.context_management",),
     ),
     Stage(
         "evidence-coverage-aggregate",

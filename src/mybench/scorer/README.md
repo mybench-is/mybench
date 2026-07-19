@@ -12,6 +12,13 @@ contract and deterministic private aggregate. See
 honesty labels, pinned ambiguity counts, and the shipped PROVEN v1 coverage
 metrics; raw or identifying evidence is not an input.
 
+`context_management.py` implements the registry-governed context-management
+profile over normalized structural events and the whitelisted lifecycle-row
+projection. It emits exact aggregate local values with honest per-field
+coverage plus support-qualified public bands. Opaque identities, ordered
+boundaries, model strings, content, and paths are consumed only as private
+inputs and never serialized. See `docs/context-management-profile.md`.
+
 `wave1.py` implements the six registry-governed Wave-1 transcript scorers and
 their signed, local-only claim set. It accepts normalized v5 structure plus
 an offline harness-currency snapshot and per-event MCP category assertions
