@@ -52,7 +52,7 @@ def add_tool_mix_conditioning(doc):
 
 def test_packaged_registry_loads_and_validates(registry):
     assert registry.version == "0.8.0"
-    assert len(registry.ids()) == 58
+    assert len(registry.ids()) == 74
     # ADR-0016 resolved OQ #31 by ratifying JSON at the owner sitting.
     assert packaged_doc()["format_status"] == "ratified-json"
 
@@ -224,14 +224,49 @@ def test_token_cost_descriptors_pin_local_dollars_and_public_bands(registry):
         entry = registry.entry(registry_id)
         assert entry["status"] == "active"
         assert entry["report_location"] == "fingerprint.token_cost_profile"
-        assert entry["output_schema"]["properties"]["trust_tier"] == {
-            "const": "ANCHORED"
-        }
+        assert entry["output_schema"]["properties"]["trust_tier"] == {"const": "ANCHORED"}
         assert entry["output_schema"]["properties"]["caveats"] == {
             "const": ["provider-reported-inflatable"]
         }
     assert all(registry.entry(item)["disclosure"] == "local-report-only" for item in local_cost_ids)
     assert all(registry.entry(item)["disclosure"] == "public" for item in public_ids)
+
+
+def test_model_role_descriptors_pin_support_disclosure_and_operational_copy(registry):
+    ids = {
+        "fingerprint.model_role.model_shares.exact",
+        "fingerprint.model_role.model_shares.band",
+        "fingerprint.model_role.provider_shares.exact",
+        "fingerprint.model_role.provider_shares.band",
+        "fingerprint.model_role.effort_shares.exact",
+        "fingerprint.model_role.effort_shares.band",
+        "fingerprint.model_role.evidence_quality",
+    }
+    assert ids <= set(registry.ids())
+    for registry_id in ids:
+        entry = registry.entry(registry_id)
+        assert entry["status"] == "active"
+        assert entry["version"] == "1.0.0"
+        assert entry["class"] == "measured"
+        assert entry["min_support"] == {"events": 5}
+        assert "report_location" not in entry
+        assert "trust anchor" not in entry["title"].lower()
+
+    for dimension in ("model", "provider"):
+        assert (
+            registry.entry(f"fingerprint.model_role.{dimension}_shares.exact")["disclosure"]
+            == "local-report-only"
+        )
+        public = registry.entry(f"fingerprint.model_role.{dimension}_shares.band")
+        assert public["disclosure"] == "public"
+        assert public["inference_risk"] == "R1"
+        assert public["presets"] == ["full"]
+
+    effort = registry.entry("fingerprint.model_role.effort_shares.band")
+    quality = registry.entry("fingerprint.model_role.evidence_quality")
+    assert effort["presets"] == ["employer-safe", "full"]
+    assert quality["presets"] == ["employer-safe", "full"]
+    assert registry.entry("fingerprint.model_role_profile")["status"] == "reserved"
 
 
 def test_conditioning_declarations_and_per_cell_support_are_registry_inputs():
@@ -737,6 +772,34 @@ def test_workflow_map_descriptors_pin_episode_support_privacy_and_risk(registry)
     assert registry.entry("fingerprint.workflow_map.model_routing.band")["inference_risk"] == "R1"
     assert "fingerprint.workflow_map.model_routing.band" not in registry.preset_ids(EMPLOYER_SAFE)
     assert "fingerprint.workflow_map.transition_shares.band" in registry.preset_ids(EMPLOYER_SAFE)
+
+
+def test_context_management_descriptors_pin_coverage_support_and_risk(registry):
+    expected_support = {
+        "fingerprint.context.fresh_session_rate.band": {"sessions": 5},
+        "fingerprint.context.resume_rate.band": {"sessions": 5},
+        "fingerprint.context.clear_rate.band": {"events": 5},
+        "fingerprint.context.manual_compactions.band": {"events": 5},
+        "fingerprint.context.automatic_compactions.band": {"events": 5},
+        "fingerprint.context.generations_per_episode.band": {"episodes": 5},
+        "fingerprint.context.one_context_episode_rate.band": {"episodes": 5},
+        "fingerprint.context.fresh_phase_split.band": {"sessions": 5},
+        "fingerprint.context.model_change_boundary_rate.band": {"events": 5},
+    }
+    for registry_id, support in expected_support.items():
+        entry = registry.entry(registry_id)
+        assert entry["status"] == "active"
+        assert entry["version"] == "1.0.0"
+        assert entry["class"] == "measured"
+        assert entry["min_support"] == support
+        assert entry["output_schema"]["additionalProperties"] is False
+        assert "coverage_band" in entry["output_schema"]["required"]
+        assert registry_id in registry.renderable_ids()
+    model_change = "fingerprint.context.model_change_boundary_rate.band"
+    assert registry.entry(model_change)["inference_risk"] == "R1"
+    assert model_change not in registry.preset_ids(EMPLOYER_SAFE)
+    assert "fingerprint.context.fresh_session_rate.band" in registry.preset_ids(EMPLOYER_SAFE)
+    assert registry.entry("fingerprint.context_profile")["status"] == "reserved"
 
 
 def test_active_exact_aggregate_needs_support_but_not_artificial_bands(registry):

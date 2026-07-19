@@ -321,7 +321,9 @@ def _claim(registry: Registry, entry: dict, output: dict) -> dict:
 
 def _registry_contract(registry: Registry) -> dict[str, dict]:
     entries = {registry_id: registry.entry(registry_id) for registry_id in TOKEN_COST_REGISTRY_IDS}
-    if any(entry["status"] != "active" or entry["class"] != "measured" for entry in entries.values()):
+    if any(
+        entry["status"] != "active" or entry["class"] != "measured" for entry in entries.values()
+    ):
         raise TokenCostScoringError("token-cost descriptor is not active")
     expected = {
         TOKENS_BY_MODEL_ID: {"sessions": 5},
@@ -550,9 +552,7 @@ def score_token_cost_profile(
     cost_cells = [
         {
             "model": model,
-            "cost_micro_usd": (
-                "UNKNOWN" if model in cost_model_unknown else cost_by_model[model]
-            ),
+            "cost_micro_usd": ("UNKNOWN" if model in cost_model_unknown else cost_by_model[model]),
         }
         for model in sorted(cost_model_sessions)
         if len(cost_model_sessions[model]) >= registry.min_support(COST_BY_MODEL_ID)["sessions"]

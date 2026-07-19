@@ -292,7 +292,9 @@ class _AmbientStateVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802 - ast API
         name = self._qualified_name(node.func)
         if name in {"__import__", "builtins.__import__", "importlib.import_module"}:
-            target = node.args[0].value if node.args and isinstance(node.args[0], ast.Constant) else "?"
+            target = (
+                node.args[0].value if node.args and isinstance(node.args[0], ast.Constant) else "?"
+            )
             self._issue(node, f"forbidden dynamic import {target!r}; use a static audited import")
         elif name and not self._is_reviewed_call(name):
             if name in FORBIDDEN_CALLS:
@@ -358,7 +360,9 @@ def _relative_import_base(
     imported_module: str | None,
     level: int,
 ) -> str:
-    package = current_module if current_path.name == "__init__.py" else current_module.rsplit(".", 1)[0]
+    package = (
+        current_module if current_path.name == "__init__.py" else current_module.rsplit(".", 1)[0]
+    )
     parts = package.split(".")
     if level > len(parts):
         return ""
@@ -413,9 +417,7 @@ def audit_module_closure(
             continue
         path = module_path(module_name, source_root=source_root)
         visited.add(module_name)
-        issues.extend(
-            audit_source(path, module_name=module_name, reviewed_hits=reviewed_hits)
-        )
+        issues.extend(audit_source(path, module_name=module_name, reviewed_hits=reviewed_hits))
         for imported in first_party_imports(module_name, path, source_root=source_root):
             if (module_name, imported) in REVIEWED_IMPORT_BOUNDARIES:
                 skipped_boundaries.add((module_name, imported))
@@ -492,9 +494,7 @@ def validate_pipeline_coverage(
         roots=roots,
         reviewed_non_stages=reviewed_non_stages,
     )
-    registered = {
-        stage.entrypoint.module for stage in stages if stage.discovery_entry
-    }
+    registered = {stage.entrypoint.module for stage in stages if stage.discovery_entry}
     missing = sorted(discovered - registered)
     extra = sorted(registered - discovered)
     if missing or extra:
@@ -560,7 +560,9 @@ def verify_installed_dependency_versions(path: Path = LOCK_PATH) -> None:
         if actual != expected:
             mismatches.append(f"{package}: expected {expected}, installed {actual}")
     if mismatches:
-        raise GateError("installed dependencies do not match requirements-ci.lock: " + "; ".join(mismatches))
+        raise GateError(
+            "installed dependencies do not match requirements-ci.lock: " + "; ".join(mismatches)
+        )
 
 
 _RUN_PROFILES = (
@@ -645,9 +647,7 @@ def _run_once(stage: Stage, profile: dict[str, str], root: Path, run_number: int
             f"stderr={_stream_fingerprint(completed.stderr)}"
         )
     if not artifact.is_file():
-        raise GateError(
-            f"determinism stage {stage.name!r} run {run_number} produced no artifact"
-        )
+        raise GateError(f"determinism stage {stage.name!r} run {run_number} produced no artifact")
     return artifact.read_bytes()
 
 

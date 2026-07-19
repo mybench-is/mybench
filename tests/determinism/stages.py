@@ -225,6 +225,58 @@ def _workflow_map_output() -> Invocation:
     )
 
 
+def _context_management_profile() -> Invocation:
+    # Reuse the fixed mixed-marker corpus from the owning scorer test so the
+    # subprocess byte gate covers both present and absent lifecycle evidence.
+    # Opaque grouping ids and canaries are consumed but never serialized.
+    from tests.scorer.test_context_management import mixed_marker_fixture
+
+    events, sessions, episodes, lifecycle = mixed_marker_fixture()
+    return Invocation(
+        args=(events,),
+        kwargs={
+            "sessions": sessions,
+            "episodes": episodes,
+            "lifecycle_events": lifecycle,
+            "episode_stitcher_version": "2.0.0",
+        },
+    )
+
+
+def _model_role_profile_output() -> Invocation:
+    # Fixed normalized metadata carriers plus structural phase events. Private
+    # session identities are synthetic routing keys and cannot enter output.
+    events = []
+    for index in range(5):
+        common = {"session_id": f"synthetic-model-role-session-{index}"}
+        events.extend(
+            [
+                {
+                    **common,
+                    "event_kind": "model",
+                    "authorship": "agent-turn",
+                    "model": "gpt-5-codex",
+                    "provider": "openai",
+                    "reasoning_effort": "high",
+                },
+                {
+                    **common,
+                    "event_kind": "reference",
+                    "authorship": "agent-turn",
+                    "reference_kind": "plan",
+                },
+                {
+                    **common,
+                    "event_kind": "tool-call",
+                    "authorship": "agent-turn",
+                    "tool_family": "edit",
+                },
+                {**common, "event_kind": "test", "authorship": "agent-turn"},
+            ]
+        )
+    return Invocation(args=(events,), kwargs={})
+
+
 def _evidence_coverage_aggregate() -> Invocation:
     # Fixed schema-v1 PROVEN metrics plus fixed, content-free contributions.
     # The production aggregate receives no raw evidence or ambient authority.
@@ -285,9 +337,11 @@ RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
+    "context-management-profile": _context_management_profile,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
     "pricing-snapshot-artifact": _pricing_snapshot_artifact,
+    "model-role-profile-output": _model_role_profile_output,
     "reference-target-join-corpus": _reference_target_join_corpus,
     "session-timing-output": _session_timing_output,
     "signed-claim": _signed_claim,
@@ -318,6 +372,13 @@ STAGES = (
         ("mybench.scorer.agent_hours",),
     ),
     Stage(
+        "context-management-profile",
+        EntryPoint("mybench.scorer.context_management", "score_context_management"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.context_management",),
+    ),
+    Stage(
         "evidence-coverage-aggregate",
         EntryPoint("mybench.scorer.evidence_coverage", "score_evidence_coverage"),
         ResultEncoding.CANONICAL_JSON_LINE,
@@ -344,6 +405,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.workflow_map",),
+    ),
+    Stage(
+        "model-role-profile-output",
+        EntryPoint("mybench.scorer.model_role", "score_model_role_profile"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.model_role",),
     ),
     Stage(
         "wave1-transcript-claim-set",

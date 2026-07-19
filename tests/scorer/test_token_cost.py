@@ -44,9 +44,7 @@ def _corpus(count: int = 5) -> tuple[list[dict], list[dict], list[dict]]:
         episodes.append(
             {
                 "task_episode_id": episode_id,
-                "episode_outcome": (
-                    "abandoned" if index == 0 else "closed-with-bound-commit"
-                ),
+                "episode_outcome": ("abandoned" if index == 0 else "closed-with-bound-commit"),
                 "outcome_classifier_version": "1.0.0",
             }
         )
@@ -138,9 +136,7 @@ def test_profile_is_deterministic_registry_conforming_and_support_qualified():
     assert first["local"]["abandoned_session_token_share_basis_points"] == 2000
 
     public = first["publishable"]
-    assert public[TOKENS_BY_MODEL_ID]["cells"] == [
-        {"model": "gpt-5", "token_band": "1m-9.9m"}
-    ]
+    assert public[TOKENS_BY_MODEL_ID]["cells"] == [{"model": "gpt-5", "token_band": "1m-9.9m"}]
     assert public[TOKENS_BY_PHASE_ID]["cells"] == [
         {"phase": "BUILD", "token_band": "1m-9.9m"},
         {"phase": "PLAN", "token_band": "100-999k"},
@@ -154,9 +150,7 @@ def test_profile_is_deterministic_registry_conforming_and_support_qualified():
     assert local_costs[COST_BY_MODEL_ID]["cells"] == [
         {"model": "gpt-5", "cost_micro_usd": 3_206_250}
     ]
-    assert local_costs[COST_PER_EPISODE_ID]["cells"] == [
-        {"cost_band": "<$1", "episode_count": 5}
-    ]
+    assert local_costs[COST_PER_EPISODE_ID]["cells"] == [{"cost_band": "<$1", "episode_count": 5}]
     assert local_costs[COST_PER_EPISODE_ID]["unknown_episode_count"] == 0
     assert local_costs[COST_BY_MODEL_ID]["estimate_label"].endswith("not-invoice")
 
@@ -228,7 +222,9 @@ def test_token_coverage_contribution_counts_missing_sessions_honestly():
             "outcome_classifier_version": "1.0.0",
         }
     )
-    sessions.append({"session_id": "synthetic-missing-token-session", "task_episode_id": extra_episode})
+    sessions.append(
+        {"session_id": "synthetic-missing-token-session", "task_episode_id": extra_episode}
+    )
     result = score_token_cost_profile(
         events,
         episodes=episodes,
