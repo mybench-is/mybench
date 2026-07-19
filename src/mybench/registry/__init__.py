@@ -272,6 +272,9 @@ class Registry:
             raise RegistryError(
                 f"{eid}: internal-feature-only entries may not appear in any preset"
             )
+        if (entry["wave"] == 0) != eid.startswith("fingerprint."):
+            raise RegistryError(f"{eid}: wave 0 is exactly the fingerprint.* placeholder namespace")
+
         if entry["disclosure"] == "local-report-only" and entry["presets"]:
             raise RegistryError(
                 f"{eid}: local-report-only entries may not appear in publication presets"
@@ -339,8 +342,6 @@ class Registry:
             raise RegistryError(f"{eid}: output_schema is not a valid schema") from exc
 
         if entry["status"] == "active":
-            if not entry["band_definitions"]:
-                raise RegistryError(f"{eid}: active entries need band_definitions")
             if not entry["min_support"]:
                 raise RegistryError(f"{eid}: active entries need min_support")
             if "properties" not in schema:
@@ -384,6 +385,8 @@ class Registry:
             non_band_fields = {"condition"} if conditioning is not None else set()
             enum_props = dict(_iter_enum_properties(schema, non_band_fields))
             declared = {bd["field"]: bd["bands"] for bd in entry["band_definitions"]}
+            if enum_props and not declared:
+                raise RegistryError(f"{eid}: enum output fields need band_definitions")
             for prop, enum in enum_props.items():
                 if prop not in declared:
                     raise RegistryError(

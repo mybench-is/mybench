@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.6.0",
+  "registry_version": "0.7.0",
   "format_status": "ratified-json",
   "entries": [
     {
@@ -1547,6 +1547,353 @@
       ],
       "neutrality_note": "design-discussion characterization where alternatives are explicitly weighed; never a trait claim",
       "notes": "Post-v0 (MYB-7); sibling transcript.decomposition_structure"
+    },
+    {
+      "id": "fingerprint.summary.recurring_sequences",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Recurring workflow phase sequences",
+      "inputs": [
+        "workflow-phase-stream",
+        "task-episode-identities"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sequences",
+          "classifier_version",
+          "k_suppression_floor",
+          "trust_tier"
+        ],
+        "properties": {
+          "sequences": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["sequence", "share_band"],
+              "properties": {
+                "sequence": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 5,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(TASK|PLAN|BUILD|TEST|DEBUG|REVIEW|COMMIT)$"
+                  }
+                },
+                "share_band": {
+                  "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+                }
+              }
+            }
+          },
+          "classifier_version": {"const": "1.0.0"},
+          "k_suppression_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Distinct supporting episodes divided by eligible episodes; sequences below k=5 are absent"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Aggregate recurring structure only; no per-episode stream or identifier is disclosed",
+      "notes": "MYB-13.3; top five length-2-to-5 phase n-grams after duplicate collapse, with UNKNOWN breaking adjacency"
+    },
+    {
+      "id": "fingerprint.summary.task_episode_total",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Observed task episode total",
+      "inputs": ["task-episode-identities"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_episode_total", "episode_stitcher_version", "trust_tier"],
+        "properties": {
+          "task_episode_total": {"type": "integer", "minimum": 5},
+          "episode_stitcher_version": {"const": "2.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Exact corpus-level total from versioned episode identities; no episode point or identifier is disclosed",
+      "notes": "MYB-13.3 source for the future observed-task-episode badge claim"
+    },
+    {
+      "id": "fingerprint.workflow_map.transition_shares.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Workflow phase transition shares",
+      "inputs": ["workflow-phase-stream"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "classifier_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from_phase", "to_phase", "share_band"],
+              "properties": {
+                "from_phase": {"type": "string", "pattern": "^(TASK|PLAN|BUILD|TEST|DEBUG|REVIEW|COMMIT)$"},
+                "to_phase": {"type": "string", "pattern": "^(TASK|PLAN|BUILD|TEST|DEBUG|REVIEW|COMMIT)$"},
+                "share_band": {
+                  "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+                }
+              }
+            }
+          },
+          "classifier_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Cell count divided by all outgoing transitions from its source phase; cells below five transitions are absent"
+        }
+      ],
+      "min_support": {"transitions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Corpus-level first-order phase shares characterize workflow shape without exposing an ordered episode stream",
+      "notes": "MYB-13.3; UNKNOWN breaks adjacency and is never bridged"
+    },
+    {
+      "id": "fingerprint.workflow_map.authorship_shares.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Workflow phase authorship shares",
+      "inputs": ["workflow-phase-stream", "normalized-authorship-tags"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "authorship_policy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "authorship", "share_band"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(TASK|PLAN|BUILD|TEST|DEBUG|REVIEW|COMMIT)$"},
+                "authorship": {"type": "string", "pattern": "^(HUMAN|AGENT|UNKNOWN)$"},
+                "share_band": {
+                  "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+                }
+              }
+            }
+          },
+          "authorship_policy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Authorship-tagged events divided by events in the same phase; cells below five events are absent"
+        }
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Subject-type-neutral activity shares characterize event attribution and never grade either source",
+      "notes": "MYB-13.3 over MYB-10.4 authorship tags"
+    },
+    {
+      "id": "fingerprint.workflow_map.model_routing.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Workflow phase model routing shares",
+      "inputs": ["workflow-phase-stream", "normalized-model-routing"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "model_vocabulary_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "model", "share_band"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(TASK|PLAN|BUILD|TEST|DEBUG|REVIEW|COMMIT)$"},
+                "model": {"type": "string", "pattern": "^(gpt-5|gpt-5-codex|o-series|claude-sonnet|claude-opus|claude-haiku|synthetic|other|UNKNOWN)$"},
+                "share_band": {
+                  "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+                }
+              }
+            }
+          },
+          "model_vocabulary_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Events routed to a pinned public model class divided by events in the same phase; cells below five events are absent"
+        }
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": ["full"],
+      "neutrality_note": "Model routing is operational metadata and never a trust anchor or capability claim",
+      "risk_note": "A routing profile can narrow workflow identity in combination; raw model/provider strings and thin cells remain private",
+      "notes": "MYB-13.3; unrecognized model strings reduce to other and missing routing to UNKNOWN"
+    },
+    {
+      "id": "fingerprint.workflow_map.rework_loop_rate.band",
+      "version": "1.0.1",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Structural rework loop rate",
+      "inputs": ["workflow-phase-stream", "task-episode-identities"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate_band", "definition_version", "trust_tier"],
+        "properties": {
+          "rate_band": {
+            "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+          },
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "rate_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Episodes containing a pinned BUILD/TEST/DEBUG to PLAN/BUILD backward edge divided by episodes with at least one known phase; zero eligible evidence is UNKNOWN and partial support below five is absent"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "A structural loop frequency describes workflow shape and is not framed as an error, deficit, or quality judgment",
+      "notes": "MYB-13.3 pinned structural edge set version 1.0.0; descriptor 1.0.1 corrects denominator eligibility and UNKNOWN/support behavior"
+    },
+    {
+      "id": "fingerprint.workflow_map.context_boundary_rate.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Workflow context-boundary transition rate",
+      "inputs": ["workflow-phase-stream", "normalized-context-identities"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate_band", "context_identity_version", "trust_tier"],
+        "properties": {
+          "rate_band": {
+            "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+          },
+          "context_identity_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "rate_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Known phase transitions crossing a context generation divided by known phase transitions with context identity coverage"
+        }
+      ],
+      "min_support": {"transitions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Aggregate boundary frequency only; no position, timestamp, session, or episode sequence is disclosed",
+      "notes": "MYB-13.3 consumes ADR-0013 context identities"
+    },
+    {
+      "id": "fingerprint.workflow_map.unknown_phase_share",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Workflow-map phase coverage",
+      "inputs": ["workflow-phase-stream", "task-episode-identities"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unknown_phase_share", "graph_confidence", "classifier_version", "trust_tier"],
+        "properties": {
+          "unknown_phase_share": {
+            "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+          },
+          "graph_confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "classifier_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "unknown_phase_share",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "UNKNOWN-classified events divided by classified events; never suppressed because it qualifies the graph"
+        },
+        {
+          "field": "graph_confidence",
+          "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"],
+          "note": "Weaker of known-phase event coverage and episode-with-events coverage"
+        }
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "UNKNOWN remains explicit and lowers graph confidence rather than being treated as zero or hidden",
+      "notes": "MYB-13.3 workflow-map evidence qualifier"
     },
     {
       "id": "fingerprint.workflow_summary",
