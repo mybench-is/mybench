@@ -131,12 +131,10 @@ def mixed_marker_fixture() -> tuple[list[dict], list[dict], list[dict], list[dic
     events, sessions, episodes, lifecycle = rich_fixture()
     marker_free_episodes = [_episode(index) for index in range(5, 10)]
     marker_free_sessions = [
-        _session(index, episode)
-        for index, episode in enumerate(marker_free_episodes, start=5)
+        _session(index, episode) for index, episode in enumerate(marker_free_episodes, start=5)
     ]
     events.extend(
-        _normalized(session, 0, "turn", authorship="human-turn")
-        for session in marker_free_sessions
+        _normalized(session, 0, "turn", authorship="human-turn") for session in marker_free_sessions
     )
     return (
         events,

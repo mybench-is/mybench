@@ -28,3 +28,9 @@ contain only registry bands/booleans and the registry-admitted R1 harness
 inventory; content, paths, session/event identifiers, tool/server names, and
 ordered streams are absent. See
 `docs/wave1-transcript-scorers.md`.
+
+`model_role.py` implements the Workflow Fingerprint model-role profile. It
+joins normalized model/provider/effort carriers to the pinned phase stream in
+memory, emits explicit UNKNOWN cells plus per-cell evidence quality, and feeds
+model/effort coverage into the MYB-13.8 contract. See
+`docs/model-role-profile.md`.

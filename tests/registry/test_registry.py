@@ -52,7 +52,7 @@ def add_tool_mix_conditioning(doc):
 
 def test_packaged_registry_loads_and_validates(registry):
     assert registry.version == "0.8.0"
-    assert len(registry.ids()) == 60
+    assert len(registry.ids()) == 67
     # ADR-0016 resolved OQ #31 by ratifying JSON at the owner sitting.
     assert packaged_doc()["format_status"] == "ratified-json"
 
@@ -202,6 +202,43 @@ def test_file_structure_topology_descriptor_pins_publication_controls(registry):
         check({**base_output, "observed_week": "2026-07-18"})
     with pytest.raises(RegistryError, match="does not conform"):
         check({**base_output, "observed_on": "2026-07-18"})
+
+
+def test_model_role_descriptors_pin_support_disclosure_and_operational_copy(registry):
+    ids = {
+        "fingerprint.model_role.model_shares.exact",
+        "fingerprint.model_role.model_shares.band",
+        "fingerprint.model_role.provider_shares.exact",
+        "fingerprint.model_role.provider_shares.band",
+        "fingerprint.model_role.effort_shares.exact",
+        "fingerprint.model_role.effort_shares.band",
+        "fingerprint.model_role.evidence_quality",
+    }
+    assert ids <= set(registry.ids())
+    for registry_id in ids:
+        entry = registry.entry(registry_id)
+        assert entry["status"] == "active"
+        assert entry["version"] == "1.0.0"
+        assert entry["class"] == "measured"
+        assert entry["min_support"] == {"events": 5}
+        assert "report_location" not in entry
+        assert "trust anchor" not in entry["title"].lower()
+
+    for dimension in ("model", "provider"):
+        assert (
+            registry.entry(f"fingerprint.model_role.{dimension}_shares.exact")["disclosure"]
+            == "local-report-only"
+        )
+        public = registry.entry(f"fingerprint.model_role.{dimension}_shares.band")
+        assert public["disclosure"] == "public"
+        assert public["inference_risk"] == "R1"
+        assert public["presets"] == ["full"]
+
+    effort = registry.entry("fingerprint.model_role.effort_shares.band")
+    quality = registry.entry("fingerprint.model_role.evidence_quality")
+    assert effort["presets"] == ["employer-safe", "full"]
+    assert quality["presets"] == ["employer-safe", "full"]
+    assert registry.entry("fingerprint.model_role_profile")["status"] == "reserved"
 
 
 def test_conditioning_declarations_and_per_cell_support_are_registry_inputs():

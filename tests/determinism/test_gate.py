@@ -154,6 +154,7 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
         "mybench.scorer.agent_hours",
         "mybench.scorer.context_management",
         "mybench.scorer.evidence_coverage",
+        "mybench.scorer.model_role",
         "mybench.scorer.score",
         "mybench.scorer.workflow_map",
         "mybench.scorer.wave1",
