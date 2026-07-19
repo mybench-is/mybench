@@ -21,6 +21,8 @@ the determinism test is the proof that ambient local data is not a source.
   inputs and never appear in transcript bytes. It also writes Claude hook and
   Codex structural-lifecycle streams, a Git-evidence snapshot, and synthetic
   plan/instruction/orchestration file trees.
+- `delegation.py` — deterministic normalized fixture generator for a two-edge,
+  nested/overlapping subagent forest used by the MYB-6.8 scorer gate.
 - `leakscan.py` — `assert_no_canaries(paths, canaries)`: raw / hex / base64
   (all byte phases) / gzip scanning of both artifact bytes and path names.
   `assert_no_canaries_in_directory(directory, canaries)` is the whole-report /

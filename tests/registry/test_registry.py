@@ -51,8 +51,8 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.7.0"
-    assert len(registry.ids()) == 51
+    assert registry.version == "0.8.0"
+    assert len(registry.ids()) == 55
     # ADR-0016 resolved OQ #31 by ratifying JSON at the owner sitting.
     assert packaged_doc()["format_status"] == "ratified-json"
 
@@ -202,6 +202,39 @@ def test_file_structure_topology_descriptor_pins_publication_controls(registry):
         check({**base_output, "observed_week": "2026-07-18"})
     with pytest.raises(RegistryError, match="does not conform"):
         check({**base_output, "observed_on": "2026-07-18"})
+
+
+def test_private_delegation_descriptors_cannot_enter_public_presets(registry):
+    ids = {
+        "fingerprint.topology.delegation_depth_distribution": {"sessions": 1},
+        "fingerprint.topology.fan_out_distribution": {"sessions": 1},
+        "fingerprint.topology.peak_parallel_lanes.exact": {"sessions": 5},
+        "fingerprint.topology.spawning_session_rate": {"sessions": 1},
+    }
+    for registry_id, support in ids.items():
+        entry = registry.entry(registry_id)
+        assert entry["status"] == "active"
+        assert entry["version"] == "1.0.0"
+        assert entry["class"] == "measured"
+        assert entry["disclosure"] == "local-report-only"
+        assert entry["inference_risk"] == "R1"
+        assert entry["presets"] == []
+        assert entry["report_location"] == "fingerprint.orchestration_topology"
+        assert registry.min_support(registry_id) == support
+        assert registry_id not in registry.renderable_ids()
+        assert registry_id not in registry.preset_ids("full")
+        assert registry_id not in registry.preset_ids(EMPLOYER_SAFE)
+        schema_text = json.dumps(entry["output_schema"], sort_keys=True)
+        for forbidden in (
+            "session_id",
+            "parent_session_id",
+            "path",
+            "filename",
+            "timestamp",
+            "sequence",
+            "graph_shape",
+        ):
+            assert forbidden not in schema_text
 
 
 def test_conditioning_declarations_and_per_cell_support_are_registry_inputs():
@@ -656,8 +689,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.7.0"',
-            b'"registry_version": "0.7.0", "registry_version": "0.7.0"',
+            b'"registry_version": "0.8.0"',
+            b'"registry_version": "0.8.0", "registry_version": "0.8.0"',
             1,
         )
     )

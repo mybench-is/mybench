@@ -206,6 +206,14 @@ def _workflow_map_output() -> Invocation:
     )
 
 
+def _orchestration_delegation_output() -> Invocation:
+    # Fixed nested/overlapping synthetic lane forest. The scorer receives no
+    # transcript path, ambient discovery authority, or caller-owned clock.
+    from tests.fixtures.delegation import synthetic_delegation_input
+
+    return Invocation(args=(synthetic_delegation_input().corpus,), kwargs={})
+
+
 def _evidence_coverage_aggregate() -> Invocation:
     # Fixed schema-v1 PROVEN metrics plus fixed, content-free contributions.
     # The production aggregate receives no raw evidence or ambient authority.
@@ -268,6 +276,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "codex-normalized-corpus": _codex_normalized_corpus,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
+    "orchestration-delegation-output": _orchestration_delegation_output,
     "reference-target-join-corpus": _reference_target_join_corpus,
     "session-timing-output": _session_timing_output,
     "signed-claim": _signed_claim,
@@ -309,6 +318,16 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.workflow_map",),
+    ),
+    Stage(
+        "orchestration-delegation-output",
+        EntryPoint(
+            "mybench.scorer.delegation",
+            "score_orchestration_delegation",
+        ),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.delegation",),
     ),
     Stage(
         "wave1-transcript-claim-set",

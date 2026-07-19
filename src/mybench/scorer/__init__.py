@@ -6,6 +6,16 @@ from mybench.scorer.agent_hours import (
     AgentHoursScoringError,
     score_agent_hours,
 )
+from mybench.scorer.delegation import (
+    DELEGATION_DEPTH_DISTRIBUTION_ID,
+    DELEGATION_REGISTRY_IDS,
+    DELEGATION_SCORER_VERSION,
+    FAN_OUT_DISTRIBUTION_ID,
+    PEAK_PARALLEL_LANES_DISTRIBUTION_ID,
+    SPAWNING_SESSION_RATE_ID,
+    DelegationScoringError,
+    score_orchestration_delegation,
+)
 from mybench.scorer.evidence_coverage import (
     AMBIGUITY_CATEGORIES,
     COVERAGE_CONTRACT_VERSION,
@@ -65,6 +75,14 @@ __all__ = [
     "AGENT_HOURS_SCORER_VERSION",
     "AgentHoursScoringError",
     "score_agent_hours",
+    "DELEGATION_DEPTH_DISTRIBUTION_ID",
+    "DELEGATION_REGISTRY_IDS",
+    "DELEGATION_SCORER_VERSION",
+    "DelegationScoringError",
+    "FAN_OUT_DISTRIBUTION_ID",
+    "PEAK_PARALLEL_LANES_DISTRIBUTION_ID",
+    "SPAWNING_SESSION_RATE_ID",
+    "score_orchestration_delegation",
     "AMBIGUITY_CATEGORIES",
     "COVERAGE_CONTRACT_VERSION",
     "EvidenceCoverageError",
