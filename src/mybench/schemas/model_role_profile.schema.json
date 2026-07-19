@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/model_role_profile.schema.json",
+  "title": "Mybench model-role profile scorer section",
+  "description": "Closed local aggregate, support-qualified registry projections, and MYB-13.8 coverage contribution. Session identifiers and raw metadata strings are structurally excluded.",
+  "$defs": {
+    "basisPointsOrUnknown": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 10000},
+        {"const": "UNKNOWN"}
+      ]
+    },
+    "rolePhase": {
+      "enum": ["planning", "implementation", "debugging", "review", "unknown"]
+    },
+    "inputClass": {
+      "enum": ["model", "provider", "effort"]
+    },
+    "modelValue": {
+      "enum": [
+        "gpt-5",
+        "gpt-5-codex",
+        "o-series",
+        "claude-sonnet",
+        "claude-opus",
+        "claude-haiku",
+        "synthetic",
+        "other",
+        "UNKNOWN"
+      ]
+    },
+    "providerValue": {
+      "enum": [
+        "anthropic",
+        "aws-bedrock",
+        "google-vertex",
+        "openai",
+        "azure-openai",
+        "synthetic",
+        "other",
+        "UNKNOWN"
+      ]
+    },
+    "effortValue": {
+      "enum": ["low", "medium", "high", "max", "UNKNOWN"]
+    },
+    "shareBand": {
+      "enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage_basis_points", "confidence", "evidence_state"],
+      "properties": {
+        "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+        "evidence_state": {"enum": ["available", "partial", "unknown"]}
+      }
+    },
+    "localCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "input_class",
+        "value",
+        "share_basis_points",
+        "evidence_quality"
+      ],
+      "properties": {
+        "phase": {"$ref": "#/$defs/rolePhase"},
+        "input_class": {"$ref": "#/$defs/inputClass"},
+        "value": {
+          "enum": [
+            "gpt-5",
+            "gpt-5-codex",
+            "o-series",
+            "claude-sonnet",
+            "claude-opus",
+            "claude-haiku",
+            "anthropic",
+            "aws-bedrock",
+            "google-vertex",
+            "openai",
+            "azure-openai",
+            "synthetic",
+            "other",
+            "low",
+            "medium",
+            "high",
+            "max",
+            "UNKNOWN"
+          ]
+        },
+        "share_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+        "evidence_quality": {"$ref": "#/$defs/quality"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"input_class": {"const": "model"}}, "required": ["input_class"]},
+          "then": {"properties": {"value": {"$ref": "#/$defs/modelValue"}}}
+        },
+        {
+          "if": {"properties": {"input_class": {"const": "provider"}}, "required": ["input_class"]},
+          "then": {"properties": {"value": {"$ref": "#/$defs/providerValue"}}}
+        },
+        {
+          "if": {"properties": {"input_class": {"const": "effort"}}, "required": ["input_class"]},
+          "then": {"properties": {"value": {"$ref": "#/$defs/effortValue"}}}
+        }
+      ]
+    },
+    "exactCellBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "share_basis_points"],
+      "properties": {
+        "phase": {"$ref": "#/$defs/rolePhase"},
+        "share_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+      }
+    },
+    "bandCellBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "share_band"],
+      "properties": {
+        "phase": {"$ref": "#/$defs/rolePhase"},
+        "share_band": {"$ref": "#/$defs/shareBand"}
+      }
+    },
+    "modelExactOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "model_vocabulary_version",
+        "role_phase_taxonomy_version",
+        "cell_support_floor",
+        "trust_tier"
+      ],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "model", "share_basis_points"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "model": {"$ref": "#/$defs/modelValue"},
+              "share_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+            }
+          }
+        },
+        "model_vocabulary_version": {"const": "1.0.0"},
+        "role_phase_taxonomy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "modelBandOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "model_vocabulary_version",
+        "role_phase_taxonomy_version",
+        "cell_support_floor",
+        "trust_tier"
+      ],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "model", "share_band"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "model": {"$ref": "#/$defs/modelValue"},
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "model_vocabulary_version": {"const": "1.0.0"},
+        "role_phase_taxonomy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "providerExactOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "provider_vocabulary_version",
+        "role_phase_taxonomy_version",
+        "cell_support_floor",
+        "trust_tier"
+      ],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "provider", "share_basis_points"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "provider": {"$ref": "#/$defs/providerValue"},
+              "share_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+            }
+          }
+        },
+        "provider_vocabulary_version": {"const": "1.0.0"},
+        "role_phase_taxonomy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "providerBandOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "provider_vocabulary_version",
+        "role_phase_taxonomy_version",
+        "cell_support_floor",
+        "trust_tier"
+      ],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "provider", "share_band"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "provider": {"$ref": "#/$defs/providerValue"},
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "provider_vocabulary_version": {"const": "1.0.0"},
+        "role_phase_taxonomy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "effortExactOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "effort_vocabulary_version",
+        "role_phase_taxonomy_version",
+        "cell_support_floor",
+        "trust_tier"
+      ],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "effort", "share_basis_points"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "effort": {"$ref": "#/$defs/effortValue"},
+              "share_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+            }
+          }
+        },
+        "effort_vocabulary_version": {"const": "1.0.0"},
+        "role_phase_taxonomy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "effortBandOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "effort_vocabulary_version",
+        "role_phase_taxonomy_version",
+        "cell_support_floor",
+        "trust_tier"
+      ],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "effort", "share_band"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "effort": {"$ref": "#/$defs/effortValue"},
+              "share_band": {"$ref": "#/$defs/shareBand"}
+            }
+          }
+        },
+        "effort_vocabulary_version": {"const": "1.0.0"},
+        "role_phase_taxonomy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "qualityOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "role_phase_taxonomy_version",
+        "cell_support_floor",
+        "trust_tier"
+      ],
+      "properties": {
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "phase",
+              "input_class",
+              "coverage_band",
+              "confidence",
+              "evidence_state"
+            ],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "input_class": {"$ref": "#/$defs/inputClass"},
+              "coverage_band": {"$ref": "#/$defs/shareBand"},
+              "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+              "evidence_state": {"enum": ["available", "partial", "unknown"]}
+            }
+          }
+        },
+        "role_phase_taxonomy_version": {"const": "1.0.0"},
+        "cell_support_floor": {"const": 5},
+        "trust_tier": {"const": "ANCHORED"}
+      }
+    },
+    "coverageContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "producer", "observations", "missing_ambiguous"],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "producer": {"const": "model-role-profile"},
+        "observations": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["input_class", "basis", "coverage_basis_points", "confidence", "evidence_state"],
+              "properties": {
+                "input_class": {"const": "model"},
+                "basis": {"const": "recognized-model-or-other-per-eligible-event"},
+                "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+                "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+                "evidence_state": {"enum": ["available", "partial", "unknown"]}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["input_class", "basis", "coverage_basis_points", "confidence", "evidence_state"],
+              "properties": {
+                "input_class": {"const": "effort"},
+                "basis": {"const": "recognized-effort-per-eligible-event"},
+                "coverage_basis_points": {"$ref": "#/$defs/basisPointsOrUnknown"},
+                "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+                "evidence_state": {"enum": ["available", "partial", "unknown"]}
+              }
+            }
+          ],
+          "items": false
+        },
+        "missing_ambiguous": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["category", "count"],
+            "properties": {
+              "category": {"enum": ["missing-model", "missing-effort"]},
+              "count": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "scorer_version",
+    "classifier_version",
+    "role_phase_taxonomy_version",
+    "trust_basis",
+    "provider_semantics",
+    "local",
+    "publishable",
+    "coverage_contribution"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "model-role-profile-section"},
+    "scorer_version": {"const": "1.0.0"},
+    "classifier_version": {"const": "1.0.0"},
+    "role_phase_taxonomy_version": {"const": "1.0.0"},
+    "trust_basis": {"const": "signatures-commitments-and-timestamps-only"},
+    "provider_semantics": {"const": "operational-metadata-only"},
+    "local": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eligible_event_count", "phase_counts", "distribution_cells", "registry_outputs"],
+      "properties": {
+        "eligible_event_count": {"type": "integer", "minimum": 0},
+        "phase_counts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "eligible_events"],
+            "properties": {
+              "phase": {"$ref": "#/$defs/rolePhase"},
+              "eligible_events": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "distribution_cells": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/localCell"}
+        },
+        "registry_outputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fingerprint.model_role.model_shares.exact": {"$ref": "#/$defs/modelExactOutput"},
+            "fingerprint.model_role.provider_shares.exact": {"$ref": "#/$defs/providerExactOutput"},
+            "fingerprint.model_role.effort_shares.exact": {"$ref": "#/$defs/effortExactOutput"}
+          }
+        }
+      }
+    },
+    "publishable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint.model_role.model_shares.band": {"$ref": "#/$defs/modelBandOutput"},
+        "fingerprint.model_role.provider_shares.band": {"$ref": "#/$defs/providerBandOutput"},
+        "fingerprint.model_role.effort_shares.band": {"$ref": "#/$defs/effortBandOutput"},
+        "fingerprint.model_role.evidence_quality": {"$ref": "#/$defs/qualityOutput"}
+      }
+    },
+    "coverage_contribution": {"$ref": "#/$defs/coverageContribution"}
+  }
+}
