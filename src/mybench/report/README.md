@@ -36,3 +36,13 @@ SVG, leaving the required `assets/` directory empty.
 
 See `docs/local-report-bundles.md` for layout, local-only handling, and the
 signature verification recipe.
+
+`preview/` is the separate MYB-14.1 local publication-preview boundary. It
+projects only registry/preset-admitted atomic fields, coarsens the evidence
+window to ISO weeks, renders a second closed zero-JavaScript page, signs the
+three payload artifacts into `public-report.sig`, and leak-scans all four exact
+staged files before atomic finalization below the existing local report id.
+Signer authorization comes only from the init-owned canonical local identity
+chain, never anchor staging or a Git clone. It has no upload, hosted-id,
+publication-record, or network path. See
+`docs/publication-preview-bundles.md`.

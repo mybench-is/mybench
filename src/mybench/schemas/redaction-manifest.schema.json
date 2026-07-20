@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/redaction-manifest.schema.json",
+  "title": "Mybench publication-preview redaction manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "preset", "registry", "categories", "field_selection", "registry_policy"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "preset": {"enum": ["employer-safe", "full"]},
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest"],
+      "properties": {
+        "version": {"$ref": "#/$defs/semver"},
+        "digest": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "categories": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "prefixItems": [
+        {"$ref": "#/$defs/prompts"},
+        {"$ref": "#/$defs/responses"},
+        {"$ref": "#/$defs/code"},
+        {"$ref": "#/$defs/repositoryNames"},
+        {"$ref": "#/$defs/filenames"},
+        {"$ref": "#/$defs/localPaths"},
+        {"$ref": "#/$defs/employerClientNames"},
+        {"$ref": "#/$defs/exactTimestamps"},
+        {"$ref": "#/$defs/secrets"},
+        {"$ref": "#/$defs/privateUrls"},
+        {"$ref": "#/$defs/rawOrchestrationContents"}
+      ],
+      "items": false
+    },
+    "field_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["included", "excluded_from_source", "eligible_but_absent"],
+      "properties": {
+        "included": {"$ref": "#/$defs/idList"},
+        "excluded_from_source": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["registry_id", "reason"],
+            "properties": {
+              "registry_id": {"$ref": "#/$defs/registryId"},
+              "reason": {"enum": ["local-only", "preset-excluded", "anchor-not-covered"]}
+            }
+          }
+        },
+        "eligible_but_absent": {"$ref": "#/$defs/idList"}
+      }
+    },
+    "registry_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eligible", "excluded", "internal_feature_only_count"],
+      "properties": {
+        "eligible": {"$ref": "#/$defs/idList"},
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "reason"],
+            "properties": {
+              "id": {"$ref": "#/$defs/registryId"},
+              "reason": {"type": "string", "minLength": 1, "maxLength": 1024}
+            }
+          }
+        },
+        "internal_feature_only_count": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "registryId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){1,5}$",
+      "maxLength": 160
+    },
+    "idList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/registryId"}
+    },
+    "categoryBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "status"],
+      "properties": {
+        "category": {"type": "string"},
+        "status": {"const": "excluded"}
+      }
+    },
+    "prompts": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "prompts"}}}
+      ]
+    },
+    "responses": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "responses"}}}
+      ]
+    },
+    "code": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "code"}}}
+      ]
+    },
+    "repositoryNames": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "repository-names"}}}
+      ]
+    },
+    "filenames": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "filenames"}}}
+      ]
+    },
+    "localPaths": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "local-paths"}}}
+      ]
+    },
+    "employerClientNames": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "employer-client-names"}}}
+      ]
+    },
+    "exactTimestamps": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "exact-timestamps"}}}
+      ]
+    },
+    "secrets": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "secrets"}}}
+      ]
+    },
+    "privateUrls": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "private-urls"}}}
+      ]
+    },
+    "rawOrchestrationContents": {
+      "allOf": [
+        {"$ref": "#/$defs/categoryBase"},
+        {"properties": {"category": {"const": "raw-orchestration-file-contents"}}}
+      ]
+    }
+  }
+}
