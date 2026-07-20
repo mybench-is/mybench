@@ -19,7 +19,7 @@
   "properties": {
     "schema_version": {"const": "1"},
     "report_version": {"const": "v0.2.0"},
-    "scorer_version": {"enum": ["0.2.0", "0.3.0", "0.4.0"]},
+    "scorer_version": {"enum": ["0.2.0", "0.3.0"]},
     "input_schema_versions": {
       "type": "object",
       "additionalProperties": false,

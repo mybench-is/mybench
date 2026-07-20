@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from mybench import cli, identity, nonces, paths
 from mybench.identity import identity_id_for
 from mybench.report.cli import assemble_bundle, canonical_manifest_bytes, evidence_manifest
+from mybench.report import page as report_page
 from mybench.report.page import PageError, render_public_page
 from mybench.report.preview import (
     EXCLUSION_CATEGORIES,
@@ -185,7 +186,7 @@ def test_public_projection_excludes_local_fields_and_renderer_rejects_preset_esc
     preview = _build(source)
     public_report = json.loads((preview / "public-report.json").read_bytes())
     assert public_report["report_version"] == "v0.2.0"
-    assert public_report["scorer_version"] == "0.4.0"
+    assert public_report["scorer_version"] == "0.3.0"
     assert public_report["input_schema_versions"] == {
         "anchor": ["2"],
         "ledger": ["2"],
@@ -218,7 +219,7 @@ PUBLIC_ENVELOPE_VERSION_CANARIES = (
     pytest.param(("report_version",), "MYBENCH-CANARY-public-report-version", id="report"),
     pytest.param(
         ("scorer_version",),
-        "0.4.0-MYBENCH-CANARY-public-scorer-version",
+        "0.3.0-MYBENCH-CANARY-public-scorer-version",
         id="scorer",
     ),
     pytest.param(
@@ -249,6 +250,27 @@ def _set_envelope_version(document: dict, location: tuple[str, ...], value: str)
         document[location[0]] = value
     else:
         document[location[0]][location[1]] = [value]
+
+
+def test_public_scorer_version_runtime_schema_and_shipped_fixture_vocabularies_align():
+    schema_vocabulary = tuple(
+        load_validator("public-report.schema.json").schema["properties"]["scorer_version"]["enum"]
+    )
+    assert schema_vocabulary == report_page._PUBLIC_SCORER_VERSIONS == ("0.2.0", "0.3.0")
+    assert v2_report()["scorer_version"] == "0.3.0"
+
+    for accepted in schema_vocabulary:
+        source = v2_report()
+        source["scorer_version"] = accepted
+        public, _manifest = derive_public_report(source, preset="full")
+        assert public["scorer_version"] == accepted
+        assert not list(load_validator("public-report.schema.json").iter_errors(public))
+
+    for rejected in ("0.1.0", "0.4.0", "0.3.0-unshipped"):
+        source = v2_report()
+        source["scorer_version"] = rejected
+        with pytest.raises(PreviewError, match="versions are not pinned"):
+            derive_public_report(source, preset="full")
 
 
 @pytest.mark.parametrize(("location", "canary"), PUBLIC_ENVELOPE_VERSION_CANARIES)

@@ -100,7 +100,7 @@ PUBLIC_EXCLUSION_CATEGORIES = (
 # The private report schema intentionally accepts historical and future producer
 # strings, but those strings must never become a free-form public byte channel.
 _PUBLIC_REPORT_VERSIONS = ("v0.2.0",)
-_PUBLIC_SCORER_VERSIONS = ("0.2.0", "0.3.0", "0.4.0")
+_PUBLIC_SCORER_VERSIONS = ("0.2.0", "0.3.0")
 _PUBLIC_INPUT_SCHEMA_VERSIONS = {
     "ledger": ("1", "2", "3"),
     "anchor": ("1", "2"),

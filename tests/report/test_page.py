@@ -132,7 +132,7 @@ def v2_report(registry=None):
         "schema_version": "2",
         "report_version": "v0.2.0",
         "generated_at": "2026-07-18T00:00:00Z",
-        "scorer_version": "0.4.0",
+        "scorer_version": "0.3.0",
         "input_schema_versions": {
             "ledger": ["2"],
             "anchor": ["2"],
