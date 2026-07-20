@@ -79,6 +79,9 @@ level, so nonce, preimage, prompt, content, path, and filename fields cannot be
 added. The complete bundle still receives leak-scan coverage because a local
 report can contain details that must never be uploaded.
 
-Publication preview, sanitization, upload, hosted IDs, revocation, and device
-key rotation are separate gated features. This command implements none of
-them.
+The separately invoked local publication preview is documented in
+[`publication-preview-bundles.md`](publication-preview-bundles.md). It reads
+this immutable bundle but never copies `evidence-manifest.json`. Upload,
+hosted IDs, publication records, revocation, and device-key rotation remain
+separately gated features; neither report assembly nor preview generation
+implements them.
