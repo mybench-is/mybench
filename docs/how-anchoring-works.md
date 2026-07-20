@@ -90,6 +90,16 @@ file simply means "nothing anchored that day"; a *gap in the ranges* means
 something was withheld. The two are distinguishable by design, which is the
 property that makes the log more than a diary.
 
+The private identity key, the local signed identity records, and the global log
+are distinct. `mybench init` keeps private keys under the local data directory
+and creates or verifies an offline signed genesis/current-device chain there.
+That local chain is not registration and is not publication. Only a later,
+explicit log-submission operation can ask the project-global log to accept the
+public-candidate records. Normal users do not clone the anchors repository;
+local report and preview flows read the canonical local chain. The one-time
+founder-era exact-record migration is documented in
+[Local identity state](local-identity-state.md).
+
 ## Step 4 — Bitcoin timestamps (the other half)
 
 ```mermaid
