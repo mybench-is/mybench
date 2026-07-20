@@ -30,6 +30,11 @@ canonical offline identity chain. A fresh install creates one self-certifying
 genesis plus one active current-device binding and no handle. Repeated init
 verifies these immutable records without rewriting them. Output explicitly
 says the identity is local-only: nothing is registered or published.
+Machine-readable plain-init output carries `identity_ready: true`,
+`local_only: true`, `registered: false`, and `published: false`. The explicit
+`--local-first --detect ... --accept-all --json` form carries the same typed
+identity boundary; omitting the redundant `--local-first` flag preserves the
+older detection-summary JSON shape without changing initialization semantics.
 `--local-first` is explicit spelling for the current default. The bounded
 `--migrate-founder-records-from` compatibility option copies the founder's
 exact three already-signed records from an explicitly named legacy clone; it

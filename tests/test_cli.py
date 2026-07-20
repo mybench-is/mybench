@@ -49,7 +49,15 @@ def test_init_scan_report_synthetic_e2e_is_deterministic_and_leak_free(
 
     assert cli.main(["init", "--local-first", "--json"]) == 0
     init_output = capsys.readouterr()
-    assert json.loads(init_output.out) == {"command": "init", "keys_ready": 4, "status": "ok"}
+    assert json.loads(init_output.out) == {
+        "command": "init",
+        "identity_ready": True,
+        "keys_ready": 4,
+        "local_only": True,
+        "published": False,
+        "registered": False,
+        "status": "ok",
+    }
     for directory in (paths.data_dir(), paths.reports_dir()):
         assert _mode(directory) == 0o700
     for key in (

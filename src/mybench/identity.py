@@ -23,8 +23,11 @@ import os
 import re
 import secrets
 import stat
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date as calendar_date
 from pathlib import Path
+from typing import Iterator
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -305,36 +308,125 @@ def _device_public_hex() -> str:
     return public.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
 
 
-def _checked_private_directory(directory: Path) -> None:
+@dataclass(frozen=True)
+class _OpenedDirectory:
+    fd: int
+    parent_fd: int | None
+    name: str | None
+    opened: os.stat_result
+    policy: str
+
+
+_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+
+
+def _directory_invariant(info: os.stat_result, policy: str) -> tuple[int, ...]:
+    base = (info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode))
+    if policy == "anchor":
+        return base
+    return base + (info.st_mode, info.st_nlink, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _validate_opened_directory(opened: _OpenedDirectory) -> None:
     try:
-        info = directory.lstat()
+        current = os.fstat(opened.fd)
+        if not stat.S_ISDIR(current.st_mode) or _directory_invariant(
+            current, opened.policy
+        ) != _directory_invariant(opened.opened, opened.policy):
+            raise _invalid_state()
+        if opened.policy == "private" and stat.S_IMODE(current.st_mode) != 0o700:
+            raise _invalid_state()
+        if opened.parent_fd is not None and opened.name is not None:
+            linked = os.stat(opened.name, dir_fd=opened.parent_fd, follow_symlinks=False)
+            if (
+                not stat.S_ISDIR(linked.st_mode)
+                or stat.S_ISLNK(linked.st_mode)
+                or (linked.st_dev, linked.st_ino) != (current.st_dev, current.st_ino)
+            ):
+                raise _invalid_state()
+    except IdentityError:
+        raise
     except OSError as exc:
         raise _invalid_state() from exc
-    if (
-        not stat.S_ISDIR(info.st_mode)
-        or stat.S_ISLNK(info.st_mode)
-        or stat.S_IMODE(info.st_mode) != 0o700
-    ):
-        raise _invalid_state()
 
 
-def _read_file(path: Path, *, private: bool) -> tuple[bytes, tuple[int, int]]:
+def _open_child_directory(
+    opened: list[_OpenedDirectory], parent_fd: int, name: str, *, policy: str
+) -> _OpenedDirectory:
     try:
-        before = path.lstat()
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or stat.S_ISLNK(before.st_mode)
-            or before.st_nlink != 1
-            or (private and stat.S_IMODE(before.st_mode) != 0o600)
-            or before.st_size <= 0
-            or before.st_size > _MAX_RECORD_BYTES
-        ):
-            raise _invalid_state()
+        fd = os.open(name, _DIRECTORY_FLAGS, dir_fd=parent_fd)
+        info = os.fstat(fd)
+        child = _OpenedDirectory(fd, parent_fd, name, info, policy)
+        _validate_opened_directory(child)
+        opened.append(child)
+        return child
+    except IdentityError:
+        if "fd" in locals():
+            os.close(fd)
+        raise
+    except OSError as exc:
+        if "fd" in locals():
+            os.close(fd)
+        raise _invalid_state() from exc
+
+
+@contextmanager
+def _open_absolute_directory(
+    directory: Path, *, final_policy: str
+) -> Iterator[tuple[_OpenedDirectory, list[_OpenedDirectory]]]:
+    absolute = directory.absolute()
+    parts = absolute.parts
+    if not parts or parts[0] != absolute.anchor or any(part in {"", ".", ".."} for part in parts[1:]):
+        raise _invalid_state()
+    opened: list[_OpenedDirectory] = []
+    try:
+        root_fd = os.open(absolute.anchor, _DIRECTORY_FLAGS)
+        root = _OpenedDirectory(root_fd, None, None, os.fstat(root_fd), "anchor")
+        opened.append(root)
+        current = root
+        for index, part in enumerate(parts[1:]):
+            policy = final_policy if index == len(parts[1:]) - 1 else "anchor"
+            current = _open_child_directory(opened, current.fd, part, policy=policy)
+        yield current, opened
+        for item in reversed(opened):
+            _validate_opened_directory(item)
+    except IdentityError:
+        raise
+    except OSError as exc:
+        raise _invalid_state() from exc
+    finally:
+        for item in reversed(opened):
+            try:
+                os.close(item.fd)
+            except OSError:
+                pass
+
+
+def _file_invariant(info: os.stat_result) -> tuple[int, ...]:
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _read_file_at(directory_fd: int, name: str, *, private: bool) -> tuple[bytes, tuple[int, int]]:
+    try:
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NOATIME", 0)
-        fd = os.open(path, flags)
+        fd = os.open(name, flags, dir_fd=directory_fd)
         try:
             opened = os.fstat(fd)
-            if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            if (
+                not stat.S_ISREG(opened.st_mode)
+                or opened.st_nlink != 1
+                or (private and stat.S_IMODE(opened.st_mode) != 0o600)
+                or opened.st_size <= 0
+                or opened.st_size > _MAX_RECORD_BYTES
+            ):
                 raise _invalid_state()
             raw = b""
             while len(raw) <= _MAX_RECORD_BYTES:
@@ -342,11 +434,14 @@ def _read_file(path: Path, *, private: bool) -> tuple[bytes, tuple[int, int]]:
                 if not chunk:
                     break
                 raw += chunk
-            after = os.fstat(fd)
+            current = os.fstat(fd)
+            linked = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
             if (
                 len(raw) > _MAX_RECORD_BYTES
-                or (after.st_dev, after.st_ino, after.st_size)
-                != (opened.st_dev, opened.st_ino, opened.st_size)
+                or not stat.S_ISREG(linked.st_mode)
+                or stat.S_ISLNK(linked.st_mode)
+                or _file_invariant(current) != _file_invariant(opened)
+                or (linked.st_dev, linked.st_ino) != (current.st_dev, current.st_ino)
             ):
                 raise _invalid_state()
         finally:
@@ -355,25 +450,30 @@ def _read_file(path: Path, *, private: bool) -> tuple[bytes, tuple[int, int]]:
         raise
     except OSError as exc:
         raise _invalid_state() from exc
-    return raw, (before.st_atime_ns, before.st_mtime_ns)
+    return raw, (opened.st_atime_ns, opened.st_mtime_ns)
 
 
 def _managed_record_bytes(identity_id: str) -> tuple[tuple[str, bytes], ...]:
-    state_root = paths.identity_state_dir()
-    records_root = paths.identity_records_dir()
-    identity_root = paths.identity_record_dir(identity_id)
-    for directory in (state_root, records_root, identity_root):
-        _checked_private_directory(directory)
-    try:
-        roots = tuple(records_root.iterdir())
-        entries = tuple(identity_root.iterdir())
-    except OSError as exc:
-        raise _invalid_state() from exc
-    if len(roots) != 1 or roots[0].name != identity_id or roots[0].is_symlink():
-        raise _invalid_state()
-    if not entries:
-        raise _invalid_state()
-    return tuple((entry.name, _read_file(entry, private=True)[0]) for entry in sorted(entries))
+    with _open_absolute_directory(paths.data_dir(), final_policy="private") as (
+        data,
+        opened,
+    ):
+        state_root = _open_child_directory(opened, data.fd, "identity", policy="private")
+        records_root = _open_child_directory(
+            opened, state_root.fd, "records", policy="private"
+        )
+        roots = tuple(sorted(os.listdir(records_root.fd)))
+        if roots != (identity_id,):
+            raise _invalid_state()
+        identity_root = _open_child_directory(
+            opened, records_root.fd, identity_id, policy="private"
+        )
+        entries = tuple(sorted(os.listdir(identity_root.fd)))
+        if not entries:
+            raise _invalid_state()
+        return tuple(
+            (name, _read_file_at(identity_root.fd, name, private=True)[0]) for name in entries
+        )
 
 
 def load_local_identity_chain() -> tuple[dict, ...]:
@@ -393,21 +493,69 @@ def load_local_identity_chain() -> tuple[dict, ...]:
 
 
 def _store_is_absent(identity_id: str) -> bool:
-    state_root = paths.identity_state_dir()
-    records_root = paths.identity_records_dir()
-    identity_root = paths.identity_record_dir(identity_id)
-    if identity_root.exists() or identity_root.is_symlink():
+    with _open_absolute_directory(paths.data_dir(), final_policy="private") as (
+        data,
+        opened,
+    ):
+        data_entries = set(os.listdir(data.fd))
+        if "identity" not in data_entries:
+            return True
+        state_root = _open_child_directory(opened, data.fd, "identity", policy="private")
+        if tuple(sorted(os.listdir(state_root.fd))) != ("records",):
+            raise _invalid_state()
+        records_root = _open_child_directory(
+            opened, state_root.fd, "records", policy="private"
+        )
+        roots = tuple(sorted(os.listdir(records_root.fd)))
+        if not roots:
+            return True
+        if identity_id in roots:
+            return False
+        raise _invalid_state()
+
+
+def _retryable_bootstrap_state() -> bool:
+    """Recognize only the exact footprint left by an interrupted record install.
+
+    Older key-only installations have all four key roles but no empty A11
+    hierarchy; any evidence/config/anchor data or unexpected entry also makes
+    this false. That distinction prevents a founder-era identity from silently
+    receiving replacement chronology while allowing our own cleaned atomic
+    install failure to resume.
+    """
+    expected_empty = {
+        "anchors",
+        "archive",
+        "enrollments",
+        "ledger",
+        "nonces",
+        "queue",
+        "reports",
+    }
+    try:
+        with _open_absolute_directory(paths.data_dir(), final_policy="private") as (
+            data,
+            opened,
+        ):
+            if set(os.listdir(data.fd)) != {*expected_empty, "identity", "keys"}:
+                return False
+            for name in sorted(expected_empty):
+                directory = _open_child_directory(opened, data.fd, name, policy="private")
+                if os.listdir(directory.fd):
+                    return False
+            keys = _open_child_directory(opened, data.fd, "keys", policy="private")
+            key_names = {"device.key", "device.pub", "identity.key", "identity.pub"}
+            if set(os.listdir(keys.fd)) != key_names:
+                return False
+            for name in sorted(key_names):
+                _read_file_at(keys.fd, name, private=name.endswith(".key"))
+            state_root = _open_child_directory(opened, data.fd, "identity", policy="private")
+            if tuple(os.listdir(state_root.fd)) != ("records",):
+                return False
+            records = _open_child_directory(opened, state_root.fd, "records", policy="private")
+            return not os.listdir(records.fd)
+    except (IdentityError, OSError):
         return False
-    for directory in (state_root, records_root):
-        if directory.exists() or directory.is_symlink():
-            _checked_private_directory(directory)
-    if records_root.exists():
-        try:
-            if any(records_root.iterdir()):
-                raise _invalid_state()
-        except OSError as exc:
-            raise _invalid_state() from exc
-    return True
 
 
 def _fsync_directory(directory: Path) -> None:
@@ -479,46 +627,30 @@ def _fresh_record_files(date: str) -> tuple[tuple[str, bytes, None], ...]:
     )
 
 
-def _assert_unsymlinked_directory(directory: Path) -> None:
-    absolute = directory.absolute()
-    for component in reversed((absolute, *absolute.parents)):
-        try:
-            info = component.lstat()
-        except OSError as exc:
-            raise _invalid_state() from exc
-        if stat.S_ISLNK(info.st_mode):
-            raise _invalid_state()
-    try:
-        info = absolute.lstat()
-    except OSError as exc:
-        raise _invalid_state() from exc
-    if not stat.S_ISDIR(info.st_mode):
-        raise _invalid_state()
-
-
 def _legacy_record_files(
     clone: Path, identity_id: str, current_device_pub: str
 ) -> tuple[tuple[str, bytes, tuple[int, int]], ...]:
-    clone = Path(clone)
-    _assert_unsymlinked_directory(clone)
-    identities = clone / "identities"
-    source = identities / identity_id
-    _assert_unsymlinked_directory(identities)
-    _assert_unsymlinked_directory(source)
-    try:
-        entries = tuple(sorted(source.iterdir()))
-    except OSError as exc:
-        raise _invalid_state() from exc
-    if len(entries) != 3:
-        raise _invalid_state()
-    loaded = tuple((entry.name, *_read_file(entry, private=False)) for entry in entries)
-    _validate_chain(
-        tuple((name, raw) for name, raw, _times in loaded),
-        identity_id=identity_id,
-        current_device_pub=current_device_pub,
-        founder_exact=True,
-    )
-    return loaded
+    with _open_absolute_directory(Path(clone), final_policy="stable") as (
+        clone_root,
+        opened,
+    ):
+        identities = _open_child_directory(
+            opened, clone_root.fd, "identities", policy="stable"
+        )
+        source = _open_child_directory(opened, identities.fd, identity_id, policy="stable")
+        entries = tuple(sorted(os.listdir(source.fd)))
+        if len(entries) != 3:
+            raise _invalid_state()
+        loaded = tuple(
+            (name, *_read_file_at(source.fd, name, private=False)) for name in entries
+        )
+        _validate_chain(
+            tuple((name, raw) for name, raw, _times in loaded),
+            identity_id=identity_id,
+            current_device_pub=current_device_pub,
+            founder_exact=True,
+        )
+        return loaded
 
 
 def migrate_founder_identity_records(legacy_clone: Path) -> tuple[dict, ...]:
@@ -549,7 +681,7 @@ def bootstrap_or_verify_local_identity(
         return load_local_identity_chain()
     if legacy_clone is not None:
         return migrate_founder_identity_records(legacy_clone)
-    if not fresh_install:
+    if not fresh_install and not _retryable_bootstrap_state():
         raise IdentityError("local identity state needs an explicit founder migration")
     files = _fresh_record_files(date)
     current_device_pub = _device_public_hex()

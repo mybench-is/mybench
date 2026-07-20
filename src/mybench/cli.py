@@ -283,7 +283,15 @@ def _init(args: argparse.Namespace) -> int:
         _ensure_init_state(args.migrate_founder_records_from)
     except Exception:  # noqa: BLE001 - never relay a path or key-bearing exception
         return _failed("init", as_json=args.json)
-    payload = {"command": "init", "keys_ready": 4, "status": "ok"}
+    payload = {
+        "command": "init",
+        "identity_ready": True,
+        "keys_ready": 4,
+        "local_only": True,
+        "published": False,
+        "registered": False,
+        "status": "ok",
+    }
     _emit(
         payload,
         as_json=args.json,
@@ -399,6 +407,18 @@ def _init_detect(args: argparse.Namespace) -> int:
         "status": "ok",
         "watches": sum(proposal.source is not None for proposal in proposals),
     }
+    if args.local_first:
+        # Preserve the pre-MYB-8.14 JSON shape when callers omit the explicit
+        # default-selection flag; the task-specified path carries the richer
+        # typed local-only boundary without changing any state semantics.
+        accepted.update(
+            {
+                "identity_ready": True,
+                "local_only": True,
+                "published": False,
+                "registered": False,
+            }
+        )
     _emit(
         accepted,
         as_json=args.json,
