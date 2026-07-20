@@ -10,8 +10,10 @@ import pytest
 from jsonschema import ValidationError
 
 from mybench.claims import canonical_bytes
+from mybench.normalizer.claude import corpus_commitment
 from mybench.registry import Registry, _packaged_registry_bytes
 from mybench.schemas import load_validator
+from mybench.scorer import delegation as delegation_module
 from mybench.scorer import (
     DELEGATION_DEPTH_DISTRIBUTION_ID,
     DELEGATION_REGISTRY_IDS,
@@ -227,3 +229,34 @@ def test_invalid_corpus_fails_with_content_free_diagnostic():
     with pytest.raises(DelegationScoringError, match="normalized corpus validation failed") as exc:
         score_orchestration_delegation(broken)
     assert "do-not-echo" not in str(exc.value)
+
+
+def test_cyclic_normalized_lineage_fails_closed_before_scoring(monkeypatch):
+    fixture = synthetic_delegation_input()
+    cyclic = deepcopy(fixture.corpus)
+    sessions = {session["session_id"]: session for session in cyclic["manifest"]["sessions"]}
+    private_marker = "synthetic-root-a"
+    sessions[private_marker]["parent_session_id"] = "synthetic-child-a1"
+    cyclic["corpus_commitment"] = corpus_commitment(cyclic["manifest"], cyclic["events"])
+
+    scoring_reached = False
+
+    def unexpected_scoring(_sessions):
+        nonlocal scoring_reached
+        scoring_reached = True
+        return {}, 0
+
+    monkeypatch.setattr(delegation_module, "_lineage_forest", unexpected_scoring)
+    with pytest.raises(
+        DelegationScoringError,
+        match="^normalized corpus validation failed$",
+    ) as exc:
+        score_orchestration_delegation(cyclic)
+
+    assert not scoring_reached
+    diagnostics = []
+    cause: BaseException | None = exc.value
+    while cause is not None:
+        diagnostics.append(str(cause))
+        cause = cause.__cause__
+    assert private_marker not in " ".join(diagnostics)

@@ -51,7 +51,7 @@ def add_tool_mix_conditioning(doc):
 
 
 def test_packaged_registry_loads_and_validates(registry):
-    assert registry.version == "0.8.0"
+    assert registry.version == "0.9.0"
     assert len(registry.ids()) == 78
     # ADR-0016 resolved OQ #31 by ratifying JSON at the owner sitting.
     assert packaged_doc()["format_status"] == "ratified-json"
@@ -794,8 +794,8 @@ def test_duplicate_json_keys_in_registry_file_rejected(tmp_path):
     f = tmp_path / "dup.json"
     f.write_bytes(
         _packaged_registry_bytes().replace(
-            b'"registry_version": "0.8.0"',
-            b'"registry_version": "0.8.0", "registry_version": "0.8.0"',
+            b'"registry_version": "0.9.0"',
+            b'"registry_version": "0.9.0", "registry_version": "0.9.0"',
             1,
         )
     )

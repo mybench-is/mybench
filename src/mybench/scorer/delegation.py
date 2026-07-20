@@ -109,8 +109,10 @@ def _lineage_forest(
 
     A root is a Claude session explicitly marked ``primary`` with no parent.
     A child is explicitly marked ``subagent`` and names one admitted Claude
-    parent. Anything else, including a cycle, remains uncovered. Depth is the
-    number of accepted parent edges from the root (root depth zero).
+    parent. Anything else remains uncovered. The scorer entrypoint validates
+    normalized v5 before calling this helper, so cyclic lineage fails closed
+    before metric aggregation. Depth is the number of accepted parent edges
+    from the root (root depth zero).
     """
 
     keys = [(session["source"], session["session_id"]) for session in sessions]

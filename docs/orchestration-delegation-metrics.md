@@ -17,8 +17,10 @@ An eligible lane graph is a rooted forest over admitted Claude sessions:
 - a root is explicitly `lane_role=primary` and has no parent;
 - a child is explicitly `lane_role=subagent`, names one admitted Claude parent,
   and reaches a valid root through accepted parent edges;
-- malformed, absent, dangling, cross-source, or cyclic lineage is UNKNOWN and
-  excluded from the activity denominator; and
+- malformed, absent, dangling, or cross-source lineage is UNKNOWN and excluded
+  from the activity denominator;
+- cyclic lineage is not an UNKNOWN evidence case: normalized-v5 validation
+  rejects the corpus before scoring with a content-free diagnostic; and
 - Codex v5 has no admitted lane markers, so Codex sessions remain UNKNOWN rather
   than being guessed from originator, path, or tool data.
 
