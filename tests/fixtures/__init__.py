@@ -9,6 +9,10 @@ from tests.fixtures.leakscan import (
     assert_no_canaries,
     assert_no_canaries_in_directory,
 )
+from tests.fixtures.delegation import (
+    SyntheticDelegationInput,
+    synthetic_delegation_input,
+)
 from tests.fixtures.synthetic import (
     DEFAULT_SEED,
     NEW_CANARY_CLASSES,
@@ -23,5 +27,7 @@ __all__ = [
     "DEFAULT_SEED",
     "NEW_CANARY_CLASSES",
     "FixtureSet",
+    "SyntheticDelegationInput",
     "generate_fixtures",
+    "synthetic_delegation_input",
 ]

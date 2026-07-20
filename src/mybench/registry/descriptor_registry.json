@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.8.0",
+  "registry_version": "0.9.0",
   "format_status": "ratified-json",
   "entries": [
     {
@@ -2903,7 +2903,7 @@
       ],
       "neutrality_note": "Structure inventory only; it does not measure orchestration quality, effectiveness, or subject capability",
       "risk_note": "Even coarse orchestration structure can contribute to rare-topology identification in combination; names, paths, exact counts, exact depths, and below-k fields stay local",
-      "notes": "Report location: fingerprint.orchestration_topology fields. ACTIVE only for the MYB-13.7 file-structure aggregate; the broader fingerprint.orchestration_topology section placeholder and transcript-derived delegation distributions remain reserved. Required caveat and k-suppression floor are output-schema constants.",
+      "notes": "Report location: fingerprint.orchestration_topology fields. ACTIVE only for the MYB-13.7 file-structure aggregate; the broader fingerprint.orchestration_topology section placeholder remains reserved. MYB-6.8 transcript-derived private distributions are separate local-report-only descriptors. Required caveat and k-suppression floor are output-schema constants.",
       "report_location": "fingerprint.orchestration_topology",
       "report_controls": {
         "reference_frame": false,
@@ -2912,6 +2912,245 @@
       },
       "caveat_copy": {
         "scan-time-state-not-evidence-period": "This structure snapshot describes scan-time state, not the full evidence period."
+      }
+    },
+    {
+      "id": "fingerprint.topology.delegation_depth_distribution",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Delegation depth distribution",
+      "inputs": [
+        "normalized-session-lineage"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 6,
+        "required": [
+          "lineage_coverage_basis_points",
+          "eligible_sessions",
+          "unknown_sessions",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "lineage_coverage_basis_points": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0, "maximum": 10000},
+              {"const": "UNKNOWN"}
+            ]
+          },
+          "eligible_sessions": {"type": "integer", "minimum": 0},
+          "unknown_sessions": {"type": "integer", "minimum": 0},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["lineage-marker-coverage-dependent"]}
+        },
+        "patternProperties": {
+          "^depth_(0|[1-9][0-9]*)_sessions$": {"type": "integer", "minimum": 1}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"sessions": 1},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "Depth is observed parent-edge distance and describes orchestration structure, never work quality or capability",
+      "risk_note": "Exact private distribution counts can reveal uncommon orchestration patterns if manually disclosed; they remain local-only",
+      "notes": "MYB-6.8 private distribution; each observed non-negative root depth is a property carrying its exact aggregate session count. No graph shape, session id, name, path, or ordered stream is retained.",
+      "report_location": "fingerprint.orchestration_topology",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "lineage-marker-coverage-dependent": "This distribution covers only sessions with an observed, internally resolved lane role and parent chain."
+      }
+    },
+    {
+      "id": "fingerprint.topology.fan_out_distribution",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Delegation fan-out distribution",
+      "inputs": [
+        "normalized-session-lineage"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 6,
+        "required": [
+          "lineage_coverage_basis_points",
+          "eligible_sessions",
+          "unknown_sessions",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "lineage_coverage_basis_points": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0, "maximum": 10000},
+              {"const": "UNKNOWN"}
+            ]
+          },
+          "eligible_sessions": {"type": "integer", "minimum": 0},
+          "unknown_sessions": {"type": "integer", "minimum": 0},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["lineage-marker-coverage-dependent"]}
+        },
+        "patternProperties": {
+          "^fan_out_(0|[1-9][0-9]*)_sessions$": {"type": "integer", "minimum": 1}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"sessions": 1},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "Fan-out is observed direct-child count and describes delegation shape, never work quality or capability",
+      "risk_note": "Exact private distribution counts can reveal uncommon orchestration patterns if manually disclosed; they remain local-only",
+      "notes": "MYB-6.8 private distribution; each observed non-negative accepted direct-child count is a property carrying its exact aggregate session count. No child identity, name, path, graph shape, or ordered stream is retained.",
+      "report_location": "fingerprint.orchestration_topology",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "lineage-marker-coverage-dependent": "This distribution covers only sessions with an observed, internally resolved lane role and parent chain."
+      }
+    },
+    {
+      "id": "fingerprint.topology.peak_parallel_lanes.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Peak observed parallel-lane distribution",
+      "inputs": [
+        "normalized-session-lineage",
+        "normalized-event-timestamps"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 7,
+        "required": [
+          "lineage_coverage_basis_points",
+          "interval_coverage_basis_points",
+          "eligible_graphs",
+          "unknown_graphs",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "lineage_coverage_basis_points": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0, "maximum": 10000},
+              {"const": "UNKNOWN"}
+            ]
+          },
+          "interval_coverage_basis_points": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0, "maximum": 10000},
+              {"const": "UNKNOWN"}
+            ]
+          },
+          "eligible_graphs": {"type": "integer", "minimum": 0},
+          "unknown_graphs": {"type": "integer", "minimum": 0},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {
+            "const": [
+              "lineage-marker-coverage-dependent",
+              "observed-activity-envelope-not-execution"
+            ]
+          }
+        },
+        "patternProperties": {
+          "^peak_[1-9][0-9]*_graphs$": {"type": "integer", "minimum": 1}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "Peak overlap is an observed activity-envelope distribution, not proof of simultaneous execution or effectiveness",
+      "risk_note": "Exact private distribution counts can reveal uncommon orchestration patterns if manually disclosed; they remain local-only",
+      "notes": "MYB-6.8 private distribution; each accepted lane spans its first through last observed event, closed at both endpoints. Every observed positive per-root peak is a property carrying its exact aggregate graph count; timestamps and graph identities are discarded. Below five interval-eligible sessions the whole field is absent.",
+      "report_location": "fingerprint.orchestration_topology",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "lineage-marker-coverage-dependent": "This distribution covers only sessions with an observed, internally resolved lane role and parent chain.",
+        "observed-activity-envelope-not-execution": "Overlap uses first-to-last observed activity envelopes and does not prove simultaneous execution."
+      }
+    },
+    {
+      "id": "fingerprint.topology.spawning_session_rate",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Sessions spawning observed subagents",
+      "inputs": [
+        "normalized-session-lineage"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lineage_coverage_basis_points",
+          "eligible_sessions",
+          "unknown_sessions",
+          "spawning_sessions",
+          "rate_basis_points",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "lineage_coverage_basis_points": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0, "maximum": 10000},
+              {"const": "UNKNOWN"}
+            ]
+          },
+          "eligible_sessions": {"type": "integer", "minimum": 0},
+          "unknown_sessions": {"type": "integer", "minimum": 0},
+          "spawning_sessions": {"type": "integer", "minimum": 0},
+          "rate_basis_points": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0, "maximum": 10000},
+              {"const": "UNKNOWN"}
+            ]
+          },
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["lineage-marker-coverage-dependent"]}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"sessions": 1},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "The rate describes observed delegation structure, never work quality, autonomy, or capability",
+      "risk_note": "Exact private rates and counts can reveal uncommon orchestration patterns if manually disclosed; they remain local-only",
+      "notes": "MYB-6.8 private aggregate: lineage-eligible sessions with at least one accepted direct subagent child divided by all lineage-eligible sessions. No session identity, name, path, graph shape, or ordered stream is retained.",
+      "report_location": "fingerprint.orchestration_topology",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "lineage-marker-coverage-dependent": "This rate covers only sessions with an observed, internally resolved lane role and parent chain."
       }
     },
     {

@@ -225,6 +225,14 @@ def _workflow_map_output() -> Invocation:
     )
 
 
+def _orchestration_delegation_output() -> Invocation:
+    # Fixed nested/overlapping synthetic lane forest. The scorer receives no
+    # transcript path, ambient discovery authority, or caller-owned clock.
+    from tests.fixtures.delegation import synthetic_delegation_input
+
+    return Invocation(args=(synthetic_delegation_input().corpus,), kwargs={})
+
+
 def _context_management_profile() -> Invocation:
     # Reuse the fixed mixed-marker corpus from the owning scorer test so the
     # subprocess byte gate covers both present and absent lifecycle evidence.
@@ -340,6 +348,7 @@ RUNNERS: dict[str, InvocationFactory] = {
     "context-management-profile": _context_management_profile,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
+    "orchestration-delegation-output": _orchestration_delegation_output,
     "pricing-snapshot-artifact": _pricing_snapshot_artifact,
     "model-role-profile-output": _model_role_profile_output,
     "reference-target-join-corpus": _reference_target_join_corpus,
@@ -405,6 +414,16 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.workflow_map",),
+    ),
+    Stage(
+        "orchestration-delegation-output",
+        EntryPoint(
+            "mybench.scorer.delegation",
+            "score_orchestration_delegation",
+        ),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.delegation",),
     ),
     Stage(
         "model-role-profile-output",

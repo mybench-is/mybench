@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/orchestration_delegation.schema.json",
+  "title": "Private Orchestration Delegation Distributions",
+  "description": "Closed local-only aggregate over normalized session lineage. It admits exact aggregate histogram cells and coverage counts only; session identifiers, paths, names, timestamps, graph shapes, and ordered sequences are structurally unavailable.",
+  "$defs": {
+    "basisPoints": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 10000},
+        {"const": "UNKNOWN"}
+      ]
+    },
+    "nonNegative": {"type": "integer", "minimum": 0},
+    "spawningRate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lineage_coverage_basis_points",
+        "eligible_sessions",
+        "unknown_sessions",
+        "spawning_sessions",
+        "rate_basis_points",
+        "trust_tier",
+        "caveats"
+      ],
+      "properties": {
+        "lineage_coverage_basis_points": {"$ref": "#/$defs/basisPoints"},
+        "eligible_sessions": {"$ref": "#/$defs/nonNegative"},
+        "unknown_sessions": {"$ref": "#/$defs/nonNegative"},
+        "spawning_sessions": {"$ref": "#/$defs/nonNegative"},
+        "rate_basis_points": {"$ref": "#/$defs/basisPoints"},
+        "trust_tier": {"const": "ANCHORED"},
+        "caveats": {"const": ["lineage-marker-coverage-dependent"]}
+      }
+    },
+    "depthDistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 6,
+      "required": [
+        "lineage_coverage_basis_points",
+        "eligible_sessions",
+        "unknown_sessions",
+        "trust_tier",
+        "caveats"
+      ],
+      "properties": {
+        "lineage_coverage_basis_points": {"$ref": "#/$defs/basisPoints"},
+        "eligible_sessions": {"$ref": "#/$defs/nonNegative"},
+        "unknown_sessions": {"$ref": "#/$defs/nonNegative"},
+        "trust_tier": {"const": "ANCHORED"},
+        "caveats": {"const": ["lineage-marker-coverage-dependent"]}
+      },
+      "patternProperties": {
+        "^depth_(0|[1-9][0-9]*)_sessions$": {"type": "integer", "minimum": 1}
+      }
+    },
+    "fanOutDistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 6,
+      "required": [
+        "lineage_coverage_basis_points",
+        "eligible_sessions",
+        "unknown_sessions",
+        "trust_tier",
+        "caveats"
+      ],
+      "properties": {
+        "lineage_coverage_basis_points": {"$ref": "#/$defs/basisPoints"},
+        "eligible_sessions": {"$ref": "#/$defs/nonNegative"},
+        "unknown_sessions": {"$ref": "#/$defs/nonNegative"},
+        "trust_tier": {"const": "ANCHORED"},
+        "caveats": {"const": ["lineage-marker-coverage-dependent"]}
+      },
+      "patternProperties": {
+        "^fan_out_(0|[1-9][0-9]*)_sessions$": {"type": "integer", "minimum": 1}
+      }
+    },
+    "peakDistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 7,
+      "required": [
+        "lineage_coverage_basis_points",
+        "interval_coverage_basis_points",
+        "eligible_graphs",
+        "unknown_graphs",
+        "trust_tier",
+        "caveats"
+      ],
+      "properties": {
+        "lineage_coverage_basis_points": {"$ref": "#/$defs/basisPoints"},
+        "interval_coverage_basis_points": {"$ref": "#/$defs/basisPoints"},
+        "eligible_graphs": {"$ref": "#/$defs/nonNegative"},
+        "unknown_graphs": {"$ref": "#/$defs/nonNegative"},
+        "trust_tier": {"const": "ANCHORED"},
+        "caveats": {
+          "const": [
+            "lineage-marker-coverage-dependent",
+            "observed-activity-envelope-not-execution"
+          ]
+        }
+      },
+      "patternProperties": {
+        "^peak_[1-9][0-9]*_graphs$": {"type": "integer", "minimum": 1}
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "scorer_version", "fields"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "orchestration-delegation-distributions"},
+    "scorer_version": {"const": "1.0.0"},
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fingerprint.topology.delegation_depth_distribution",
+        "fingerprint.topology.fan_out_distribution",
+        "fingerprint.topology.spawning_session_rate"
+      ],
+      "properties": {
+        "fingerprint.topology.delegation_depth_distribution": {
+          "$ref": "#/$defs/depthDistribution"
+        },
+        "fingerprint.topology.fan_out_distribution": {
+          "$ref": "#/$defs/fanOutDistribution"
+        },
+        "fingerprint.topology.peak_parallel_lanes.exact": {
+          "$ref": "#/$defs/peakDistribution"
+        },
+        "fingerprint.topology.spawning_session_rate": {
+          "$ref": "#/$defs/spawningRate"
+        }
+      }
+    }
+  }
+}

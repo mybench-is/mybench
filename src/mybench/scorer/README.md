@@ -29,6 +29,11 @@ inventory; content, paths, session/event identifiers, tool/server names, and
 ordered streams are absent. See
 `docs/wave1-transcript-scorers.md`.
 
+`delegation.py` implements the four MYB-6.8 private orchestration distributions
+over normalized v5 lane lineage and event timestamps. It emits only exact
+identifier-free aggregate histogram cells/counts and coverage, and leaves the public
+archetype gallery unimplemented. See `docs/orchestration-delegation-metrics.md`.
+
 `token_cost.py` implements the MYB-13.6 Workflow Fingerprint profile over
 normalized token/model/phase/outcome structure. `pricing.py` loads one
 immutable, effective-dated, checksummed in-package price-card snapshot; the
