@@ -39,7 +39,7 @@ REPORT = {
         "ledger": ["2"],
         "anchor": ["2"],
         "normalized_events": ["1"],
-        "phase_classifier": ["0.1.0"],
+        "phase_classifier": ["1.0.0"],
     },
     "registry": {"version": "0.2.0", "digest": "b" * 64},
     "evidence_period": {"start": "2025-10-01", "end": "2025-12-31"},

@@ -19,8 +19,8 @@ renders; MYB-5.7's outlined-path mark replaces it. Never filled, never
 foil (§1.2: those registers require cryptographically-true TEE claims).
 
 Schema-v2 fields pass a second registry-conformance gate before rendering.
-The page is the same zero-JavaScript local report surface, not a publication
-route. Public projection remains owned by MYB-14.1 and is refused here.
+The local page remains distinct from MYB-14.1's separately validated public
+projection; callers cannot turn a private report public with a render flag.
 """
 
 from __future__ import annotations
@@ -80,6 +80,32 @@ SECTION_TITLES = {
     "orchestration_topology": "Orchestration topology",
     "token_cost_profile": "Token and cost profile",
     "evidence_coverage": "Evidence coverage",
+}
+
+PUBLIC_EXCLUSION_CATEGORIES = (
+    "prompts",
+    "responses",
+    "code",
+    "repository-names",
+    "filenames",
+    "local-paths",
+    "employer-client-names",
+    "exact-timestamps",
+    "secrets",
+    "private-urls",
+    "raw-orchestration-file-contents",
+)
+
+# Candidate-publication envelope versions are an explicit, reviewed vocabulary.
+# The private report schema intentionally accepts historical and future producer
+# strings, but those strings must never become a free-form public byte channel.
+_PUBLIC_REPORT_VERSIONS = ("v0.2.0",)
+_PUBLIC_SCORER_VERSIONS = ("0.2.0", "0.3.0")
+_PUBLIC_INPUT_SCHEMA_VERSIONS = {
+    "ledger": ("1", "2", "3"),
+    "anchor": ("1", "2"),
+    "normalized_events": ("1", "2", "3", "4", "5"),
+    "phase_classifier": ("1.0.0",),
 }
 
 STAMP_SVG = (  # outlined-path 3-pin mark — assets/brand/generate_marks.py
@@ -412,6 +438,253 @@ def _fingerprint_html(report: dict, entries: dict[str, dict]) -> str:
         f"{_environment_notice(report)}<h2>Workflow fingerprint</h2>"
         f'<div class="fingerprint-grid">{"".join(sections)}{catalog_html}</div>'
     )
+
+
+def _validate_public_registry(report: dict, registry: Registry) -> dict[str, dict]:
+    """Validate MYB-14.1's closed public projection before any HTML exists."""
+
+    errors = sorted(load_validator("public-report.schema.json").iter_errors(report), key=str)
+    if errors:
+        # A malformed candidate may contain private bytes. Do not let a schema
+        # validator quote the offending value into a terminal transcript.
+        raise PageError("refusing to render a non-conforming public report")
+    if report["registry"] != {"version": registry.version, "digest": registry.digest()}:
+        raise PageError("refusing to render a public report with an unpinned registry")
+    if report["evidence_period"]["start_week"] > report["evidence_period"]["end_week"]:
+        raise PageError("refusing to render a reversed public evidence period")
+
+    fields = list(_field_locations(report))
+    groups = [report["catalog_metrics"], *(s["fields"] for s in report["fingerprint"].values())]
+    for group in groups:
+        order = [
+            (field["registry_id"], field["registry_version"], field["claim_digest"])
+            for field in group
+        ]
+        if order != sorted(order):
+            raise PageError("public report fields must be sorted within each section")
+    if len({field["registry_id"] for _, field in fields}) != len(fields):
+        raise PageError("public report fields must be unique by registry id")
+
+    eligible = set(registry.preset_ids(report["preset"]))
+    entries = {}
+    try:
+        for location, field in fields:
+            if field["registry_id"] not in eligible:
+                raise RegistryError("field is outside the selected publication preset")
+            entries[field["registry_id"]] = registry.check_report_field(field, location)
+    except (KeyError, RegistryError) as exc:
+        raise PageError(f"refusing a registry-nonconforming public report: {exc}") from exc
+    return entries
+
+
+def derive_public_projection(
+    source_report: dict,
+    *,
+    registry: Registry | None = None,
+    preset: str = "employer-safe",
+) -> tuple[dict, dict]:
+    """Derive MYB-14.1's deterministic public report and redaction manifest."""
+
+    registry = registry or Registry.load()
+    if preset not in registry.presets():
+        raise PageError("unknown publication preset")
+    errors = sorted(load_validator("report-v2.schema.json").iter_errors(source_report), key=str)
+    if errors:
+        raise PageError("source report violates its closed schema")
+    if source_report["registry"] != {
+        "version": registry.version,
+        "digest": registry.digest(),
+    }:
+        raise PageError("source report registry identity is not the selected registry")
+    if source_report["evidence_period"]["start"] > source_report["evidence_period"]["end"]:
+        raise PageError("source report evidence period is reversed")
+
+    source_fields = list(_field_locations(source_report))
+    groups = [
+        source_report["catalog_metrics"],
+        *(section["fields"] for section in source_report["fingerprint"].values()),
+    ]
+    for group in groups:
+        ordering = [
+            (field["registry_id"], field["registry_version"], field["claim_digest"])
+            for field in group
+        ]
+        if ordering != sorted(ordering):
+            raise PageError("source report fields are not canonically sorted")
+    if len({field["registry_id"] for _location, field in source_fields}) != len(source_fields):
+        raise PageError("source report fields are not unique by registry id")
+    try:
+        for location, field in source_fields:
+            registry.check_report_field(field, location)
+    except (KeyError, RegistryError) as exc:
+        raise PageError("source report contains a registry-nonconforming field") from exc
+
+    eligible = set(registry.preset_ids(preset))
+    included: dict[str, dict] = {}
+    excluded_from_source = []
+    for _location, field in source_fields:
+        registry_id = field["registry_id"]
+        if field["disclosure"] != "PUBLISHABLE":
+            reason = "local-only"
+        elif registry_id not in eligible:
+            reason = "preset-excluded"
+        elif field["anchor_state"] not in {"covered", "not-applicable"}:
+            reason = "anchor-not-covered"
+        else:
+            included[registry_id] = copy.deepcopy(field)
+            continue
+        excluded_from_source.append({"registry_id": registry_id, "reason": reason})
+
+    def selected(location: str, fields: Sequence[dict]) -> list[dict]:
+        selected_fields = [
+            included[field["registry_id"]]
+            for field in fields
+            if field["registry_id"] in included
+            and registry.report_location(field["registry_id"]) == location
+        ]
+        return sorted(
+            selected_fields,
+            key=lambda field: (
+                field["registry_id"],
+                field["registry_version"],
+                field["claim_digest"],
+            ),
+        )
+
+    def pinned_scalar(value: str, vocabulary: Sequence[str]) -> str:
+        for token in vocabulary:
+            if value == token:
+                return token
+        raise PageError("source report envelope versions are not pinned for publication")
+
+    input_versions = source_report["input_schema_versions"]
+    if set(input_versions) - set(_PUBLIC_INPUT_SCHEMA_VERSIONS):
+        raise PageError("source report envelope versions are not pinned for publication")
+    public_input_versions = {}
+    for name, values in input_versions.items():
+        vocabulary = _PUBLIC_INPUT_SCHEMA_VERSIONS[name]
+        if any(value not in vocabulary for value in values):
+            raise PageError("source report envelope versions are not pinned for publication")
+        # Return only module-owned tokens in one canonical order, never the
+        # caller's string objects or ordering.
+        public_input_versions[name] = [token for token in vocabulary if token in values]
+
+    public_sections = {}
+    for section_name, source_section in source_report["fingerprint"].items():
+        fields = selected(f"fingerprint.{section_name}", source_section["fields"])
+        status = source_section["status"]
+        if fields:
+            status = "available"
+        elif status == "available":
+            status = "excluded-by-policy"
+        public_sections[section_name] = {"status": status, "fields": fields}
+
+    public_report = {
+        "schema_version": "1",
+        "report_version": pinned_scalar(source_report["report_version"], _PUBLIC_REPORT_VERSIONS),
+        "scorer_version": pinned_scalar(source_report["scorer_version"], _PUBLIC_SCORER_VERSIONS),
+        "input_schema_versions": public_input_versions,
+        "registry": {"version": registry.version, "digest": registry.digest()},
+        "evidence_period": {
+            "start_week": _iso_week(source_report["evidence_period"]["start"]),
+            "end_week": _iso_week(source_report["evidence_period"]["end"]),
+        },
+        "preset": preset,
+        "fingerprint": public_sections,
+        "catalog_metrics": selected("catalog_metrics", source_report["catalog_metrics"]),
+    }
+    public_errors = sorted(
+        load_validator("public-report.schema.json").iter_errors(public_report), key=str
+    )
+    if public_errors:
+        raise PageError("public report violates its closed schema")
+
+    policy = registry.disclosure_manifest(preset)
+    source_ids = {field["registry_id"] for _location, field in source_fields}
+    manifest = {
+        "schema_version": "1",
+        "preset": preset,
+        "registry": {"version": registry.version, "digest": registry.digest()},
+        "categories": [
+            {"category": category, "status": "excluded"} for category in PUBLIC_EXCLUSION_CATEGORIES
+        ],
+        "field_selection": {
+            "included": sorted(included),
+            "excluded_from_source": sorted(
+                excluded_from_source, key=lambda item: item["registry_id"]
+            ),
+            "eligible_but_absent": sorted(eligible - source_ids),
+        },
+        "registry_policy": {
+            "eligible": policy["included"],
+            "excluded": policy["excluded"],
+            "internal_feature_only_count": policy["internal_feature_only_count"],
+        },
+    }
+    manifest_errors = sorted(
+        load_validator("redaction-manifest.schema.json").iter_errors(manifest), key=str
+    )
+    if manifest_errors:
+        raise PageError("redaction manifest violates its closed schema")
+    return public_report, manifest
+
+
+def render_public_page(
+    report: dict,
+    *,
+    anchors_url: str = f"{ROOT_URL}/anchors",
+    registry: Registry | None = None,
+    theme: str = "auto",
+) -> bytes:
+    """Validate and render the exact static HTML in a publication preview.
+
+    This accepts only the closed public-report schema produced by MYB-14.1.
+    It does not accept a private report, does not read local evidence, and has
+    no upload, network, hosted-id, or publication-record behavior.
+    """
+
+    if theme not in {"auto", "light", "dark"}:
+        raise PageError("unknown report theme")
+    entries = _validate_public_registry(report, registry or Registry.load())
+    fingerprint = _fingerprint_html(report, entries)
+    legend = "".join(
+        f"<tr><td>{_badge(tier)}</td><td>{_esc(text)}</td></tr>" for tier, text in TIER_LEGEND
+    )
+    glossary_rows = "".join(
+        f"<tr><td><strong>{_esc(term)}</strong></td><td>{_esc(text)}</td></tr>"
+        for term, text in GLOSSARY
+    )
+    period = report["evidence_period"]
+    return f"""<!DOCTYPE html>
+<html lang="en" data-theme="{_esc(theme)}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mybench publication preview</title>
+<style>{_CSS}</style></head><body>
+<h1>{STAMP_SVG}mybench publication preview</h1>
+<p class="sub">report {_esc(report["report_version"])} · public schema {_esc(report["schema_version"])}
+· scorer {_esc(report["scorer_version"])} · preset {_esc(report["preset"])}
+· evidence {_esc(period["start_week"])} through {_esc(period["end_week"])}
+· <a href="public-report.json">machine-readable report</a>
+· <a href="redaction-manifest.json">redaction manifest</a></p>
+<p class="caveat">Local preview only — generating these bytes did not publish or upload them.</p>
+{fingerprint}
+<h2>Trust tiers</h2>
+<table>{legend}</table>
+<h2>Glossary</h2>
+<table>{glossary_rows}</table>
+<h2>Verify this yourself</h2>
+<p>Anchors: <a href="{_esc(anchors_url)}">{_esc(anchors_url)}</a></p>
+<p>The preview signature binds this exact HTML, the public report, and the
+redaction manifest to a device key. Trusting that device requires its signed
+binding to the named identity in the anchors log.</p>
+<footer>Deterministic, static, and zero-JavaScript. Only registry-admitted,
+support-qualified aggregate fields appear. Prompts, responses, code, repository
+names, filenames, local paths, employer/client names, exact timestamps, secrets,
+private URLs, and raw orchestration-file contents are categorically excluded.
+· <a href="{ROOT_URL}/how-it-works">how anchoring works</a>
+· <a href="{ROOT_URL}">{_esc(ROOT_URL.removeprefix("https://"))}</a></footer>
+</body></html>
+""".encode()
 
 
 def render_page(

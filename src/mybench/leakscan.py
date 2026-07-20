@@ -12,8 +12,11 @@ pre-push gate (MYB-3.4) runs it in production against the local secret corpus
 from __future__ import annotations
 
 import base64
+import json
 import zlib
 from pathlib import Path
+
+from mybench import paths as mybench_paths
 
 GZIP_MAGIC = b"\x1f\x8b"
 
@@ -77,11 +80,12 @@ def scan_file(
     diagnostic_label = path if label is None else Path(label)
     hits = []
     for where, stack in _haystacks(data):
-        for canary in canaries:
+        for canary_index, canary in enumerate(canaries):
             for encoding, needle in _needles(canary):
                 if needle in stack:
                     hits.append(
-                        f"{diagnostic_label}: {where}{encoding} form of canary {canary[:12]!r}…"
+                        f"{diagnostic_label}: {where}{encoding} form of secret "
+                        f"corpus item {canary_index}"
                     )
                     break  # one hit per (haystack, canary) is enough detail
     return hits
@@ -106,13 +110,40 @@ def _scan_path(bundle_path: Path, canaries: list[bytes]) -> list[str]:
     """Scan a bundle-relative path without treating its private parent as output."""
     path_bytes = str(bundle_path).encode(errors="surrogateescape")
     hits = []
-    for canary in canaries:
+    for canary_index, canary in enumerate(canaries):
         for encoding, needle in _needles(canary):
             if needle in path_bytes:
                 safe_label = _redacted_path_label(bundle_path, needle)
-                hits.append(f"{safe_label}: path:{encoding} form of canary {canary[:12]!r}…")
+                hits.append(
+                    f"{safe_label}: path:{encoding} form of secret corpus item {canary_index}"
+                )
                 break
     return hits
+
+
+def local_secret_corpus() -> list[bytes]:
+    """Load this machine's nonce and private-key bytes without logging values.
+
+    The corpus is intentionally assembled only inside the mode-0700 data dir.
+    Public-key files are excluded; all other regular key files and every stored
+    nonce are negative needles for an exact-byte publication gate.
+    """
+
+    corpus: list[bytes] = []
+    nonces = mybench_paths.nonces_dir()
+    if nonces.is_dir():
+        for nonce_file in sorted(nonces.glob("*.jsonl")):
+            for line in nonce_file.read_bytes().splitlines():
+                try:
+                    corpus.append(bytes.fromhex(json.loads(line)["nonce"]))
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise ValueError("local nonce corpus is malformed") from exc
+    keys = mybench_paths.keys_dir()
+    if keys.is_dir():
+        for key_file in sorted(keys.iterdir()):
+            if key_file.is_file() and key_file.suffix != ".pub":
+                corpus.append(key_file.read_bytes())
+    return corpus
 
 
 def assert_no_canaries(paths: list[Path] | list[str], canaries: list[bytes]) -> int:

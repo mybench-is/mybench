@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/public-report-signature.schema.json",
+  "title": "Mybench publication-preview signature envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "identity_id", "signer", "artifacts", "signature"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "identity_id": {"$ref": "#/$defs/hex64"},
+    "signer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pub"],
+      "properties": {
+        "kind": {"const": "device"},
+        "pub": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index.html", "public-report.json", "redaction-manifest.json"],
+      "properties": {
+        "index.html": {"$ref": "#/$defs/hex64"},
+        "public-report.json": {"$ref": "#/$defs/hex64"},
+        "redaction-manifest.json": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "signature": {"type": "string", "pattern": "^[0-9a-f]{128}$"}
+  },
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

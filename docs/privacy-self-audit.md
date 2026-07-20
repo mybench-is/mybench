@@ -6,7 +6,7 @@ check to run, and an unambiguous pass criterion. Execution against the real
 deployment is MYB-4.4 (owner sitting; findings recorded in mybench-ops with
 metadata-level notes only — never paste suspect content into findings).
 
-**Estimated total time: 50–65 minutes** in one sitting. Run everything from
+**Estimated total time: 55–70 minutes** in one sitting. Run everything from
 the mybench repo root with `V=.venv/bin/python`. `DD=~/.local/share/mybench`.
 
 ## Write-site → surface completeness mapping (AC #2)
@@ -29,6 +29,7 @@ maps to a surface below:
 | `anchor/ots.py` | HTTP POST/GET to calendars; staged artifact + proof files | S7, S8 |
 | `anchor/publish.py` | clone writes; `git push` to anchors repo | S9 |
 | `scorer/__main__.py` | report file (`--out`); git subprocess reads (no writes) | S10 |
+| `report/cli.py`, `report/preview.py` | immutable private report + exact four-file local publication-preview staging | S10, S19 |
 | site repo `functions/api/waitlist.js` | D1 `INSERT` of submitted email (off-machine, Cloudflare) | S14 |
 
 Any future module that adds a write site MUST add a surface here (the
@@ -270,6 +271,28 @@ rather than by the `src/mybench` grep.
   are refused, scheduled failure leaves the job registered for a later run,
   private state/lock are 0600, and read-only/offline status reports
   active/inactive/manual and last-result health without repair.
+
+### S19 — Publication-preview staging
+
+- **Risk:** a local-only report field, exact timestamp, content/filename/path,
+  nonce, private key, evidence-manifest byte, or unexpected fifth file reaches
+  the candidate-publication bundle; preview generation writes outside A10 or
+  implies upload/publication.
+- **Check:** run `$V -m pytest tests/report/test_preview.py -q`; for a synthetic
+  or owner-reviewed local report id set `export RID=<64-hex-local-report-id>` and run
+  `$V -m mybench.report.preview "$RID" --preset employer-safe`. Inspect metadata
+  only with `$V -c "import os,stat; from mybench import paths; p=paths.report_dir(os.environ['RID'])/'publication-preview'; print(oct(stat.S_IMODE(p.stat().st_mode)), sorted(x.name for x in p.iterdir()), [oct(stat.S_IMODE(x.stat().st_mode)) for x in p.iterdir()])"`.
+- **Pass:** the explicit will/won't listing appears before first finalization;
+  the directory is 0700 and contains exactly `public-report.json`,
+  `public-report.sig`, `redaction-manifest.json`, and zero-JavaScript
+  `index.html`, all 0600. Two builds are byte-identical. The signature verifies
+  only through a device key bound by the identity chain. The exact staged-byte
+  leak gate passes against the local nonce/private-key/evidence-reference
+  corpus, while every synthetic transcript/repository/filename/path/nonce/key
+  canary fires in raw, hex, base64, and gzip forms. No network call, upload,
+  publication record, hosted identifier, or write outside the 0700 data dir
+  occurs. This local check does not authorize publication; first real upload
+  remains gated on the hosted-operation audit.
 
 ## Failure protocol (MYB-4.4)
 

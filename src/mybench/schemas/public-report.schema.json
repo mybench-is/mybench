@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/public-report.schema.json",
+  "title": "Mybench publication-preview report v1",
+  "description": "Closed public projection of a registry-governed local report-v2 bundle. Exact generation timestamps, legacy metrics, binding tips, local-only fields, and publication identifiers are structurally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_version",
+    "scorer_version",
+    "input_schema_versions",
+    "registry",
+    "evidence_period",
+    "preset",
+    "fingerprint",
+    "catalog_metrics"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "report_version": {"const": "v0.2.0"},
+    "scorer_version": {"enum": ["0.2.0", "0.3.0"]},
+    "input_schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ledger", "anchor", "normalized_events"],
+      "properties": {
+        "ledger": {"$ref": "#/$defs/ledgerVersionList"},
+        "anchor": {"$ref": "#/$defs/anchorVersionList"},
+        "normalized_events": {"$ref": "#/$defs/normalizedVersionList"},
+        "phase_classifier": {"$ref": "#/$defs/phaseClassifierVersionList"}
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "digest"],
+      "properties": {
+        "version": {"$ref": "#/$defs/semver"},
+        "digest": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "evidence_period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_week", "end_week"],
+      "properties": {
+        "start_week": {"$ref": "#/$defs/week"},
+        "end_week": {"$ref": "#/$defs/week"}
+      }
+    },
+    "preset": {"enum": ["employer-safe", "full"]},
+    "catalog_metrics": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/field"}
+    },
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workflow_summary",
+        "workflow_map",
+        "model_role_profile",
+        "context_management_profile",
+        "orchestration_topology",
+        "token_cost_profile",
+        "evidence_coverage"
+      ],
+      "properties": {
+        "workflow_summary": {"$ref": "#/$defs/section"},
+        "workflow_map": {"$ref": "#/$defs/section"},
+        "model_role_profile": {"$ref": "#/$defs/section"},
+        "context_management_profile": {"$ref": "#/$defs/section"},
+        "orchestration_topology": {"$ref": "#/$defs/section"},
+        "token_cost_profile": {"$ref": "#/$defs/section"},
+        "evidence_coverage": {"$ref": "#/$defs/section"}
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1, "maxLength": 512},
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "week": {"type": "string", "pattern": "^[0-9]{4}-W(?:0[1-9]|[1-4][0-9]|5[0-3])$"},
+    "ledgerVersionList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["1", "2", "3"]}
+    },
+    "anchorVersionList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["1", "2"]}
+    },
+    "normalizedVersionList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["1", "2", "3", "4", "5"]}
+    },
+    "phaseClassifierVersionList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["1.0.0"]}
+    },
+    "primitive": {
+      "oneOf": [
+        {"type": "integer"},
+        {"type": "boolean"},
+        {"$ref": "#/$defs/nonempty"}
+      ]
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimensions"],
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {"$ref": "#/$defs/nonempty"}
+        },
+        "value": {"$ref": "#/$defs/primitive"},
+        "container": {"enum": ["array", "object"]}
+      },
+      "oneOf": [
+        {"required": ["value"], "not": {"required": ["container"]}},
+        {"required": ["container"], "not": {"required": ["value"]}}
+      ]
+    },
+    "fieldValue": {
+      "oneOf": [
+        {"$ref": "#/$defs/primitive"},
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/cell"}
+        }
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registry_id",
+        "registry_version",
+        "claim_digest",
+        "derivation_class",
+        "execution_env",
+        "trust_tier",
+        "anchor_state",
+        "disclosure",
+        "inference_risk",
+        "coverage_basis_points",
+        "confidence",
+        "value"
+      ],
+      "properties": {
+        "registry_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){1,5}$",
+          "maxLength": 160
+        },
+        "registry_version": {"$ref": "#/$defs/semver"},
+        "claim_digest": {"$ref": "#/$defs/hex64"},
+        "derivation_class": {"enum": ["measured", "characterization"]},
+        "execution_env": {"enum": ["local-unattested", "tee-attested"]},
+        "trust_tier": {"enum": ["PROVEN", "ANCHORED", "TEE-VERIFIED", "JUDGED"]},
+        "tier_qualifier": {"enum": ["unattested", "attested"]},
+        "anchor_state": {"enum": ["covered", "not-applicable"]},
+        "disclosure": {"const": "PUBLISHABLE"},
+        "inference_risk": {"enum": ["R0", "R1", "R2"]},
+        "coverage_basis_points": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0, "maximum": 10000},
+            {"const": "UNKNOWN"}
+          ]
+        },
+        "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+        "reference_frame": {"$ref": "#/$defs/referenceFrame"},
+        "conditioning": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["axis", "cell", "min_support_met"],
+          "properties": {
+            "axis": {"$ref": "#/$defs/nonempty"},
+            "cell": {"$ref": "#/$defs/nonempty"},
+            "min_support_met": {"const": true}
+          }
+        },
+        "value": {"$ref": "#/$defs/fieldValue"},
+        "caveats": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "maxLength": 96
+          }
+        }
+      }
+    },
+    "referenceFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference_corpus_id", "reference_version", "as_of_date", "percentile_band"],
+      "properties": {
+        "reference_corpus_id": {"$ref": "#/$defs/nonempty"},
+        "reference_version": {"$ref": "#/$defs/semver"},
+        "as_of_date": {"type": "string", "format": "date"},
+        "percentile_band": {"$ref": "#/$defs/nonempty"}
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "fields"],
+      "properties": {
+        "status": {
+          "enum": ["available", "insufficient-evidence", "not-supported", "excluded-by-policy"]
+        },
+        "fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/field"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "available"}}, "required": ["status"]},
+          "then": {"properties": {"fields": {"minItems": 1}}},
+          "else": {"properties": {"fields": {"maxItems": 0}}}
+        }
+      ]
+    }
+  }
+}
