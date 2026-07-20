@@ -1,6 +1,6 @@
 # Mybench Threat Model
 
-**Version:** 0.2.1
+**Version:** 0.2.2
 **Status:** Living document. Every feature must be justifiable against this model.
 If a proposed change isn't covered here, work stops and this document is updated first.
 
@@ -33,20 +33,24 @@ to unverified self-reporting.
 | A1 | Agent session transcripts (Claude Code / Codex JSONL) | `~/.claude/projects/`, Codex log dirs; byte-exact archived copy: A9 | HIGH — contains prompts, code, secrets, filenames |
 | A2 | Commitment nonces | mybench data dir (default `~/.local/share/mybench/nonces/`) | CRITICAL — leaking a nonce enables dictionary attack on its commitment |
 | A3 | Local ledger (commitments, Merkle trees, metadata). Also holds capture-time event rows and additive session-row fields (lifecycle events, git provenance, model/provider/effort/token metadata) per the capture-evidence-model-v2 ADR (ADR-0013) — structural metadata only, never content or content-derived values | mybench data dir (`ledger.db`) | MEDIUM — contains no plaintext, but timing metadata is private-by-default |
-| A4 | Git signing keys | user's SSH/GPG keyring | HIGH — standard key hygiene applies |
+| A4a | Mybench identity and device signing keys. The identity key self-certifies the durable identity namespace and signs identity-control records only; bound device keys sign anchor events, claims, and local report bundles | mybench data dir (`keys/identity.key`, `keys/device.key`; 0600 private keys, public halves alongside) | CRITICAL for the identity key — loss loses control of the namespace until governed recovery exists; HIGH for device keys — compromise permits forged device-authorized artifacts until governed rotation/revocation exists |
+| A4b | Git/operator signing keys. User SSH/GPG keys and the dedicated anchors-log operator SSH key sign Git commits only; they are not Mybench identity roots and do not authorize identity-control records, anchor events, claims, or reports | user's SSH/GPG keyring; dedicated log-operator key in the mybench data dir (`keys/log-signing`, 0600) | HIGH — compromise can forge repository/operator commit provenance but does not confer A4a identity or device authority |
 | A5 | Published anchors (Merkle roots + timestamps) | public `mybench-anchors` repo, OpenTimestamps | PUBLIC by design |
 | A6 | Report JSON + rendered page | public, user-controlled | PUBLIC by design |
 | A7 | The scorer code itself | public repo | PUBLIC; integrity matters (supply chain) |
 | A8 | Normalized event store — derived, parser-versioned structure from A1/A9 and enrolled git repos: turn/tool/test structure and other parser output, episode stitching, plan/instruction/orchestration-file *structure*. Content-like fields (plan files, instruction files, test output, orchestration files) enter A8 as pointers plus commitments ONLY — never byte copies; no span-copy class exists. Pointers resolve against the live source dirs or the A9 archive; when the pointed-to bytes are gone from both, the derived evidence degrades honestly — a coverage drop / UNKNOWN under the MYB-13.8 evidence-coverage semantics — never a pipeline failure and never a fabricated or reconstructed value. (Capture-time observations — lifecycle events, model/provider/effort/token metadata, keyed-HMAC repo & worktree ids, git HEADs — are ledger rows per ADR-0013's locus split: see the A3 addendum above) | mybench data dir (layout & locus per ADR-0013 — hybrid split by evidentiary role) | HIGH — content-derived; handled as A1-equivalent |
 | A9 | Raw-transcript retention archive — the exact committed bytes of captured sessions, preserved before harness retention cleanup deletes them. Append-only per session; archived bytes must recompute the session's ledger commitments; retained indefinitely (ADR-0002 §6 — retention is load-bearing for disclosure and recomputation) | mybench data dir (`archive/<source>/<session-id>`), 0600 files | HIGH — plaintext copy of A1 |
 | A10 | Local report bundles and publication-preview staging — rendered fingerprint output and the sanitized candidate-publication bundle | mybench data dir (`reports/<report-id>/`; preview staging area) | HIGH — the local report may contain private details that are never uploaded; only a previewed bundle governed by §3 may ever leave the machine |
+| A11 | Local identity-control-record store — exact immutable public-candidate bytes for a self-certifying genesis and identity-key-signed device, handle, or governed succession records. A genesis carries its schema/type, identity id, identity public key, coarse date, and signature; device and handle bindings carry that common envelope plus respectively the device public key/scope or handle/sequence; a succession record may carry only the closed public control/sequence fields ratified by MYB-8.11. No private key, nonce, ledger row, evidence or transcript content, account credential, local path, or repository name is admitted | mybench data dir (`identity/records/<identity-id>/`); enclosing directories 0700, immutable record files 0600 | MEDIUM — intentionally public-candidate trust material, but local chronology and unpublished handle/device-control state remain private until explicit submission |
 
 The "mybench data dir" is a single dedicated directory outside all repos,
 created mode 0700; its exact location is an implementation choice recorded in
 an ADR, but it MUST NOT be inside any repository, synced folder, or backup
-that leaves the machine unencrypted. A8–A10 live inside it without exception;
-none of their contents, paths, or filenames may appear in any repo, log line,
-or test output.
+that leaves the machine unencrypted. The data-dir members of A4, plus A8–A11,
+live inside it without exception. A8–A10 contents, paths, and filenames may
+not appear in any repo, log line, or test output. A11 bytes may enter the
+public log only through the separate user-initiated submission described in
+§3.1; init, compatibility migration, and preview never make that transition.
 
 ### 2.1 Reviewed widening (procedure for new local data classes)
 
@@ -60,6 +64,15 @@ by every implementing task (synthetic canary fixtures over logs, ledger rows,
 and anchor staging, plus a firing test proving the scanner catches a planted
 canary). Ledger-row widening additionally follows the schema_version
 discipline (absent = unknown; old rows never rewritten).
+
+A11 is the reviewed-widening case governed by planning ADR-0023 and
+MYB-8.14. It stores exact canonical record bytes rather than pointers because
+the identity signature covers those bytes and founder migration must preserve
+the established signature and chronology byte-for-byte. This is not an
+exception for content: A11's closed record class contains only the public
+trust fields enumerated in its asset row. Implementations inherit the §2.1
+synthetic-canary scans over logs, ledger rows, and anchor staging, including a
+firing test that proves the scanner detects a planted canary.
 
 ---
 
@@ -79,9 +92,23 @@ act, never by default.
 - Daily Merkle roots over session commitments
 - OpenTimestamps proofs for those roots
 - Commit trailer hashes (session-root references) in repos the user opted in
+- Self-certifying identity genesis records and identity-key-signed device,
+  handle, and governed succession records. Their admitted public form is the
+  exact closed-schema A11 record: the genesis identity id must derive from its
+  public key and every binding or succession signature must chain to the
+  applicable identity control key.
 - Scorer, classifier, schema, registry, and pricing-snapshot versions;
   registry file + digest (descriptor definitions and rejected-claims list
   only — never user data); verification instructions
+
+Admission is not publication. Local init, exact-byte compatibility migration,
+report construction, and publication preview create or read A11 only and
+perform no network, registration, log-submission, or publication action. A
+separate user-initiated log submission is required before any A11 record is
+public. Account linkage and challenges, service-enforced handle uniqueness,
+hosted revocation/recovery, and multi-user identity lifecycle remain
+unadmitted until the owner-gated MYB-16.3 revision. Succession record mechanics
+and their closed schema remain gated on MYB-8.11.
 
 ### 3.2 Report artifact classes (published only within an admitted class)
 | Class | Granularity ceiling + required controls | Tier |
@@ -255,6 +282,11 @@ Out of scope to fully defend (a compromised host loses A1 regardless of
 Mybench), but Mybench must not *worsen* the position:
 - Ledger and nonces at 0700/0600; no service listening on network ports;
   daemon runs as user, not root.
+- A4a private keys remain 0600 under the 0700 data dir and are never copied
+  into A11. A11 directories are 0700 and its immutable exact-byte files are
+  0600. Local init, migration, and preview access them without a network or
+  publication side effect; the legacy founder clone may be a bounded migration
+  input, never a normal-user trust dependency or fallback store.
 - Mybench necessarily concentrates content-adjacent data locally: pointers to
   transcripts (A1), a byte-exact retention archive (A9), a derived event
   store (A8), and rendered reports (A10). Every content-bearing store exists
@@ -336,12 +368,24 @@ artifact of a §3-admitted class through a user-initiated publication act —
 the class rulings themselves are the v0.2.0 §3 revision, adopted at the same
 sitting.
 
+**Local identity-control admission (v0.2.2) changes no egress rule:** A11 is
+canonical local trust state under ADR-0023/MYB-8.14. Fresh init may create a
+self-certifying genesis and current-device binding, and a bounded founder
+migration may copy an already signed chain exactly; both are offline and
+local-only. Report construction and preview only verify that local chain.
+None registers an account or handle, submits to the central log, publishes an
+artifact, or performs network I/O. Publication remains a distinct,
+user-initiated action; hosted/account identity operation remains out of scope
+until MYB-16.3.
+
 **Out of scope:**
 
 - Defending a compromised host OS
 - Proving content quality of undisclosed work
 - Proving single-human authorship (later: exam + continuity)
-- Hosted/multi-user operation, payments, identity linking
+- Hosted/multi-user operation, payments, account identity linking and
+  challenges, service-enforced handles, hosted revocation/recovery, and other
+  hosted identity lifecycle (owner-gated on MYB-16.3)
 - Codex/other-tool ingestion beyond a documented adapter interface
 - Real-time anchoring finer than daily (batch is the availability hedge)
 
@@ -401,4 +445,16 @@ never exact extrema. §3.3 pins arrival-pattern conditioning v1 to
 an ordinary fail-closed `unknown` result. All private-derived forms are capped
 at ANCHORED; PROVEN remains limited to public-artifact facts. Exact totals,
 point values, keyed time series, and JUDGED utility/quality interpretations
-remain unadmitted.*
+remain unadmitted.
+0.2.2 — owner-approved MYB-16.11 revision (planning ADR-0023; owner-approved
+2026-07-20): A4 is split into Mybench identity/device signing keys and distinct
+Git/operator commit-signing keys; §2 gains A11, the mode-0700/0600 local
+identity-control store for exact public-candidate signed records; §2.1 records
+why exact bytes are required and preserves synthetic leak/firing obligations;
+§3.1 admits self-certifying genesis plus identity-key-signed device, handle,
+and governed succession trust-substrate records. ADV-4 and §7 pin init,
+exact-byte founder migration, report construction, and preview to offline,
+local-only behavior. Account linkage, service-enforced handles, hosted
+revocation/recovery, and multi-user lifecycle remain owner-gated on MYB-16.3;
+succession mechanics remain gated on MYB-8.11. No content or publication class
+is widened.*
