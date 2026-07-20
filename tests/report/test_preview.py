@@ -191,6 +191,7 @@ def test_public_projection_excludes_local_fields_and_renderer_rejects_preset_esc
         "anchor": ["2"],
         "ledger": ["2"],
         "normalized_events": ["1"],
+        "phase_classifier": ["1.0.0"],
     }
     ids = {
         field["registry_id"]
@@ -269,6 +270,30 @@ def test_public_scorer_version_runtime_schema_and_shipped_fixture_vocabularies_a
     for rejected in ("0.1.0", "0.4.0", "0.3.0-unshipped"):
         source = v2_report()
         source["scorer_version"] = rejected
+        with pytest.raises(PreviewError, match="versions are not pinned"):
+            derive_public_report(source, preset="full")
+
+
+def test_public_phase_classifier_runtime_schema_and_shipped_fixture_vocabularies_align():
+    schema_vocabulary = tuple(
+        load_validator("public-report.schema.json").schema["$defs"]["phaseClassifierVersionList"][
+            "items"
+        ]["enum"]
+    )
+    runtime_vocabulary = report_page._PUBLIC_INPUT_SCHEMA_VERSIONS["phase_classifier"]
+    assert schema_vocabulary == runtime_vocabulary == ("1.0.0",)
+    assert v2_report()["input_schema_versions"]["phase_classifier"] == ["1.0.0"]
+
+    for accepted in schema_vocabulary:
+        source = v2_report()
+        source["input_schema_versions"]["phase_classifier"] = [accepted]
+        public, _manifest = derive_public_report(source, preset="full")
+        assert public["input_schema_versions"]["phase_classifier"] == [accepted]
+        assert not list(load_validator("public-report.schema.json").iter_errors(public))
+
+    for rejected in ("0.1.0", "1.0.1", "1.0.0-unshipped"):
+        source = v2_report()
+        source["input_schema_versions"]["phase_classifier"] = [rejected]
         with pytest.raises(PreviewError, match="versions are not pinned"):
             derive_public_report(source, preset="full")
 

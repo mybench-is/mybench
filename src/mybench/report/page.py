@@ -105,7 +105,7 @@ _PUBLIC_INPUT_SCHEMA_VERSIONS = {
     "ledger": ("1", "2", "3"),
     "anchor": ("1", "2"),
     "normalized_events": ("1", "2", "3", "4", "5"),
-    "phase_classifier": ("0.1.0", "1.0.0"),
+    "phase_classifier": ("1.0.0",),
 }
 
 STAMP_SVG = (  # outlined-path 3-pin mark — assets/brand/generate_marks.py

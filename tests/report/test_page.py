@@ -137,6 +137,7 @@ def v2_report(registry=None):
             "ledger": ["2"],
             "anchor": ["2"],
             "normalized_events": ["1"],
+            "phase_classifier": ["1.0.0"],
         },
         "registry": {"version": registry.version, "digest": registry.digest()},
         "evidence_period": {"start": "2026-07-01", "end": "2026-07-18"},

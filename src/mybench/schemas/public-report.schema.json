@@ -108,7 +108,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {"enum": ["0.1.0", "1.0.0"]}
+      "items": {"enum": ["1.0.0"]}
     },
     "primitive": {
       "oneOf": [
