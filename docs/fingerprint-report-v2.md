@@ -260,9 +260,19 @@ scanner or authorize it to read orchestration-file contents.
 | `fingerprint.topology.instruction_depth` | Local exact maximum depth; public `count_band`, with paths absent. | ANCHORED | k≥5 observed instruction files | PUBLISHABLE (R1); exact form LOCAL_ONLY |
 | `fingerprint.topology.presence_flags` | Fixed-taxonomy booleans for lanes, worktrees, skills, hooks, custom agents, plan/task dirs, and validation scripts; true requires ≥5 supporting instances, otherwise field is absent rather than false. | ANCHORED | k≥5 | PUBLISHABLE (R1) |
 | `fingerprint.topology.evidence_sources` | Coverage cells for `file-structure` and `transcript-delegation`; scan-time topology is explicitly labeled, never represented as period-wide. | ANCHORED | one source | PUBLISHABLE (R0) |
-| `fingerprint.topology.peak_parallel_lanes.exact` | LOCAL_ONLY histogram cells `(exact peak lane count, exact session count)`. Per session, peak is the largest number of distinct known `LANES` simultaneously active under the MYB-6.8 scorer's versioned interval rule; no session id, timestamp, or global scalar is retained. | ANCHORED | 5 sessions with lane start/end coverage | LOCAL_ONLY |
+| `fingerprint.topology.peak_parallel_lanes.exact` | LOCAL_ONLY histogram cells `(exact peak lane count, exact rooted-graph count)`. Per rooted session graph, peak is the largest number of distinct known lane activity envelopes overlapping under the MYB-6.8 scorer's versioned interval rule; no session id, timestamp, graph shape, or global scalar is retained. | ANCHORED | 5 interval-eligible sessions | LOCAL_ONLY |
 | `fingerprint.topology.peak_parallel_lanes.band` | Cells `(count_band(peak lanes), share_band(sessions in band / eligible sessions))`; a cell is absent below k=5. This is a within-session distribution, never a global peak or cross-session concurrency claim. | ANCHORED | k≥5 sessions per cell | PUBLISHABLE (R1) |
 | `fingerprint.topology.lane_event_share_distribution` | LOCAL_ONLY cells `(share_band, exact lane-episode count)`: within each eligible episode, compute each known lane's tagged-event share, then histogram the shares without lane names or ids. This is a deterministic utilization proxy, not an interleaving-quality judgment. | ANCHORED | 5 episodes with lane coverage | LOCAL_ONLY; v0.2.1 permits a separate, banded and k-suppressed public descriptor, but does not activate this exact-count entry |
+
+MYB-6.8 activates four separate `local-report-only` transcript-delegation
+descriptors: spawning-session rate, delegation-depth distribution, direct
+fan-out distribution, and observed peak-parallel-lane distribution. Their
+versioned structural definitions and coverage rules are pinned in
+[`orchestration-delegation-metrics.md`](orchestration-delegation-metrics.md).
+They retain only exact aggregate histogram cells/counts and coverage; no ids, names,
+paths, timestamps, graph shapes, or ordered sequences survive scoring. The
+archetype gallery and public projections remain unimplemented and unavailable
+to both publication presets.
 
 The MYB-13.7 file-structure scanner walks one explicitly consented root through
 directory descriptors opened with `O_DIRECTORY|O_NOFOLLOW`, directory
@@ -284,8 +294,9 @@ zero. The projection labels file-structure and transcript-delegation coverage
 separately, pins k=5 and the controlled scan-time caveat, and publishes the
 file-structure observation only as an ISO calendar week. The exact scan
 timestamp remains local. The broader
-`fingerprint.orchestration_topology` section placeholder remains reserved for
-the separate transcript-derived fields.
+`fingerprint.orchestration_topology` section placeholder remains reserved;
+the transcript-derived MYB-6.8 fields are active only as separate private
+atomic descriptors.
 
 ### 3.6 Token and cost profile
 

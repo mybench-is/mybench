@@ -6,6 +6,16 @@ from mybench.scorer.agent_hours import (
     AgentHoursScoringError,
     score_agent_hours,
 )
+from mybench.scorer.delegation import (
+    DELEGATION_DEPTH_DISTRIBUTION_ID,
+    DELEGATION_REGISTRY_IDS,
+    DELEGATION_SCORER_VERSION,
+    FAN_OUT_DISTRIBUTION_ID,
+    PEAK_PARALLEL_LANES_DISTRIBUTION_ID,
+    SPAWNING_SESSION_RATE_ID,
+    DelegationScoringError,
+    score_orchestration_delegation,
+)
 from mybench.scorer.context_management import (
     AUTOMATIC_COMPACTIONS_ID,
     CLEAR_RATE_ID,
@@ -117,6 +127,14 @@ __all__ = [
     "AGENT_HOURS_SCORER_VERSION",
     "AgentHoursScoringError",
     "score_agent_hours",
+    "DELEGATION_DEPTH_DISTRIBUTION_ID",
+    "DELEGATION_REGISTRY_IDS",
+    "DELEGATION_SCORER_VERSION",
+    "DelegationScoringError",
+    "FAN_OUT_DISTRIBUTION_ID",
+    "PEAK_PARALLEL_LANES_DISTRIBUTION_ID",
+    "SPAWNING_SESSION_RATE_ID",
+    "score_orchestration_delegation",
     "AUTOMATIC_COMPACTIONS_ID",
     "CLEAR_RATE_ID",
     "CONTEXT_MANAGEMENT_REGISTRY_IDS",
