@@ -40,6 +40,12 @@ from mybench.schemas import load_validator
 ROOT_URL = "https://mybench.is"
 BACKFILL_FLOOR_DAYS = 14  # OQ #18 — owner-proposed; change there, not here
 CAPTURE_TIME_METRICS = {"ledger_span_days", "active_days", "sessions_total"}
+_COST_REGISTRY_IDS = frozenset(
+    {
+        "fingerprint.token_cost.cost_by_model.exact",
+        "fingerprint.token_cost.cost_per_episode.exact",
+    }
+)
 
 # ADR-0014/0015: tier is label + geometry, never provider/substrate or rank color.
 TIER_LEGEND = (
@@ -143,6 +149,7 @@ def _verify_report_claims(
     *,
     registry: Registry,
     trusted_device_pubs: Collection[str] | None,
+    pricing_snapshot: dict | None,
 ) -> dict[str, dict]:
     """Verify and exactly bind all and only the signed claims a report renders."""
     if signed_claims is None:
@@ -179,12 +186,26 @@ def _verify_report_claims(
         raise ClaimBindingError("report-v2 claim envelopes do not exactly match field digests")
 
     entries: dict[str, dict] = {}
+    cost_pricing_references: list[dict] = []
     try:
         for location, field in fields:
             claim = claims_by_digest[field["claim_digest"]]
             entries[field["registry_id"]] = registry.check_report_claim(field, location, claim)
+            if field["registry_id"] in _COST_REGISTRY_IDS:
+                output = claim["output"]
+                cost_pricing_references.append(
+                    {
+                        "version": output["pricing_snapshot_version"],
+                        "digest": output["pricing_snapshot_digest"],
+                        "currency": output["currency"],
+                    }
+                )
     except (KeyError, RegistryError) as exc:
         raise ClaimBindingError(f"signed claim does not match report field: {exc}") from exc
+    if cost_pricing_references and any(
+        reference != pricing_snapshot for reference in cost_pricing_references
+    ):
+        raise ClaimBindingError("report pricing snapshot does not match signed cost claims")
     return entries
 
 
@@ -219,6 +240,7 @@ def _value_html(value) -> str:
             f"<strong>{_esc(_pretty_bucket(str(cell['value'])))}</strong>"
             "</div>"
             for cell in value
+            if "value" in cell
         )
         return f'<div class="dist">{rows}</div>'
     rows = "".join(
@@ -266,6 +288,7 @@ def _validate_v2_registry(
             signed_claims,
             registry=registry,
             trusted_device_pubs=trusted_device_pubs,
+            pricing_snapshot=report.get("pricing_snapshot"),
         )
     except (ClaimBindingError, KeyError, RegistryError) as exc:
         raise PageError(f"refusing a registry-nonconforming report: {exc}") from exc

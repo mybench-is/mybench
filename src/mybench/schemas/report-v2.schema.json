@@ -159,7 +159,7 @@
     "cell": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["dimensions", "value"],
+      "required": ["dimensions"],
       "properties": {
         "dimensions": {
           "type": "array",
@@ -167,8 +167,19 @@
           "maxItems": 5,
           "items": {"$ref": "#/$defs/nonempty"}
         },
-        "value": {"$ref": "#/$defs/primitive"}
-      }
+        "value": {"$ref": "#/$defs/primitive"},
+        "container": {"enum": ["array", "object"]}
+      },
+      "oneOf": [
+        {
+          "required": ["value"],
+          "not": {"required": ["container"]}
+        },
+        {
+          "required": ["container"],
+          "not": {"required": ["value"]}
+        }
+      ]
     },
     "fieldValue": {
       "oneOf": [

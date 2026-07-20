@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mybench.is/schemas/v1/pricing_snapshot.schema.json",
+  "title": "Mybench immutable public list-price snapshot",
+  "description": "Content-free, effective-dated provider token rates. A new price card is a new packaged version; scorers never mutate or refresh this document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "currency",
+    "unit",
+    "rounding_rule",
+    "estimate_label",
+    "sources",
+    "rates"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "version": {"$ref": "#/$defs/semver"},
+    "currency": {"const": "USD"},
+    "unit": {"const": "micro-usd-per-million-tokens"},
+    "rounding_rule": {"const": "half-up-after-summing-one-usage-observation"},
+    "estimate_label": {"const": "estimated-public-list-price-equivalent-not-invoice"},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "title", "url", "retrieved_on"],
+        "properties": {
+          "provider": {"enum": ["anthropic", "openai"]},
+          "title": {"$ref": "#/$defs/nonempty"},
+          "url": {
+            "type": "string",
+            "pattern": "^https://(developers\\.openai\\.com|platform\\.claude\\.com)/",
+            "maxLength": 512
+          },
+          "retrieved_on": {"$ref": "#/$defs/date"}
+        }
+      }
+    },
+    "rates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/rate"}
+    }
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1, "maxLength": 256},
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "rateOrUnknown": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0},
+        {"const": "UNKNOWN"}
+      ]
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_sku",
+        "aliases",
+        "public_model",
+        "service_tier",
+        "context_tier",
+        "tool_charge",
+        "reasoning_usage",
+        "effective_from",
+        "effective_until",
+        "input_accounting",
+        "input",
+        "output",
+        "cache_read",
+        "cache_write_5m",
+        "cache_write_1h"
+      ],
+      "properties": {
+        "provider": {"enum": ["anthropic", "openai"]},
+        "model_sku": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+        },
+        "aliases": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+          }
+        },
+        "public_model": {
+          "enum": [
+            "gpt-5",
+            "gpt-5-codex",
+            "o-series",
+            "claude-sonnet",
+            "claude-opus",
+            "claude-haiku"
+          ]
+        },
+        "service_tier": {"const": "standard-public-api"},
+        "context_tier": {"const": "standard"},
+        "tool_charge": {"const": "token-rates-only-unobserved-tool-charges-excluded"},
+        "reasoning_usage": {"const": "included-in-output-when-provider-reported"},
+        "effective_from": {"$ref": "#/$defs/date"},
+        "effective_until": {
+          "oneOf": [
+            {"$ref": "#/$defs/date"},
+            {"type": "null"}
+          ]
+        },
+        "input_accounting": {
+          "enum": ["includes-cache-read", "excludes-cache-read"]
+        },
+        "input": {"$ref": "#/$defs/rateOrUnknown"},
+        "output": {"$ref": "#/$defs/rateOrUnknown"},
+        "cache_read": {"$ref": "#/$defs/rateOrUnknown"},
+        "cache_write_5m": {"$ref": "#/$defs/rateOrUnknown"},
+        "cache_write_1h": {"$ref": "#/$defs/rateOrUnknown"}
+      }
+    }
+  }
+}

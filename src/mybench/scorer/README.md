@@ -29,6 +29,15 @@ inventory; content, paths, session/event identifiers, tool/server names, and
 ordered streams are absent. See
 `docs/wave1-transcript-scorers.md`.
 
+`token_cost.py` implements the MYB-13.6 Workflow Fingerprint profile over
+normalized token/model/phase/outcome structure. `pricing.py` loads one
+immutable, effective-dated, checksummed in-package price-card snapshot; the
+scorer performs integer micro-USD arithmetic and has no clock, environment, or
+network dependency. Missing or ambiguous price dimensions remain `UNKNOWN`.
+Dollar estimates are local-report-only and explicitly labelled public
+list-price equivalents, never invoices or actual spend. See
+`docs/token-cost-profile.md`.
+
 `model_role.py` implements the Workflow Fingerprint model-role profile. It
 joins normalized model/provider/effort carriers to the pinned phase stream in
 memory, emits explicit UNKNOWN cells plus per-cell evidence quality, and feeds
