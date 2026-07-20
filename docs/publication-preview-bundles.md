@@ -52,6 +52,12 @@ date, backfill prose, and evidence manifest. Its evidence window is reduced to
 ISO-week bounds. The seven fingerprint sections and generic catalog lane stay
 closed and registry-governed.
 
+Envelope version metadata is also fail-closed. Report, scorer, ledger, anchor,
+normalized-event, and optional phase-classifier versions must match the
+package's explicit reviewed token vocabularies. The projection rebuilds those
+fields from its own pinned tokens in canonical order; it never copies an
+arbitrary private-report version string into candidate-publication bytes.
+
 `redaction-manifest.json` has a strict `additionalProperties: false` schema and
 enumerates exactly these eleven categorical exclusions, all with status
 `excluded`:

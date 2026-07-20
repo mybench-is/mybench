@@ -184,6 +184,13 @@ def test_public_projection_excludes_local_fields_and_renderer_rejects_preset_esc
     source = _source_bundle(token_cost=True)
     preview = _build(source)
     public_report = json.loads((preview / "public-report.json").read_bytes())
+    assert public_report["report_version"] == "v0.2.0"
+    assert public_report["scorer_version"] == "0.4.0"
+    assert public_report["input_schema_versions"] == {
+        "anchor": ["2"],
+        "ledger": ["2"],
+        "normalized_events": ["1"],
+    }
     ids = {
         field["registry_id"]
         for section in public_report["fingerprint"].values()
@@ -205,6 +212,79 @@ def test_public_projection_excludes_local_fields_and_renderer_rejects_preset_esc
     field["disclosure"] = "LOCAL_ONLY"
     with pytest.raises(PageError, match="non-conforming public report"):
         render_public_page(poisoned)
+
+
+PUBLIC_ENVELOPE_VERSION_CANARIES = (
+    pytest.param(("report_version",), "MYBENCH-CANARY-public-report-version", id="report"),
+    pytest.param(
+        ("scorer_version",),
+        "0.4.0-MYBENCH-CANARY-public-scorer-version",
+        id="scorer",
+    ),
+    pytest.param(
+        ("input_schema_versions", "ledger"),
+        "MYBENCH-CANARY-public-ledger-version",
+        id="ledger",
+    ),
+    pytest.param(
+        ("input_schema_versions", "anchor"),
+        "MYBENCH-CANARY-public-anchor-version",
+        id="anchor",
+    ),
+    pytest.param(
+        ("input_schema_versions", "normalized_events"),
+        "MYBENCH-CANARY-public-normalized-version",
+        id="normalized-events",
+    ),
+    pytest.param(
+        ("input_schema_versions", "phase_classifier"),
+        "MYBENCH-CANARY-public-phase-classifier-version",
+        id="phase-classifier",
+    ),
+)
+
+
+def _set_envelope_version(document: dict, location: tuple[str, ...], value: str) -> None:
+    if len(location) == 1:
+        document[location[0]] = value
+    else:
+        document[location[0]][location[1]] = [value]
+
+
+@pytest.mark.parametrize(("location", "canary"), PUBLIC_ENVELOPE_VERSION_CANARIES)
+def test_every_public_envelope_version_channel_is_pinned_and_fires_before_preview_write(
+    location, canary, monkeypatch
+):
+    valid_public, _manifest = derive_public_report(v2_report(), preset="full")
+    poisoned_public = copy.deepcopy(valid_public)
+    _set_envelope_version(poisoned_public, location, canary)
+    assert list(load_validator("public-report.schema.json").iter_errors(poisoned_public))
+
+    source_report = v2_report()
+    _set_envelope_version(source_report, location, canary)
+    source = assemble_bundle(
+        source_report,
+        evidence_manifest(source_report, [], []),
+        private_key=DEVICE_KEY,
+        signed_claims=v2_claims(),
+    )
+    rendered = []
+    written = []
+    monkeypatch.setattr(
+        "mybench.report.preview.cli.render_public_page",
+        lambda *_args, **_kwargs: rendered.append(True) or b"forbidden",
+    )
+    monkeypatch.setattr(
+        "mybench.report.preview.cli._write_private",
+        lambda *_args, **_kwargs: written.append(True),
+    )
+    with pytest.raises(PreviewError, match="versions are not pinned") as raised:
+        _build(source)
+    assert canary not in str(raised.value)
+    assert rendered == []
+    assert written == []
+    assert not (source / "publication-preview").exists()
+    assert not list(source.glob(".previewing-*"))
 
 
 def test_unknown_source_field_fails_before_public_projection_or_render(monkeypatch):

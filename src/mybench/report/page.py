@@ -96,6 +96,18 @@ PUBLIC_EXCLUSION_CATEGORIES = (
     "raw-orchestration-file-contents",
 )
 
+# Candidate-publication envelope versions are an explicit, reviewed vocabulary.
+# The private report schema intentionally accepts historical and future producer
+# strings, but those strings must never become a free-form public byte channel.
+_PUBLIC_REPORT_VERSIONS = ("v0.2.0",)
+_PUBLIC_SCORER_VERSIONS = ("0.2.0", "0.3.0", "0.4.0")
+_PUBLIC_INPUT_SCHEMA_VERSIONS = {
+    "ledger": ("1", "2", "3"),
+    "anchor": ("1", "2"),
+    "normalized_events": ("1", "2", "3", "4", "5"),
+    "phase_classifier": ("0.1.0", "1.0.0"),
+}
+
 STAMP_SVG = (  # outlined-path 3-pin mark — assets/brand/generate_marks.py
     '<svg class="stamp" aria-hidden="true" viewBox="0 0 60 68" xmlns="http://www.w3.org/2000/svg" fill="none"><rect x="8" y="12" width="44" height="44" rx="5" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="5" x2="18" y2="12" stroke="currentColor" stroke-width="2"/><line x1="18" y1="56" x2="18" y2="63" stroke="currentColor" stroke-width="2"/><line x1="30" y1="5" x2="30" y2="12" stroke="currentColor" stroke-width="2"/><line x1="30" y1="56" x2="30" y2="63" stroke="currentColor" stroke-width="2"/><line x1="42" y1="5" x2="42" y2="12" stroke="currentColor" stroke-width="2"/><line x1="42" y1="56" x2="42" y2="63" stroke="currentColor" stroke-width="2"/><g fill="currentColor" stroke="currentColor" stroke-width="0.4" transform="translate(17.40,39.46) scale(0.02100,-0.02100)"><path d="M30 0V516H149V440H156Q168 476 190.5 502.0Q213 528 254 528Q329 528 346 440H352Q358 458 367.0 474.0Q376 490 389.0 502.0Q402 514 420.0 521.0Q438 528 462 528Q570 528 570 369V0H451V354Q451 390 438.5 404.5Q426 419 406 419Q387 419 373.5 406.5Q360 394 360 368V0H240V354Q240 390 228.5 404.5Q217 419 197 419Q177 419 163.0 406.5Q149 394 149 368V0Z"/><path transform="translate(600,0)" d="M59 740H207V422H214Q233 468 269.0 498.0Q305 528 367 528Q410 528 445.5 512.0Q481 496 506.5 463.0Q532 430 546.5 379.0Q561 328 561 258Q561 188 546.5 137.0Q532 86 506.5 53.0Q481 20 445.5 4.0Q410 -12 367 -12Q305 -12 269.0 17.5Q233 47 214 94H207V0H59ZM303 103Q353 103 380.0 133.5Q407 164 407 218V298Q407 352 380.0 382.5Q353 413 303 413Q264 413 235.5 394.0Q207 375 207 334V182Q207 141 235.5 122.0Q264 103 303 103Z"/></g></svg>'
 )
@@ -539,6 +551,24 @@ def derive_public_projection(
             ),
         )
 
+    def pinned_scalar(value: str, vocabulary: Sequence[str]) -> str:
+        for token in vocabulary:
+            if value == token:
+                return token
+        raise PageError("source report envelope versions are not pinned for publication")
+
+    input_versions = source_report["input_schema_versions"]
+    if set(input_versions) - set(_PUBLIC_INPUT_SCHEMA_VERSIONS):
+        raise PageError("source report envelope versions are not pinned for publication")
+    public_input_versions = {}
+    for name, values in input_versions.items():
+        vocabulary = _PUBLIC_INPUT_SCHEMA_VERSIONS[name]
+        if any(value not in vocabulary for value in values):
+            raise PageError("source report envelope versions are not pinned for publication")
+        # Return only module-owned tokens in one canonical order, never the
+        # caller's string objects or ordering.
+        public_input_versions[name] = [token for token in vocabulary if token in values]
+
     public_sections = {}
     for section_name, source_section in source_report["fingerprint"].items():
         fields = selected(f"fingerprint.{section_name}", source_section["fields"])
@@ -551,9 +581,9 @@ def derive_public_projection(
 
     public_report = {
         "schema_version": "1",
-        "report_version": source_report["report_version"],
-        "scorer_version": source_report["scorer_version"],
-        "input_schema_versions": copy.deepcopy(source_report["input_schema_versions"]),
+        "report_version": pinned_scalar(source_report["report_version"], _PUBLIC_REPORT_VERSIONS),
+        "scorer_version": pinned_scalar(source_report["scorer_version"], _PUBLIC_SCORER_VERSIONS),
+        "input_schema_versions": public_input_versions,
         "registry": {"version": registry.version, "digest": registry.digest()},
         "evidence_period": {
             "start_week": _iso_week(source_report["evidence_period"]["start"]),
