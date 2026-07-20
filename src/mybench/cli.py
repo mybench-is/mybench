@@ -64,6 +64,11 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="explicit git discovery root (repeatable; required for git)",
     )
+    init.add_argument(
+        "--migrate-founder-records-from",
+        metavar="CLONE",
+        help="one-time exact migration from an explicit legacy anchors clone",
+    )
     decision = init.add_mutually_exclusive_group()
     decision.add_argument(
         "--accept-all", action="store_true", help="confirm every non-excluded proposal"
@@ -275,18 +280,48 @@ def _init(args: argparse.Namespace) -> int:
     if args.detect is not None:
         return _init_detect(args)
     try:
-        from mybench import paths
-
-        paths.ensure_data_dir()
-        paths.ensure_session_scope_key()
-        paths.ensure_device_key()
-        paths.ensure_identity_key()
-        paths.ensure_commit_signing_key()
+        _ensure_init_state(args.migrate_founder_records_from)
     except Exception:  # noqa: BLE001 - never relay a path or key-bearing exception
         return _failed("init", as_json=args.json)
-    payload = {"command": "init", "keys_ready": 4, "status": "ok"}
-    _emit(payload, as_json=args.json, human="mybench initialized locally (4 key roles ready)")
+    payload = {
+        "command": "init",
+        "identity_ready": True,
+        "keys_ready": 4,
+        "local_only": True,
+        "published": False,
+        "registered": False,
+        "status": "ok",
+    }
+    _emit(
+        payload,
+        as_json=args.json,
+        human=(
+            "mybench identity is ready locally (4 key roles ready); "
+            "nothing registered or published"
+        ),
+    )
     return EXIT_OK
+
+
+def _ensure_init_state(legacy_clone: str | None) -> None:
+    """Create keys then bootstrap/migrate/verify the one canonical local chain."""
+    from mybench import identity, paths
+
+    fresh_install = not paths.data_dir().exists()
+    identity_key_exists = paths.identity_key_path().exists()
+    device_key_exists = paths.device_key_path().exists()
+    if identity_key_exists != device_key_exists:
+        raise identity.IdentityError("local identity key state is incomplete")
+    paths.ensure_data_dir()
+    paths.ensure_device_key()
+    paths.ensure_identity_key()
+    identity.bootstrap_or_verify_local_identity(
+        date=datetime.now(UTC).date().isoformat(),
+        fresh_install=fresh_install,
+        legacy_clone=Path(legacy_clone) if legacy_clone is not None else None,
+    )
+    paths.ensure_session_scope_key()
+    paths.ensure_commit_signing_key()
 
 
 def _proposal_payload(proposals, exclusions: tuple[str, ...]) -> dict:
@@ -317,7 +352,6 @@ def _emit_proposals(payload: dict, *, as_json: bool) -> None:
 
 def _init_detect(args: argparse.Namespace) -> int:
     try:
-        from mybench import paths
         from mybench.scan_config import (
             ScanConfig,
             discover,
@@ -360,11 +394,7 @@ def _init_detect(args: argparse.Namespace) -> int:
             return EXIT_OK
 
     try:
-        paths.ensure_data_dir()
-        paths.ensure_session_scope_key()
-        paths.ensure_device_key()
-        paths.ensure_identity_key()
-        paths.ensure_commit_signing_key()
+        _ensure_init_state(args.migrate_founder_records_from)
         store(ScanConfig.from_proposals(proposals, exclusions))
     except Exception:  # noqa: BLE001 - never relay a confirmed local path or key detail
         return _failed("init --detect", as_json=args.json)
@@ -377,12 +407,25 @@ def _init_detect(args: argparse.Namespace) -> int:
         "status": "ok",
         "watches": sum(proposal.source is not None for proposal in proposals),
     }
+    if args.local_first:
+        # Preserve the pre-MYB-8.14 JSON shape when callers omit the explicit
+        # default-selection flag; the task-specified path carries the richer
+        # typed local-only boundary without changing any state semantics.
+        accepted.update(
+            {
+                "identity_ready": True,
+                "local_only": True,
+                "published": False,
+                "registered": False,
+            }
+        )
     _emit(
         accepted,
         as_json=args.json,
         human=(
             f"Configured {accepted['watches']} watch(es), {accepted['repos']} repo(s), "
-            f"and {accepted['exclusions']} exclusion(s) locally."
+            f"and {accepted['exclusions']} exclusion(s) locally; identity ready locally, "
+            "nothing registered or published."
         ),
     )
     return EXIT_OK

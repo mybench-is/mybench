@@ -24,11 +24,27 @@ nonces, or key material.
 
 ## Local workflow
 
-`mybench init [--local-first] [--json]` creates or validates the private 0700
-data tree and the four local key roles. `--local-first` is explicit spelling
-for the current default. `--detect` proposes only the requested Claude, Codex,
-and explicitly rooted Git sources; it writes the private scan config only after
-`--accept-all` or interactive confirmation. `--decline` writes nothing.
+`mybench init [--local-first] [--migrate-founder-records-from CLONE] [--json]`
+creates or validates the private 0700 data tree, four local key roles, and the
+canonical offline identity chain. A fresh install creates one self-certifying
+genesis plus one active current-device binding and no handle. Repeated init
+verifies these immutable records without rewriting them. Output explicitly
+says the identity is local-only: nothing is registered or published.
+Machine-readable plain-init output carries `identity_ready: true`,
+`local_only: true`, `registered: false`, and `published: false`. The explicit
+`--local-first --detect ... --accept-all --json` form carries the same typed
+identity boundary; omitting the redundant `--local-first` flag preserves the
+older detection-summary JSON shape without changing initialization semantics.
+`--local-first` is explicit spelling for the current default. The bounded
+`--migrate-founder-records-from` compatibility option copies the founder's
+exact three already-signed records from an explicitly named legacy clone; it
+does not change the clone, keys, identity id, or chronology. Normal users never
+need an anchors clone. See [Local identity state](local-identity-state.md).
+
+`--detect` proposes only the requested Claude, Codex, and explicitly rooted Git
+sources; it uses the same identity bootstrap/verification path only after
+`--accept-all` or interactive confirmation. Proposal-only and `--decline`
+write nothing.
 
 `mybench scan [--watch DIR:SOURCE ...] [--repo PATH ...] [--archive]
 [--upgrade] [--historical [--dry-run]] [--quiet] [--json]` performs one capture pass. It also flushes the lifecycle

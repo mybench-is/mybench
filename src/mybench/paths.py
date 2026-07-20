@@ -10,6 +10,8 @@ Layout under the data dir (ADR-0001 §5, ADR-0002 §§4–5):
     normalized/   content-free normalized artifacts   — asset A8
     archive/      byte-exact transcript preimages     — asset A9
     reports/      private local report artifacts       — asset A10
+    identity/records/<identity-id>/
+                  immutable signed identity state      — asset A11
     scan-config.json confirmed local scan locations (0600)
     scan-health.json successful scan times + opaque source ids (0600)
     scan-health.lock serializes health receipt replacement (0600)
@@ -41,6 +43,7 @@ ARCHIVE_SOURCES = ("claude-code", "codex", "synthetic")
 _OPAQUE_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _CORPUS_COMMITMENT_RE = re.compile(r"[0-9a-f]{64}")
 _REPORT_ID_RE = re.compile(r"[0-9a-f]{64}")
+_IDENTITY_ID_RE = re.compile(r"[0-9a-f]{64}")
 _DURABLE_DIRS: set[tuple[str, int, int]] = set()
 _DURABLE_ROOT_CHAINS: set[tuple[str, int, int]] = set()
 XDG_DATA_HOME_ENV = "XDG_DATA_HOME"
@@ -116,6 +119,23 @@ def archive_dir() -> Path:
 def reports_dir() -> Path:
     """A10 root: private local reports that are never published implicitly."""
     return data_dir() / "reports"
+
+
+def identity_state_dir() -> Path:
+    """A11 root: local-only identity control state, distinct from private keys."""
+    return data_dir() / "identity"
+
+
+def identity_records_dir() -> Path:
+    """A11 signed-record root; individual identity directories live below it."""
+    return identity_state_dir() / "records"
+
+
+def identity_record_dir(identity_id: str) -> Path:
+    """Return one canonical A11 identity directory without creating it."""
+    if not isinstance(identity_id, str) or not _IDENTITY_ID_RE.fullmatch(identity_id):
+        raise PathsError("invalid local identity id")
+    return identity_records_dir() / identity_id
 
 
 def scan_config_path() -> Path:
@@ -470,6 +490,13 @@ def ensure_reports_dir() -> Path:
     """Create/validate the 0700 A10 local-report root."""
     ensure_data_dir()
     return _ensure_dir(reports_dir())
+
+
+def ensure_identity_records_dir() -> Path:
+    """Create/validate the mode-0700 A11 hierarchy through ``records/``."""
+    ensure_data_dir()
+    _ensure_dir(identity_state_dir())
+    return _ensure_dir(identity_records_dir())
 
 
 def ensure_report_dir(report_id: str) -> Path:
