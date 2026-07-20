@@ -7,7 +7,9 @@ only byte counts and SHA-256 digests. Every input and fixture is synthetic.
 
 The current landed stages include the activity `report.json`, normalized
 corpora and private session-timing output, the coarse agent-hours profile,
-the aggregate workflow-map section, the private orchestration-delegation distributions,
+the aggregate workflow-map and context-management sections, the private
+orchestration-delegation distributions, the model-role profile and its
+evidence-quality contribution,
 signed-claim serialization, registry disclosure manifest, and static report
 HTML. Each owning story must add both a synthetic
 invocation factory to `RUNNERS` and a same-name `Stage`; exact key equality and

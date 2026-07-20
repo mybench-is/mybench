@@ -85,10 +85,108 @@ _ID_RE = re.compile(r"[a-z0-9_]+(\.[a-z0-9_]+)+")
 _VOCABULARY_ID_RE = re.compile(r"[a-z0-9_]+([.-][a-z0-9_]+)*")
 _CAVEAT_RE = re.compile(r"[a-z][a-z0-9]*(-[a-z0-9]+)*")
 _SEMVER_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+_REPORT_WRAPPER_OUTPUT_FIELDS = frozenset({"trust_tier", "caveats"})
+_REPORT_ARRAY_INDEX_WIDTH = 8
 
 
 class RegistryError(RuntimeError):
     pass
+
+
+def _report_array_index(index: int) -> str:
+    if index >= 10**_REPORT_ARRAY_INDEX_WIDTH:
+        raise RegistryError("registry output array is too large for the report-v2 envelope")
+    return f"{index:0{_REPORT_ARRAY_INDEX_WIDTH}d}"
+
+
+def _flatten_report_value(value: object, path: tuple[str, ...], cells: list[dict]) -> None:
+    """Encode a registry-owned JSON value as closed primitive/container path cells."""
+
+    if isinstance(value, dict):
+        cells.append({"dimensions": list(path), "container": "object"})
+        for key in sorted(value):
+            if not isinstance(key, str) or not key:
+                raise RegistryError("registry output object keys cannot enter report-v2")
+            _flatten_report_value(value[key], (*path, key), cells)
+        return
+    if isinstance(value, list):
+        cells.append({"dimensions": list(path), "container": "array"})
+        for index, item in enumerate(value):
+            _flatten_report_value(item, (*path, _report_array_index(index)), cells)
+        return
+    if isinstance(value, bool) or isinstance(value, int) or isinstance(value, str) and value:
+        cells.append({"dimensions": list(path), "value": value})
+        return
+    raise RegistryError("registry output value cannot enter the report-v2 envelope")
+
+
+def _decoded_report_cell(cell: dict) -> object:
+    if set(cell) == {"dimensions", "value"}:
+        value = cell["value"]
+        if isinstance(value, bool) or isinstance(value, int) or isinstance(value, str) and value:
+            return copy.deepcopy(value)
+    elif set(cell) == {"dimensions", "container"}:
+        if cell["container"] == "array":
+            return []
+        if cell["container"] == "object":
+            return {}
+    raise RegistryError("report value cell violates the closed primitive/container shape")
+
+
+def _decode_report_value(cells: list[dict]) -> dict:
+    """Reconstruct the exact registry output represented by sorted path cells."""
+
+    try:
+        paths = [tuple(cell["dimensions"]) for cell in cells]
+    except (KeyError, TypeError) as exc:
+        raise RegistryError("report value cells violate the closed path shape") from exc
+    if not paths or any(
+        not path or len(path) > 5 or any(not isinstance(item, str) or not item for item in path)
+        for path in paths
+    ):
+        raise RegistryError("report value cells violate the closed path shape")
+    if paths != sorted(paths):
+        raise RegistryError("report value cells must be sorted by dimensions")
+    if len(paths) != len(set(paths)):
+        raise RegistryError("report value cells must name unique output paths")
+    if any(path[0] in _REPORT_WRAPPER_OUTPUT_FIELDS for path in paths):
+        raise RegistryError("report value cells cannot redefine wrapper-owned fields")
+
+    output: dict = {}
+    for cell, path in zip(cells, paths, strict=True):
+        value = _decoded_report_cell(cell)
+        parent: object = output
+        for segment in path[:-1]:
+            if isinstance(parent, dict):
+                if segment not in parent:
+                    raise RegistryError("report value cell parent container is missing")
+                parent = parent[segment]
+                continue
+            if isinstance(parent, list):
+                if not re.fullmatch(rf"[0-9]{{{_REPORT_ARRAY_INDEX_WIDTH}}}", segment):
+                    raise RegistryError("report value cell has an invalid array index")
+                index = int(segment)
+                if index >= len(parent):
+                    raise RegistryError("report value cell parent array item is missing")
+                parent = parent[index]
+                continue
+            raise RegistryError("report value cell path traverses a primitive")
+
+        terminal = path[-1]
+        if isinstance(parent, dict):
+            if terminal in parent:
+                raise RegistryError("report value cells must name unique output paths")
+            parent[terminal] = value
+        elif isinstance(parent, list):
+            if not re.fullmatch(rf"[0-9]{{{_REPORT_ARRAY_INDEX_WIDTH}}}", terminal):
+                raise RegistryError("report value cell has an invalid array index")
+            index = int(terminal)
+            if index != len(parent):
+                raise RegistryError("report value cell array indexes must be contiguous")
+            parent.append(value)
+        else:
+            raise RegistryError("report value cell path traverses a primitive")
+    return output
 
 
 def _packaged_registry_bytes() -> bytes:
@@ -526,6 +624,35 @@ class Registry:
         """Return the explicitly admitted v2 location, if one exists."""
         return self._entry(registry_id).get("report_location")
 
+    def report_value(self, registry_id: str, output: dict) -> list[dict]:
+        """Encode one registry-valid output as closed report-v2 path cells.
+
+        Nested arrays and objects are represented by explicit container nodes;
+        every leaf remains a schema-v2 primitive.  The active entry's closed
+        output schema is validated before encoding, so this is not an arbitrary
+        JSON escape hatch.
+        """
+
+        entry = self._entry(registry_id)
+        if entry["status"] != "active" or entry.get("report_location") is None:
+            raise RegistryError(f"{registry_id}: no active report-v2 location")
+        if not isinstance(output, dict):
+            raise RegistryError(f"{registry_id}: report output must be an object")
+        errors = sorted(self._output_validators[registry_id].iter_errors(output), key=str)
+        if errors:
+            raise RegistryError(f"{registry_id}: output cannot enter report-v2")
+        payload = {
+            key: value for key, value in output.items() if key not in _REPORT_WRAPPER_OUTPUT_FIELDS
+        }
+        if not payload:
+            raise RegistryError(f"{registry_id}: report output has no value properties")
+        cells: list[dict] = []
+        for key in sorted(payload):
+            _flatten_report_value(payload[key], (key,), cells)
+        if len({tuple(cell["dimensions"]) for cell in cells}) != len(cells):
+            raise RegistryError(f"{registry_id}: report output paths are not unique")
+        return cells
+
     def _check_report_field(self, field: dict, location: str) -> tuple[dict, dict]:
         """Return the registry entry and exact output represented by a v2 field."""
         entry = self._entry(field["registry_id"])
@@ -565,16 +692,10 @@ class Registry:
         output = {}
         value = field["value"]
         if isinstance(value, list):
-            dimension_order = [tuple(cell["dimensions"]) for cell in value]
-            if dimension_order != sorted(dimension_order):
-                raise RegistryError(f"{eid}: report value cells must be sorted by dimensions")
-            for cell in value:
-                dimensions = cell["dimensions"]
-                if len(dimensions) != 1 or dimensions[0] in output:
-                    raise RegistryError(
-                        f"{eid}: report value cells must name unique output properties"
-                    )
-                output[dimensions[0]] = cell["value"]
+            try:
+                output = _decode_report_value(value)
+            except RegistryError as exc:
+                raise RegistryError(f"{eid}: invalid report value cells: {exc}") from exc
         else:
             required = [
                 name

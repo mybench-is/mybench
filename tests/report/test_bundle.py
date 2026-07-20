@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -11,6 +12,8 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from mybench import paths
+from mybench.claims import build_claim, canonical_bytes, dev_signing_key, sign_claim
+from mybench.registry import Registry, RegistryError
 from mybench.report.cli import (
     BUNDLE_FILES,
     BundleError,
@@ -25,13 +28,16 @@ from mybench.report.cli import (
     validate_evidence_manifest,
     verify_signature,
 )
+from mybench.report.page import PageError, render_page
 from mybench.scorer.score import score
 from tests.fixtures import CanaryLeakError, assert_no_canaries, generate_fixtures
 from tests.fixtures.ledgers import build_canary_ledger
-from tests.scorer.test_score import fixed_report_bytes
 from tests.report.test_page import report_for_claim, signed_v2_claim, v2_claims, v2_report
+from tests.scorer.test_score import fixed_report_bytes
+from tests.scorer.test_token_cost import _score as token_cost_score
 
 SYNTHETIC_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+TOKEN_COST_CLAIM_KEY = dev_signing_key(b"t" * 32)
 
 
 def _report() -> dict:
@@ -55,6 +61,64 @@ def _reordered(value, rng: random.Random):
     if isinstance(value, list):
         return [_reordered(item, rng) for item in value]
     return value
+
+
+def _token_cost_report_claims() -> tuple[dict, list[dict]]:
+    registry = Registry.load()
+    result = token_cost_score()
+    outputs = {
+        **result["publishable"],
+        **result["local"]["cost_claims"],
+    }
+    claims = []
+    fields = []
+    disclosure = {"public": "PUBLISHABLE", "local-report-only": "LOCAL_ONLY"}
+    for registry_id, output in sorted(outputs.items()):
+        entry = registry.entry(registry_id)
+        claim = sign_claim(
+            build_claim(
+                claim_type="descriptor",
+                registry_id=registry_id,
+                registry_version=entry["version"],
+                scorer_name="synthetic.token-cost-report",
+                scorer_version="1.0.0",
+                corpus_commitment="f" * 64,
+                window_start="2026-07-01T00:00:00Z",
+                window_end="2026-07-19T00:00:00Z",
+                output=output,
+                derivation_class=entry["class"],
+                signed_at="2026-07-19T00:00:00Z",
+            ),
+            TOKEN_COST_CLAIM_KEY,
+            kind="dev",
+        )
+        claims.append(claim)
+        fields.append(
+            {
+                "registry_id": registry_id,
+                "registry_version": entry["version"],
+                "claim_digest": hashlib.sha256(canonical_bytes(claim)).hexdigest(),
+                "derivation_class": entry["class"],
+                "execution_env": claim["execution_env"],
+                "trust_tier": output["trust_tier"],
+                "anchor_state": "covered",
+                "disclosure": disclosure[entry["disclosure"]],
+                "inference_risk": entry["inference_risk"],
+                "coverage_basis_points": 10000,
+                "confidence": "HIGH",
+                "caveats": output["caveats"],
+                "value": registry.report_value(registry_id, output),
+            }
+        )
+
+    report = v2_report(registry)
+    report["catalog_metrics"] = []
+    report["pricing_snapshot"] = result["pricing_snapshot"]
+    report["fingerprint"]["token_cost_profile"] = {
+        "status": "available",
+        "fields": fields,
+    }
+    return report, claims
 
 
 def test_report_id_is_a_stable_property_of_canonical_report_json():
@@ -81,6 +145,153 @@ def test_private_bundle_accepts_registry_validated_report_v2():
     page = (directory / "index.html").read_text()
     assert "Workflow fingerprint" in page
     assert "computed locally — unattested" in page
+
+
+def test_every_token_cost_claim_assembles_through_signed_v2_bundle_and_manifest():
+    report, claims = _token_cost_report_claims()
+    manifest = evidence_manifest(report, [], [])
+    directory = assemble_bundle(
+        report,
+        manifest,
+        private_key=SYNTHETIC_KEY,
+        signed_claims=claims,
+    )
+    assert len(claims) == len(report["fingerprint"]["token_cost_profile"]["fields"]) == 7
+    assert any(
+        cell.get("container") == "array"
+        for field in report["fingerprint"]["token_cost_profile"]["fields"]
+        for cell in field["value"]
+    )
+    assert (directory / "report.json").read_bytes() == canonical_report_bytes(report)
+    assert (
+        manifest["versions"]["pricing"]
+        == report["pricing_snapshot"]
+        == {
+            "version": "1.0.0",
+            "digest": "7a54a695e2f0ca6a0c959dfa7c5a51f9c0546c4422c785233269a4eb52939f50",
+            "currency": "USD",
+        }
+    )
+
+
+@pytest.mark.parametrize("reserved_root", ("trust_tier", "caveats"))
+@pytest.mark.parametrize("descendant", (False, True), ids=("root", "root-descendant"))
+def test_wrapper_owned_value_paths_fail_before_claim_render_or_bundle_write(
+    reserved_root, descendant, monkeypatch
+):
+    report, claims = _token_cost_report_claims()
+    fields = report["fingerprint"]["token_cost_profile"]["fields"]
+    assert len(fields) == len(claims) == 7
+    field = fields[0]
+    marker = (
+        f"MYBENCH-CANARY-wrapper-owned-{reserved_root}-"
+        f"{'descendant' if descendant else 'root'}-13-6"
+    )
+    planted = (
+        [
+            {"dimensions": [reserved_root], "container": "object"},
+            {"dimensions": [reserved_root, "synthetic_marker"], "value": marker},
+        ]
+        if descendant
+        else [{"dimensions": [reserved_root], "value": marker}]
+    )
+    field["value"].extend(planted)
+    field["value"].sort(key=lambda cell: cell["dimensions"])
+
+    # The envelope remains schema-valid and sorted: the semantic registry gate
+    # owns this rejection before wrapper reconstruction or signed comparison.
+    assert marker.encode() in canonical_report_bytes(report)
+    claim = next(
+        claim
+        for claim in claims
+        if hashlib.sha256(canonical_bytes(claim)).hexdigest() == field["claim_digest"]
+    )
+    with pytest.raises(RegistryError, match="wrapper-owned") as registry_failure:
+        Registry.load().check_report_claim(
+            field,
+            "fingerprint.token_cost_profile",
+            claim,
+        )
+    assert marker not in str(registry_failure.value)
+
+    render_attempts = []
+
+    def forbidden_render(*_args, **_kwargs):
+        render_attempts.append(True)
+        raise AssertionError("reserved wrapper path reached HTML rendering")
+
+    monkeypatch.setattr("mybench.report.page._claim_html", forbidden_render)
+    with pytest.raises(PageError, match="wrapper-owned") as page_failure:
+        render_page(report, signed_claims=claims)
+    assert marker not in str(page_failure.value)
+    assert render_attempts == []
+
+    def forbidden_write(*_args, **_kwargs):
+        raise AssertionError("reserved wrapper path reached bundle storage")
+
+    monkeypatch.setattr("mybench.report.cli._write_private", forbidden_write)
+    manifest = evidence_manifest(report, [], [])
+    assert not paths.reports_dir().exists()
+    with pytest.raises(BundleError, match="wrapper-owned") as bundle_failure:
+        assemble_bundle(
+            report,
+            manifest,
+            private_key=SYNTHETIC_KEY,
+            signed_claims=claims,
+        )
+    assert marker not in str(bundle_failure.value)
+    assert not paths.reports_dir().exists()
+
+
+def test_cost_field_requires_pricing_binding():
+    report, _claims = _token_cost_report_claims()
+    report.pop("pricing_snapshot")
+    with pytest.raises(BundleError, match="require a pricing snapshot"):
+        canonical_report_bytes(report)
+    with pytest.raises(BundleError, match="require a pricing snapshot"):
+        evidence_manifest(report, [], [])
+
+
+@pytest.mark.parametrize(
+    ("field", "wrong"),
+    (("version", "1.0.1"), ("digest", "0" * 64)),
+)
+def test_well_formed_report_pricing_mismatch_with_signed_cost_claims_fails(field, wrong):
+    report, claims = _token_cost_report_claims()
+    report["pricing_snapshot"][field] = wrong
+    manifest = evidence_manifest(report, [], [])
+    with pytest.raises(BundleError, match="pricing snapshot does not match signed cost claims"):
+        assemble_bundle(
+            report,
+            manifest,
+            private_key=SYNTHETIC_KEY,
+            signed_claims=claims,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "wrong"),
+    (("version", "1.0.1"), ("digest", "0" * 64)),
+)
+def test_well_formed_manifest_pricing_mismatch_with_report_fails(field, wrong):
+    report, claims = _token_cost_report_claims()
+    manifest = evidence_manifest(report, [], [])
+    manifest["versions"]["pricing"][field] = wrong
+    with pytest.raises(BundleError, match="manifest pricing snapshot does not match report"):
+        assemble_bundle(
+            report,
+            manifest,
+            private_key=SYNTHETIC_KEY,
+            signed_claims=claims,
+        )
+
+
+def test_manifest_pricing_currency_is_closed_and_bound():
+    report, _claims = _token_cost_report_claims()
+    manifest = evidence_manifest(report, [], [])
+    manifest["versions"]["pricing"]["currency"] = "EUR"
+    with pytest.raises(BundleError, match="schema validation"):
+        validate_evidence_manifest(manifest)
 
 
 def test_private_bundle_rejects_missing_or_invalid_v2_claim_before_writing():

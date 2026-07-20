@@ -73,7 +73,8 @@ an identity remains the identity-chain verifier's responsibility.
 `evidence-manifest.json` is local-only and is **never part of any publication
 set**. Its closed schema admits only ledger row ranges and chain tip, anchor
 event dates, corpus commitments, claim digests, and scorer/classifier/schema/
-registry/pricing/formula versions. Unknown properties fail validation at every
+registry/pricing/formula versions; pricing references bind version, digest,
+and currency to the report and verified cost claims. Unknown properties fail validation at every
 level, so nonce, preimage, prompt, content, path, and filename fields cannot be
 added. The complete bundle still receives leak-scan coverage because a local
 report can contain details that must never be uploaded.

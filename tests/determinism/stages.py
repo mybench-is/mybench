@@ -169,6 +169,25 @@ def _agent_hours_profile() -> Invocation:
     )
 
 
+def _pricing_snapshot_artifact() -> Invocation:
+    return Invocation(args=("1.0.0",), kwargs={})
+
+
+def _token_cost_profile() -> Invocation:
+    from mybench.scorer.pricing import load_pricing_snapshot
+    from tests.scorer.test_token_cost import _corpus
+
+    events, episodes, sessions = _corpus()
+    return Invocation(
+        args=(events,),
+        kwargs={
+            "episodes": episodes,
+            "sessions": sessions,
+            "pricing_snapshot": load_pricing_snapshot("1.0.0"),
+        },
+    )
+
+
 def _workflow_map_output() -> Invocation:
     # Fixed, synthetic episode identities and structural markers only. Private
     # grouping ids are consumed in memory and do not enter the stage artifact.
@@ -212,6 +231,58 @@ def _orchestration_delegation_output() -> Invocation:
     from tests.fixtures.delegation import synthetic_delegation_input
 
     return Invocation(args=(synthetic_delegation_input().corpus,), kwargs={})
+
+
+def _context_management_profile() -> Invocation:
+    # Reuse the fixed mixed-marker corpus from the owning scorer test so the
+    # subprocess byte gate covers both present and absent lifecycle evidence.
+    # Opaque grouping ids and canaries are consumed but never serialized.
+    from tests.scorer.test_context_management import mixed_marker_fixture
+
+    events, sessions, episodes, lifecycle = mixed_marker_fixture()
+    return Invocation(
+        args=(events,),
+        kwargs={
+            "sessions": sessions,
+            "episodes": episodes,
+            "lifecycle_events": lifecycle,
+            "episode_stitcher_version": "2.0.0",
+        },
+    )
+
+
+def _model_role_profile_output() -> Invocation:
+    # Fixed normalized metadata carriers plus structural phase events. Private
+    # session identities are synthetic routing keys and cannot enter output.
+    events = []
+    for index in range(5):
+        common = {"session_id": f"synthetic-model-role-session-{index}"}
+        events.extend(
+            [
+                {
+                    **common,
+                    "event_kind": "model",
+                    "authorship": "agent-turn",
+                    "model": "gpt-5-codex",
+                    "provider": "openai",
+                    "reasoning_effort": "high",
+                },
+                {
+                    **common,
+                    "event_kind": "reference",
+                    "authorship": "agent-turn",
+                    "reference_kind": "plan",
+                },
+                {
+                    **common,
+                    "event_kind": "tool-call",
+                    "authorship": "agent-turn",
+                    "tool_family": "edit",
+                },
+                {**common, "event_kind": "test", "authorship": "agent-turn"},
+            ]
+        )
+    return Invocation(args=(events,), kwargs={})
 
 
 def _evidence_coverage_aggregate() -> Invocation:
@@ -274,14 +345,18 @@ RUNNERS: dict[str, InvocationFactory] = {
     "activity-report-json": _activity_report_json,
     "claude-normalized-corpus": _claude_normalized_corpus,
     "codex-normalized-corpus": _codex_normalized_corpus,
+    "context-management-profile": _context_management_profile,
     "evidence-coverage-aggregate": _evidence_coverage_aggregate,
     "git-normalized-corpus": _git_normalized_corpus,
     "orchestration-delegation-output": _orchestration_delegation_output,
+    "pricing-snapshot-artifact": _pricing_snapshot_artifact,
+    "model-role-profile-output": _model_role_profile_output,
     "reference-target-join-corpus": _reference_target_join_corpus,
     "session-timing-output": _session_timing_output,
     "signed-claim": _signed_claim,
     "registry-disclosure-manifest": _registry_disclosure_manifest,
     "static-report-html": _static_report_html,
+    "token-cost-profile": _token_cost_profile,
     "wave1-transcript-claim-set": _wave1_transcript_claim_set,
     "workflow-phase-output": _workflow_phase_output,
     "workflow-map-output": _workflow_map_output,
@@ -306,11 +381,32 @@ STAGES = (
         ("mybench.scorer.agent_hours",),
     ),
     Stage(
+        "context-management-profile",
+        EntryPoint("mybench.scorer.context_management", "score_context_management"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.context_management",),
+    ),
+    Stage(
         "evidence-coverage-aggregate",
         EntryPoint("mybench.scorer.evidence_coverage", "score_evidence_coverage"),
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.evidence_coverage",),
+    ),
+    Stage(
+        "pricing-snapshot-artifact",
+        EntryPoint("mybench.scorer.pricing", "pricing_snapshot_artifact"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.pricing",),
+    ),
+    Stage(
+        "token-cost-profile",
+        EntryPoint("mybench.scorer.token_cost", "score_token_cost_profile"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.token_cost",),
     ),
     Stage(
         "workflow-map-output",
@@ -328,6 +424,13 @@ STAGES = (
         ResultEncoding.CANONICAL_JSON_LINE,
         True,
         ("mybench.scorer.delegation",),
+    ),
+    Stage(
+        "model-role-profile-output",
+        EntryPoint("mybench.scorer.model_role", "score_model_role_profile"),
+        ResultEncoding.CANONICAL_JSON_LINE,
+        True,
+        ("mybench.scorer.model_role",),
     ),
     Stage(
         "wave1-transcript-claim-set",

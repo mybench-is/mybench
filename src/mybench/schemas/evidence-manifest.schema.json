@@ -129,10 +129,11 @@
         "pricing": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["version", "digest"],
+          "required": ["version", "digest", "currency"],
           "properties": {
             "version": {"$ref": "#/$defs/version"},
-            "digest": {"$ref": "#/$defs/hex64"}
+            "digest": {"$ref": "#/$defs/hex64"},
+            "currency": {"const": "USD"}
           }
         }
       }

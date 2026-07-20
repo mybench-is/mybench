@@ -1,0 +1,96 @@
+{
+  "schema_version": "1",
+  "version": "1.0.0",
+  "currency": "USD",
+  "unit": "micro-usd-per-million-tokens",
+  "rounding_rule": "half-up-after-summing-one-usage-observation",
+  "estimate_label": "estimated-public-list-price-equivalent-not-invoice",
+  "sources": [
+    {
+      "provider": "anthropic",
+      "title": "Claude Platform pricing",
+      "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "retrieved_on": "2026-07-19"
+    },
+    {
+      "provider": "openai",
+      "title": "GPT-5 model pricing",
+      "url": "https://developers.openai.com/api/docs/models/gpt-5",
+      "retrieved_on": "2026-07-19"
+    }
+  ],
+  "rates": [
+    {
+      "provider": "anthropic",
+      "model_sku": "claude-haiku-4-5",
+      "aliases": ["claude-haiku-4-5", "claude-haiku-4-5-20251001"],
+      "public_model": "claude-haiku",
+      "service_tier": "standard-public-api",
+      "context_tier": "standard",
+      "tool_charge": "token-rates-only-unobserved-tool-charges-excluded",
+      "reasoning_usage": "included-in-output-when-provider-reported",
+      "effective_from": "2026-07-19",
+      "effective_until": null,
+      "input_accounting": "excludes-cache-read",
+      "input": 1000000,
+      "output": 5000000,
+      "cache_read": 100000,
+      "cache_write_5m": 1250000,
+      "cache_write_1h": 2000000
+    },
+    {
+      "provider": "anthropic",
+      "model_sku": "claude-opus-4-8",
+      "aliases": ["claude-opus-4-8"],
+      "public_model": "claude-opus",
+      "service_tier": "standard-public-api",
+      "context_tier": "standard",
+      "tool_charge": "token-rates-only-unobserved-tool-charges-excluded",
+      "reasoning_usage": "included-in-output-when-provider-reported",
+      "effective_from": "2026-07-19",
+      "effective_until": null,
+      "input_accounting": "excludes-cache-read",
+      "input": 5000000,
+      "output": 25000000,
+      "cache_read": 500000,
+      "cache_write_5m": 6250000,
+      "cache_write_1h": 10000000
+    },
+    {
+      "provider": "anthropic",
+      "model_sku": "claude-sonnet-5",
+      "aliases": ["claude-sonnet-5"],
+      "public_model": "claude-sonnet",
+      "service_tier": "standard-public-api",
+      "context_tier": "standard",
+      "tool_charge": "token-rates-only-unobserved-tool-charges-excluded",
+      "reasoning_usage": "included-in-output-when-provider-reported",
+      "effective_from": "2026-07-19",
+      "effective_until": "2026-08-31",
+      "input_accounting": "excludes-cache-read",
+      "input": 2000000,
+      "output": 10000000,
+      "cache_read": 200000,
+      "cache_write_5m": 2500000,
+      "cache_write_1h": 4000000
+    },
+    {
+      "provider": "openai",
+      "model_sku": "gpt-5",
+      "aliases": ["gpt-5", "gpt-5-2025-08-07"],
+      "public_model": "gpt-5",
+      "service_tier": "standard-public-api",
+      "context_tier": "standard",
+      "tool_charge": "token-rates-only-unobserved-tool-charges-excluded",
+      "reasoning_usage": "included-in-output-when-provider-reported",
+      "effective_from": "2026-07-19",
+      "effective_until": null,
+      "input_accounting": "includes-cache-read",
+      "input": 1250000,
+      "output": 10000000,
+      "cache_read": 125000,
+      "cache_write_5m": "UNKNOWN",
+      "cache_write_1h": "UNKNOWN"
+    }
+  ]
+}

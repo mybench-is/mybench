@@ -1944,6 +1944,339 @@
       "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.2/MYB-13.3; schema spec: MYB-13.1"
     },
     {
+      "id": "fingerprint.model_role.model_shares.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Local model shares by workflow role",
+      "inputs": ["workflow-phase-stream", "normalized-model-metadata"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "model_vocabulary_version", "role_phase_taxonomy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "model", "share_basis_points"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(planning|implementation|debugging|review|unknown)$"},
+                "model": {"type": "string", "pattern": "^(gpt-5|gpt-5-codex|o-series|claude-sonnet|claude-opus|claude-haiku|synthetic|other|UNKNOWN)$"},
+                "share_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+              }
+            }
+          },
+          "model_vocabulary_version": {"const": "1.0.0"},
+          "role_phase_taxonomy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"events": 5},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "risk_note": "Exact model-role shares can narrow workflow identity in combination and remain in the private report.",
+      "neutrality_note": "Model identifiers are pinned operational metadata and do not establish trust or capability.",
+      "notes": "MYB-13.5 local exact atom; values below five supporting events are absent."
+    },
+    {
+      "id": "fingerprint.model_role.model_shares.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Banded model shares by workflow role",
+      "inputs": ["workflow-phase-stream", "normalized-model-metadata"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "model_vocabulary_version", "role_phase_taxonomy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "model", "share_band"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(planning|implementation|debugging|review|unknown)$"},
+                "model": {"type": "string", "pattern": "^(gpt-5|gpt-5-codex|o-series|claude-sonnet|claude-opus|claude-haiku|synthetic|other|UNKNOWN)$"},
+                "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]}
+              }
+            }
+          },
+          "model_vocabulary_version": {"const": "1.0.0"},
+          "role_phase_taxonomy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Supporting events divided by all eligible events in the same role phase; cells below five events are absent."
+        }
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": ["full"],
+      "risk_note": "A model-role profile can narrow workflow identity in combination; raw identifiers and thin cells remain private.",
+      "neutrality_note": "Model identifiers are pinned operational metadata and do not establish trust or capability.",
+      "notes": "MYB-13.5 public band atom under THREAT_MODEL section 3.2."
+    },
+    {
+      "id": "fingerprint.model_role.provider_shares.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Local provider shares by workflow role",
+      "inputs": ["workflow-phase-stream", "normalized-provider-metadata"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "provider_vocabulary_version", "role_phase_taxonomy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "provider", "share_basis_points"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(planning|implementation|debugging|review|unknown)$"},
+                "provider": {"type": "string", "pattern": "^(anthropic|aws-bedrock|google-vertex|openai|azure-openai|synthetic|other|UNKNOWN)$"},
+                "share_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+              }
+            }
+          },
+          "provider_vocabulary_version": {"const": "1.0.0"},
+          "role_phase_taxonomy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"events": 5},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "risk_note": "Exact provider-role shares can narrow workflow identity in combination and remain in the private report.",
+      "neutrality_note": "Provider names are operational metadata only; trust comes from measurements and cryptographic evidence.",
+      "notes": "MYB-13.5 local exact atom; values below five supporting events are absent."
+    },
+    {
+      "id": "fingerprint.model_role.provider_shares.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Banded provider shares by workflow role",
+      "inputs": ["workflow-phase-stream", "normalized-provider-metadata"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "provider_vocabulary_version", "role_phase_taxonomy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "provider", "share_band"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(planning|implementation|debugging|review|unknown)$"},
+                "provider": {"type": "string", "pattern": "^(anthropic|aws-bedrock|google-vertex|openai|azure-openai|synthetic|other|UNKNOWN)$"},
+                "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]}
+              }
+            }
+          },
+          "provider_vocabulary_version": {"const": "1.0.0"},
+          "role_phase_taxonomy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Supporting events divided by all eligible events in the same role phase; cells below five events are absent."
+        }
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": ["full"],
+      "risk_note": "A provider-role profile can narrow workflow identity in combination; raw identifiers and thin cells remain private.",
+      "neutrality_note": "Provider names are operational metadata only; trust comes from measurements and cryptographic evidence.",
+      "notes": "MYB-13.5 public band atom under THREAT_MODEL section 3.2."
+    },
+    {
+      "id": "fingerprint.model_role.effort_shares.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Local effort shares by workflow role",
+      "inputs": ["workflow-phase-stream", "normalized-effort-metadata"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "effort_vocabulary_version", "role_phase_taxonomy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "effort", "share_basis_points"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(planning|implementation|debugging|review|unknown)$"},
+                "effort": {"type": "string", "pattern": "^(low|medium|high|max|UNKNOWN)$"},
+                "share_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}
+              }
+            }
+          },
+          "effort_vocabulary_version": {"const": "1.0.0"},
+          "role_phase_taxonomy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "Effort settings describe observed operational configuration and do not grade quality or ability.",
+      "notes": "MYB-13.5 local exact atom; none, minimal, and low reduce to low while xhigh reduces to max."
+    },
+    {
+      "id": "fingerprint.model_role.effort_shares.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Banded effort shares by workflow role",
+      "inputs": ["workflow-phase-stream", "normalized-effort-metadata"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "effort_vocabulary_version", "role_phase_taxonomy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "effort", "share_band"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(planning|implementation|debugging|review|unknown)$"},
+                "effort": {"type": "string", "pattern": "^(low|medium|high|max|UNKNOWN)$"},
+                "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]}
+              }
+            }
+          },
+          "effort_vocabulary_version": {"const": "1.0.0"},
+          "role_phase_taxonomy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Supporting events divided by all eligible events in the same role phase; cells below five events are absent."
+        }
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Effort settings describe observed operational configuration and do not grade quality or ability.",
+      "notes": "MYB-13.5 public band atom under THREAT_MODEL section 3.2."
+    },
+    {
+      "id": "fingerprint.model_role.evidence_quality",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Model-role evidence quality",
+      "inputs": ["workflow-phase-stream", "normalized-model-provider-effort-metadata"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "role_phase_taxonomy_version", "cell_support_floor", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "input_class", "coverage_band", "confidence", "evidence_state"],
+              "properties": {
+                "phase": {"type": "string", "pattern": "^(planning|implementation|debugging|review|unknown)$"},
+                "input_class": {"type": "string", "pattern": "^(model|provider|effort)$"},
+                "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+                "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+                "evidence_state": {"enum": ["available", "partial", "unknown"]}
+              }
+            }
+          },
+          "role_phase_taxonomy_version": {"const": "1.0.0"},
+          "cell_support_floor": {"const": 5},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "coverage_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Events carrying the requested metadata divided by eligible events in the same role phase."
+        },
+        {
+          "field": "confidence",
+          "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"],
+          "note": "LOW below 50 percent coverage, MEDIUM below 75 percent, HIGH otherwise, UNKNOWN without a denominator."
+        },
+        {
+          "field": "evidence_state",
+          "bands": ["available", "partial", "unknown"],
+          "note": "Available requires complete coverage; partial preserves known denominators with missing metadata; unknown has no denominator."
+        }
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Coverage qualifies the evidence and never substitutes missing metadata with a zero activity claim.",
+      "notes": "MYB-13.5 evidence-quality atom; model and effort also feed the MYB-13.8 contribution contract."
+    },
+    {
       "id": "fingerprint.model_role_profile",
       "version": "0.1.0",
       "class": "measured",
@@ -1966,6 +2299,326 @@
       ],
       "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
       "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.5; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.context.fresh_session_rate.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Fresh context-session rate",
+      "inputs": ["normalized-session-events", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "rate_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "rate_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Startup-triggered sessions divided by sessions with a known start trigger"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Sessions with a known start trigger divided by eligible sessions"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over start-trigger coverage"}
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Aggregate lifecycle frequency only; session identities and start positions remain private",
+      "notes": "MYB-13.4 context definition 1.0.0; missing start triggers reduce coverage and never become observed non-fresh activity"
+    },
+    {
+      "id": "fingerprint.context.resume_rate.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Resumed context-session rate",
+      "inputs": ["normalized-session-events", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "rate_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "rate_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Resume-triggered sessions divided by sessions with a known start trigger"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Sessions with a known start trigger divided by eligible sessions"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over start-trigger coverage"}
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Aggregate lifecycle frequency only; session identities and resume positions remain private",
+      "notes": "MYB-13.4 context definition 1.0.0; missing start triggers reduce coverage and never enter the rate denominator"
+    },
+    {
+      "id": "fingerprint.context.clear_rate.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Clear-triggered context-generation rate",
+      "inputs": ["normalized-context-identities", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "rate_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "rate_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Clear-triggered generations divided by generations with a known trigger"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Generations with a known trigger divided by structurally observed generations"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over generation-trigger coverage"}
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Aggregate clear frequency describes context handling without exposing a boundary position",
+      "notes": "MYB-13.4 context definition 1.0.0; unknown generation triggers reduce coverage"
+    },
+    {
+      "id": "fingerprint.context.manual_compactions.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Manual compaction count band",
+      "inputs": ["normalized-context-identities", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["count_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "count_band": {"enum": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"]},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "count_band", "bands": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"], "note": "Count of observed compaction boundaries classified manual; emitted only when every observed compaction trigger is known"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Compaction candidates with a manual or automatic trigger divided by observed compaction candidates"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over compaction-trigger coverage"}
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Only an evidence-period aggregate count band is disclosed; no session or boundary position is retained",
+      "notes": "MYB-13.4 context definition 1.0.0; a partial manual-versus-auto classification makes the count UNKNOWN"
+    },
+    {
+      "id": "fingerprint.context.automatic_compactions.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Automatic compaction count band",
+      "inputs": ["normalized-context-identities", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["count_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "count_band": {"enum": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"]},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "count_band", "bands": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"], "note": "Count of observed compaction boundaries classified automatic; emitted only when every observed compaction trigger is known"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Compaction candidates with a manual or automatic trigger divided by observed compaction candidates"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over compaction-trigger coverage"}
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Only an evidence-period aggregate count band is disclosed; no session or boundary position is retained",
+      "notes": "MYB-13.4 context definition 1.0.0; a partial manual-versus-auto classification makes the count UNKNOWN"
+    },
+    {
+      "id": "fingerprint.context.generations_per_episode.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Context generations per task episode",
+      "inputs": ["task-episode-identities", "normalized-context-identities", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["generation_count_band", "episode_share_band"],
+              "properties": {
+                "generation_count_band": {"enum": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"]},
+                "episode_share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]}
+              }
+            }
+          },
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "generation_count_band", "bands": ["0", "1-4", "5-19", "20-99", "100-999", "1000+"], "note": "Sum of observed session-scoped context generations within each explicitly stitched episode"},
+        {"field": "episode_share_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Covered episodes in a generation-count band divided by episodes with complete generation coverage"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Episodes whose every member session has a reliable generation marker divided by eligible episodes"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over episode generation coverage"}
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "The output is a corpus distribution only; no episode point, identity, or ordered boundary stream is disclosed",
+      "notes": "MYB-13.4 context definition 1.0.0 over ADR-0013 episode and context identities"
+    },
+    {
+      "id": "fingerprint.context.one_context_episode_rate.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Single-context task-episode rate",
+      "inputs": ["task-episode-identities", "normalized-context-identities", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "rate_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "rate_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Episodes with exactly one observed context generation divided by episodes with complete generation coverage"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Episodes whose every member session has a reliable generation marker divided by eligible episodes"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over episode generation coverage"}
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "The rate describes context shape and is not an effectiveness or quality measure",
+      "notes": "MYB-13.4 context definition 1.0.0; missing generation identity excludes an episode from the denominator and lowers coverage"
+    },
+    {
+      "id": "fingerprint.context.fresh_phase_split.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Fresh-session planning and implementation split",
+      "inputs": ["workflow-phase-stream", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cells", "classifier_version", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase_group", "share_band"],
+              "properties": {
+                "phase_group": {"enum": ["IMPLEMENTATION", "PLAN", "UNKNOWN"]},
+                "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]}
+              }
+            }
+          },
+          "classifier_version": {"const": "1.0.0"},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "phase_group", "bands": ["IMPLEMENTATION", "PLAN", "UNKNOWN"], "note": "Pinned coarse group of the first known workflow phase in a startup-triggered session"},
+        {"field": "share_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Fresh sessions in the phase group divided by fresh sessions"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Fresh sessions with a known PLAN or implementation phase divided by fresh sessions"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over fresh-session phase coverage"}
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Coarse corpus shares characterize where fresh sessions begin without exposing a session sequence or request meaning",
+      "notes": "MYB-13.4 uses workflow phase classifier 1.0.0; TASK or absent known phase remains UNKNOWN"
+    },
+    {
+      "id": "fingerprint.context.model_change_boundary_rate.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Model-change rate across context boundaries",
+      "inputs": ["normalized-context-identities", "normalized-model-routing", "lifecycle-event-rows"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rate_band", "coverage_band", "confidence", "definition_version", "trust_tier"],
+        "properties": {
+          "rate_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "coverage_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "confidence": {"enum": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"}
+        }
+      },
+      "band_definitions": [
+        {"field": "rate_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Observed context boundaries whose nearest model observations on each side differ, divided by boundaries with model coverage on both sides"},
+        {"field": "coverage_band", "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"], "note": "Context boundaries with model observations on both sides divided by observed context boundaries"},
+        {"field": "confidence", "bands": ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], "note": "Pinned confidence function over boundary model coverage"}
+      ],
+      "min_support": {"events": 5},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": ["full"],
+      "neutrality_note": "Model names are compared privately; only a corpus-level band is emitted and provider metadata is never trust language",
+      "risk_note": "A context-boundary routing pattern can narrow workflow identity in combination; model strings and boundary positions remain private",
+      "notes": "MYB-13.4 context definition 1.0.0; missing or conflicting model evidence lowers coverage and never becomes no-change"
     },
     {
       "id": "fingerprint.context_profile",
@@ -2523,6 +3176,424 @@
       ],
       "neutrality_note": "roadmap Stage 1 \u00a76 report section; concrete descriptors and bands land with the owning task; publication rides MYB-16.2",
       "notes": "Reconciliation scope widening: every roadmap \u00a76 section is registry-governed. Owner: MYB-13.7/MYB-6.8; schema spec: MYB-13.1"
+    },
+    {
+      "id": "fingerprint.token_cost.tokens_by_model.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Token volume by public model class",
+      "inputs": [
+        "normalized-token-usage",
+        "normalized-model-routing"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "model_vocabulary_version",
+          "token_accounting_policy_version",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["model", "token_band"],
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "pattern": "^(gpt-5|gpt-5-codex|o-series|claude-sonnet|claude-opus|claude-haiku|synthetic|other|UNKNOWN)$"
+                },
+                "token_band": {
+                  "enum": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"]
+                }
+              }
+            }
+          },
+          "model_vocabulary_version": {"const": "1.0.0"},
+          "token_accounting_policy_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "token_band",
+          "bands": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"],
+          "note": "Order-of-magnitude token total; 10m+ is top-coded and each model cell requires five supporting sessions"
+        }
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R1",
+      "disclosure": "public",
+      "presets": ["full"],
+      "neutrality_note": "Provider-reported token volume by operational model class; it does not measure utility, quality, difficulty, or subject capability",
+      "risk_note": "Even coarse model-volume combinations can narrow workflow identity; raw model strings, exact totals, and thin cells stay local",
+      "notes": "MYB-13.6; normalized orchestrated token-accounting view, pinned public model vocabulary, UNKNOWN preserved",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.tokens_by_phase.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Token volume by workflow phase",
+      "inputs": [
+        "normalized-token-usage",
+        "workflow-phase-stream"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "classifier_version",
+          "token_accounting_policy_version",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["phase", "token_band"],
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "pattern": "^(TASK|PLAN|BUILD|TEST|DEBUG|REVIEW|COMMIT|UNKNOWN)$"
+                },
+                "token_band": {
+                  "enum": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"]
+                }
+              }
+            }
+          },
+          "classifier_version": {"const": "1.0.0"},
+          "token_accounting_policy_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "token_band",
+          "bands": ["0", "1-9k", "10-99k", "100-999k", "1m-9.9m", "10m+"],
+          "note": "Order-of-magnitude phase-attributed token total; 10m+ is top-coded and each phase cell requires five supporting sessions"
+        }
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "Phase-attributed volume describes workflow shape without exposing an ordered episode stream or making a quality claim",
+      "notes": "MYB-13.6; tokens inherit the last known structural phase in their normalized session and remain UNKNOWN before any known phase",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.cost_by_model.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Local estimated public list-price equivalent by model",
+      "inputs": [
+        "normalized-token-usage",
+        "normalized-model-routing",
+        "pinned-pricing-snapshot"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "estimate_label",
+          "pricing_snapshot_version",
+          "pricing_snapshot_digest",
+          "currency",
+          "rounding_rule",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["model", "cost_micro_usd"],
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "pattern": "^(gpt|claude|o[1-9])[a-z0-9._-]*$|^UNKNOWN$",
+                  "maxLength": 96
+                },
+                "cost_micro_usd": {
+                  "oneOf": [
+                    {"type": "integer", "minimum": 0},
+                    {"const": "UNKNOWN"}
+                  ]
+                }
+              }
+            }
+          },
+          "estimate_label": {"const": "estimated-public-list-price-equivalent-not-invoice"},
+          "pricing_snapshot_version": {"const": "1.0.0"},
+          "pricing_snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "currency": {"const": "USD"},
+          "rounding_rule": {"const": "half-up-after-summing-one-usage-observation"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R1",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "A standardized token-rate estimate only; it is not an invoice, actual spend, Mybench price, compute quantity, quality signal, or effort-adjusted score",
+      "risk_note": "Exact local currency estimates can reveal usage intensity; v0 keeps all dollar estimates outside publication presets",
+      "notes": "MYB-13.6; integer micro-USD only, effort is never a multiplier, missing or ambiguous pricing dimensions are UNKNOWN",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "This public-list-price-equivalent uses provider-reported token counts that may be inflated and is not an invoice or actual spend."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.cost_per_episode.exact",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Local estimated public list-price equivalent per episode",
+      "inputs": [
+        "normalized-token-usage",
+        "task-episode-identities",
+        "pinned-pricing-snapshot"
+      ],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cells",
+          "unknown_episode_count",
+          "estimate_label",
+          "pricing_snapshot_version",
+          "pricing_snapshot_digest",
+          "currency",
+          "rounding_rule",
+          "trust_tier",
+          "caveats"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["cost_band", "episode_count"],
+              "properties": {
+                "cost_band": {
+                  "enum": ["$0", "<$1", "$1-9", "$10-99", "$100-999", "$1000+"]
+                },
+                "episode_count": {"type": "integer", "minimum": 1}
+              }
+            }
+          },
+          "unknown_episode_count": {"type": "integer", "minimum": 0},
+          "estimate_label": {"const": "estimated-public-list-price-equivalent-not-invoice"},
+          "pricing_snapshot_version": {"const": "1.0.0"},
+          "pricing_snapshot_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "currency": {"const": "USD"},
+          "rounding_rule": {"const": "half-up-after-summing-one-usage-observation"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "cost_band",
+          "bands": ["$0", "<$1", "$1-9", "$10-99", "$100-999", "$1000+"],
+          "note": "Local distribution of episode estimates in fixed log buckets; $1000+ is top-coded and no episode id or point is retained"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "local-report-only",
+      "presets": [],
+      "neutrality_note": "A local bucketed standardized token-rate estimate only; it is not an invoice, actual spend, Mybench price, compute quantity, or quality signal",
+      "notes": "MYB-13.6; unknown or ambiguous episode mappings remain an explicit unknown count and no per-episode value or identity is emitted",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "This public-list-price-equivalent uses provider-reported token counts that may be inflated and is not an invoice or actual spend."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.planning_to_implementation_ratio.band",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Planning-to-implementation token ratio",
+      "inputs": ["normalized-token-usage", "workflow-phase-stream"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ratio_band", "classifier_version", "trust_tier", "caveats"],
+        "properties": {
+          "ratio_band": {"enum": ["UNKNOWN", "<0.5", "0.5-0.99", "1.0-1.99", "2.0+"]},
+          "classifier_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "ratio_band",
+          "bands": ["UNKNOWN", "<0.5", "0.5-0.99", "1.0-1.99", "2.0+"],
+          "note": "Aggregate PLAN tokens divided by BUILD/TEST/DEBUG/REVIEW/COMMIT tokens using integer cross-multiplication; denominator zero is UNKNOWN"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "A coarse structural allocation ratio only; no band is preferred and it does not measure quality or efficiency",
+      "notes": "MYB-13.6; requires five episodes carrying both planning and implementation-attributed tokens",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.rework_token_share",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Structural rework token share",
+      "inputs": ["normalized-token-usage", "workflow-phase-stream"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["share_band", "definition_version", "trust_tier", "caveats"],
+        "properties": {
+          "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Tokens in the phase entered by a pinned backward structural edge divided by all phase-attributed tokens"
+        }
+      ],
+      "min_support": {"episodes": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "A structural loop allocation only; re-entry is not framed as an error, deficit, inefficiency, or quality judgment",
+      "notes": "MYB-13.6; backward edges are BUILD/TEST/DEBUG to PLAN/BUILD and UNKNOWN never bridges evidence",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
+    },
+    {
+      "id": "fingerprint.token_cost.abandoned_session_token_share",
+      "version": "1.0.0",
+      "class": "measured",
+      "status": "active",
+      "wave": 0,
+      "title": "Structurally abandoned-session token share",
+      "inputs": ["normalized-token-usage", "normalized-episode-outcome"],
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["share_band", "definition_version", "trust_tier", "caveats"],
+        "properties": {
+          "share_band": {"enum": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"]},
+          "definition_version": {"const": "1.0.0"},
+          "trust_tier": {"const": "ANCHORED"},
+          "caveats": {"const": ["provider-reported-inflatable"]}
+        }
+      },
+      "band_definitions": [
+        {
+          "field": "share_band",
+          "bands": ["0-9%", "10-24%", "25-49%", "50-74%", "75-100%", "UNKNOWN"],
+          "note": "Tokens in sessions belonging to structurally abandoned episodes divided by tokens in sessions with a deterministic closed or abandoned outcome"
+        }
+      ],
+      "min_support": {"sessions": 5},
+      "inference_risk": "R0",
+      "disclosure": "public",
+      "presets": ["employer-safe", "full"],
+      "neutrality_note": "A content-opaque structural outcome share only; abandoned is not a semantic guess and does not imply failure or quality",
+      "notes": "MYB-13.6 consumes normalized episode outcome classifier v1; unknown outcomes are excluded from numerator and denominator",
+      "report_location": "fingerprint.token_cost_profile",
+      "report_controls": {
+        "reference_frame": false,
+        "conditioning": false,
+        "tier_qualifier": false
+      },
+      "caveat_copy": {
+        "provider-reported-inflatable": "Token counts are provider-reported, capture-dependent, and potentially inflatable."
+      }
     },
     {
       "id": "fingerprint.token_cost_profile",

@@ -153,8 +153,12 @@ def test_manifest_runner_registration_and_current_discovery_are_exact():
         "mybench.report.page",
         "mybench.scorer.agent_hours",
         "mybench.scorer.delegation",
+        "mybench.scorer.context_management",
         "mybench.scorer.evidence_coverage",
+        "mybench.scorer.pricing",
+        "mybench.scorer.model_role",
         "mybench.scorer.score",
+        "mybench.scorer.token_cost",
         "mybench.scorer.workflow_map",
         "mybench.scorer.wave1",
     }

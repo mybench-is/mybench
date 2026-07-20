@@ -39,6 +39,14 @@ SHA-256 over canonical signed-claim bytes, and require an exact one-to-one
 wrapper binding. Development-signed claims are admitted only on the
 `local-unattested` lane. Claim envelopes are not copied into the report bundle.
 
+Multi-property and nested claim outputs use dimension-sorted path cells in the
+envelope. Primitive leaves carry `value`; arrays and objects carry explicit
+`container` nodes, including when empty. Array indexes use fixed-width decimal
+segments so lexicographic ordering is also numeric ordering. Only an ACTIVE
+entry's closed output schema can produce these cells, and the registry
+reconstructs the exact output before comparing it with the verified signed
+claim. This representation is not an arbitrary nested-JSON lane.
+
 Every registry entry is one disclosure atom. If a semantic measurement has an
 exact local form and a banded public form, those are two entries and two
 claims; publication never edits fields out of a signed claim payload.
@@ -77,7 +85,7 @@ reports.
 | `PRICING` | versioned, checksummed pricing snapshot | MYB-13.6 pinned input |
 
 No formula reads the clock, environment, or network. `generated_at`, registry
-version/digest, pricing version/digest, scorer/classifier versions, and the
+version/digest, pricing version/digest/currency, scorer/classifier versions, and the
 evidence window are explicit inputs.
 
 Every row that consumes `LANES` remains a reserved registry entry until
@@ -295,8 +303,8 @@ atomic descriptors.
 Token counts are provider-reported and potentially inflatable. Every token and
 cost field carries the controlled caveat code
 `provider-reported-inflatable`; every cost field additionally names `PRICING`
-version/digest and states that it estimates the user's historical spend, not
-Mybench compute or work quality.
+version/digest and is labelled as an estimated public list-price equivalent,
+not an invoice, actual historical spend, Mybench compute, or work quality.
 
 | Field id | Value and formula | Tier | Support | Disclosure |
 |---|---|---|---|---|
@@ -305,9 +313,9 @@ Mybench compute or work quality.
 | `fingerprint.token_cost.tokens_by_phase.exact` | Integer token sum by `PHASES`; unattributable tokens map to UNKNOWN. | ANCHORED | 5 phase-attributed sessions | LOCAL_ONLY |
 | `fingerprint.token_cost.tokens_by_phase.band` | `token_band` of the same sums. | ANCHORED | 5 sessions per cell | PUBLISHABLE (R0) |
 | `fingerprint.token_cost.cost_by_model.exact` | Integer micro-USD: input/output/cache token integers × matching `PRICING` integer rates, divided with the snapshot's pinned rounding rule. | ANCHORED | 5 sessions per cell | LOCAL_ONLY |
-| `fingerprint.token_cost.cost_by_model.band` | `cost_band` of the same sums. | ANCHORED | 5 sessions per cell | PUBLISHABLE (R1) |
+| `fingerprint.token_cost.cost_by_model.band` | Reserved future `cost_band` of the same sums. | ANCHORED | 5 sessions per cell | LOCAL_ONLY for v0; no ACTIVE descriptor |
 | `fingerprint.token_cost.cost_per_episode.exact` | Distribution of integer micro-USD episode totals into fixed local log buckets; no episode id/value appears. | ANCHORED | 5 episodes | LOCAL_ONLY |
-| `fingerprint.token_cost.cost_per_episode.band` | Banded share of episodes in the pinned cost buckets; no point value. | ANCHORED | 5 episodes | PUBLISHABLE (R0) |
+| `fingerprint.token_cost.cost_per_episode.band` | Reserved future banded share of episodes in the pinned cost buckets; no point value. | ANCHORED | 5 episodes | LOCAL_ONLY for v0; no ACTIVE descriptor |
 | `fingerprint.token_cost.planning_to_implementation_ratio.exact` | Integer pair `(planning_tokens, implementation_tokens)`; UNKNOWN when either phase coverage is insufficient. | ANCHORED | 5 phase-attributed episodes | LOCAL_ONLY |
 | `fingerprint.token_cost.planning_to_implementation_ratio.band` | `ratio_band(planning_tokens, implementation_tokens)`. | ANCHORED | 5 episodes | PUBLISHABLE (R0) |
 | `fingerprint.token_cost.rework_token_share` | Exact bp locally / `share_band` publicly: tokens in classifier-versioned rework-loop segments ÷ phase-attributed tokens. | ANCHORED | 5 rework-eligible episodes | PUBLISHABLE (R0); exact form LOCAL_ONLY |
